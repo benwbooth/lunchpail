@@ -37,4 +37,20 @@ TestCase {
         compare(history.count, 100)
         compare(history.entries[0].message, "notice 104")
     }
+
+    function test_severity_survives_reload_and_legacy_entries() {
+        history.initialize('[{"message":"saved","when":"now","good":true},'
+                           + '{"message":"backup failed","when":"now","good":false}]')
+        compare(history.entries[0].severity, "warning")
+        compare(history.entries[1].severity, "success")
+        history.append("No previous saves yet", "info", "now")
+        history.append("Saves backed up", "success", "now")
+        history.append("Backup failed", "warning", "now")
+        const saved = history.serialized()
+        history.initialize(saved)
+        compare(history.entries[0].severity, "warning")
+        compare(history.entries[1].severity, "success")
+        compare(history.entries[2].severity, "info")
+        compare(history.count, 5)
+    }
 }

@@ -250,10 +250,6 @@ ApplicationWindow {
     property bool launchProfileProbeTriggered: false
     property bool cloudLaunchPending: false
     property bool cloudObservedGameRunning: false
-    property string saveSyncToast: ""
-    property bool saveSyncToastGood: false
-    property string saveFileToast: ""
-    property bool saveFileToastGood: false
     property var cloudActiveTarget: null
     property var cloudLastSyncTarget: null
     property string cloudSyncError: ""
@@ -715,8 +711,11 @@ ApplicationWindow {
         Component.onCompleted: initialize(notificationSettings.value("historyJson", "[]"))
     }
 
-    function rememberNotification(message, good) {
-        notificationHistory.append(message, good)
+    function notify(message, severity, key, persistent) {
+        notificationToast.post(message, severity, key, persistent)
+        // Progress is transient; keep the outcome in the readable history.
+        if (persistent) return
+        notificationHistory.append(message, severity)
         if (!root.automatedProbeRun) {
             notificationSettings.setValue("historyJson", notificationHistory.serialized())
             notificationSettings.sync()
@@ -3709,76 +3708,7 @@ ApplicationWindow {
         id: saveSync
     }
 
-    Timer {
-        id: saveSyncToastHideTimer
-        interval: 4200
-        onTriggered: root.saveSyncToast = ""
-    }
-
-    // Floating confirmation that cloud save sync ran around a play session.
-    Rectangle {
-        id: saveSyncToastPill
-        visible: root.saveSyncToast.length > 0
-        z: 1500
-        y: 16
-        x: Math.round((root.width - width) / 2)
-        width: saveSyncToastText.implicitWidth + 30
-        height: 34
-        radius: 17
-        color: root.saveSyncToastGood ? "#1d3d35" : "#26303f"
-        border.color: root.saveSyncToastGood ? root.accentCool : root.accent
-        Rectangle {
-            width: 8
-            height: 8
-            radius: 4
-            anchors.left: parent.left
-            anchors.leftMargin: 12
-            anchors.verticalCenter: parent.verticalCenter
-            color: root.saveSyncToastGood ? root.accentCool : root.accent
-        }
-        Text {
-            id: saveSyncToastText
-            anchors.centerIn: parent
-            text: root.saveSyncToast
-            color: root.ink
-            font.pixelSize: 11
-            font.weight: Font.DemiBold
-        }
-    }
-
-    Timer {
-        id: saveFileToastHideTimer
-        interval: 5000
-        onTriggered: root.saveFileToast = ""
-    }
-
-    Rectangle {
-        id: saveFileToastPill
-        visible: opacity > 0
-        opacity: root.saveFileToast.length > 0 ? 1 : 0
-        z: 1500
-        y: root.saveFileToast.length > 0
-           ? root.height - height - 58 : root.height + height
-        x: Math.round((root.width - width) / 2)
-        width: Math.min(root.width - 48, 760)
-        height: Math.max(72, saveFileToastText.implicitHeight + 30)
-        radius: 12
-        color: root.saveFileToastGood ? "#17452e" : "#3c321e"
-        border.color: root.saveFileToastGood ? "#5ee391" : root.accent
-        border.width: 2
-        Behavior on y { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
-        Behavior on opacity { NumberAnimation { duration: 220 } }
-        Text {
-            id: saveFileToastText
-            width: parent.width - 40
-            anchors.centerIn: parent
-            text: (root.saveFileToastGood ? "✓  " : "!  ") + root.saveFileToast
-            color: "#f7fff9"
-            wrapMode: Text.Wrap
-            font.pixelSize: 14
-            font.weight: Font.DemiBold
-        }
-    }
+    NotificationToast { id: notificationToast }
 
     LbDialog {
         id: notificationHistoryDialog
@@ -3857,12 +3787,17 @@ ApplicationWindow {
                         Repeater {
                             model: notificationHistory.entries
                             delegate: Rectangle {
+                                id: notificationEntry
                                 required property var modelData
                                 width: notificationItems.width
                                 height: notificationMessage.implicitHeight + 52
                                 radius: 8
-                                color: modelData.good ? "#18372c" : "#2c2a25"
-                                border.color: modelData.good ? "#427c5b" : root.line
+                                color: historyAppearance.background
+                                border.color: historyAppearance.accent
+                                NotificationStyle {
+                                    id: historyAppearance
+                                    severity: notificationEntry.modelData.severity
+                                }
                                 Text {
                                     anchors.left: parent.left
                                     anchors.right: parent.right
@@ -3909,10 +3844,8 @@ ApplicationWindow {
             if (gameDetails.save_file_notice.length === 0) {
                 return
             }
-            root.saveFileToastGood = gameDetails.save_file_notice_success
-            root.saveFileToast = gameDetails.save_file_notice_title + ": " + gameDetails.save_file_notice
-            root.rememberNotification(root.saveFileToast, root.saveFileToastGood)
-            saveFileToastHideTimer.restart()
+            root.notify(gameDetails.save_file_notice_title + ": " + gameDetails.save_file_notice,
+                        gameDetails.save_file_notice_severity, "save-files", false)
         }
     }
 
@@ -3922,10 +3855,8 @@ ApplicationWindow {
         enabled: !root.isProbeRun()
         gameBusy: gameDetails.game_running || gameDetails.launch_busy
         onNotice: (title, message, success) => {
-            root.saveFileToast = title + ": " + message
-            root.saveFileToastGood = success
-            root.rememberNotification(root.saveFileToast, success)
-            saveFileToastHideTimer.restart()
+            root.notify(title + ": " + message,
+                        success ? "success" : "warning", "save-files", false)
         }
         onSyncStarting: target => root.cloudLastSyncTarget = target
         onAcknowledge: token => gameDetails.acknowledge_session_exit(token)
@@ -3938,22 +3869,21 @@ ApplicationWindow {
 
     Connections {
         target: saveSync
+        property string lastNotice: ""
         function onRevisionChanged() {
-            // Visible confirmation that save data really synced before and
-            // after play; failures keep their existing dialogs.
+            const noticeKey = saveSync.operation + ":" + saveSync.status + ":" + saveSync.message
+            const newNotice = noticeKey !== lastNotice
+            lastNotice = noticeKey
+            const title = root.saveSyncGameTitle()
+            const prefix = title.length > 0 ? title + ": " : ""
             if (saveSync.busy) {
-                root.saveSyncToast = saveSync.operation === "pre_launch"
-                        ? "Syncing cloud saves before launch…"
+                if (newNotice) root.notify(prefix + (saveSync.operation === "pre_launch"
+                        ? "Checking save backup before launch…"
                         : saveSync.operation === "post_exit"
-                          ? "Uploading save data to the cloud…"
-                          : "Syncing save data with the cloud…"
-                root.saveSyncToastGood = false
-                saveSyncToastHideTimer.stop()
+                          ? "Backing up saves…"
+                          : "Synchronizing saves…"), "info", "save-sync", true)
             } else if (saveSync.status === "complete") {
-                root.saveSyncToast = "Save backup synchronized ✓ "
-                        + Qt.formatDateTime(new Date(), "h:mm ap")
-                root.saveSyncToastGood = true
-                saveSyncToastHideTimer.restart()
+                let message = prefix + saveSync.message
                 if (saveSync.operation === "post_exit"
                         && saveSync.provider === "local_folder"
                         && saveSync.local_folder_root.length > 0
@@ -3963,39 +3893,29 @@ ApplicationWindow {
                             + root.cloudLastSyncTarget.emulator_slug
                             + "/" + root.cloudLastSyncTarget.runtime_platform
                             + "/current"
-                    root.saveFileToast = root.saveSyncGameTitle()
-                            + ": Save backup synchronized to " + destination
+                    message = prefix + "Save backup synchronized to " + destination
                             + " (original filenames)"
-                    root.saveFileToastGood = true
-                    saveFileToastHideTimer.restart()
-                    root.rememberNotification(root.saveFileToast, true)
-                } else {
-                    root.rememberNotification(
-                                (root.saveSyncGameTitle().length > 0 ? root.saveSyncGameTitle() + ": " : "")
-                                + (saveSync.operation === "post_exit" ? "After play: " : "")
-                                + saveSync.message, true)
                 }
+                if (newNotice) root.notify(message, "success", "save-sync", false)
             } else if (saveSync.status === "skipped") {
-                root.saveSyncToast = saveSync.message
-                root.saveSyncToastGood = false
-                saveSyncToastHideTimer.restart()
+                if (newNotice) root.notify(prefix + saveSync.message, "info", "save-sync", false)
             }
             if (saveSync.status === "conflicts") {
+                if (newNotice) root.notify(prefix + "Choose which saves to keep before syncing.",
+                                          "warning", "save-sync", false)
                 saveSyncConflictDialog.open()
                 return
             }
             if (saveSync.status === "remote_devices") {
+                if (newNotice) root.notify(prefix + "Choose a device to sync saves from.",
+                                          "info", "save-sync", false)
                 saveSyncRemoteDeviceDialog.open()
                 return
             }
             if (saveSync.status === "error") {
-                if (saveSync.operation === "post_exit") {
-                    root.saveFileToast = root.saveSyncGameTitle()
-                            + ": Saved locally, but backup failed: " + saveSync.message
-                    root.saveFileToastGood = false
-                    saveFileToastHideTimer.restart()
-                    root.rememberNotification(root.saveFileToast, false)
-                }
+                if (newNotice) root.notify(prefix + (saveSync.operation === "post_exit"
+                                           ? "Save backup failed: " : "") + saveSync.message,
+                                           "warning", "save-sync", false)
                 root.cloudSyncError = saveSync.message
                 cloudSyncErrorDialog.open()
                 return
@@ -4008,6 +3928,8 @@ ApplicationWindow {
                 root.cloudObservedGameRunning = false
                 gameDetails.launch_game()
             } else if (saveSync.status === "cancelled") {
+                if (newNotice) root.notify(prefix + "Save synchronization cancelled.",
+                                          "info", "save-sync", false)
                 root.cloudLaunchPending = false
                 root.cloudActiveTarget = null
             }

@@ -186,6 +186,8 @@ fn main() {
                 "qml/MediaRetryController.qml",
                 "qml/NativeTextArea.qml",
                 "qml/NotificationHistory.qml",
+                "qml/NotificationStyle.qml",
+                "qml/NotificationToast.qml",
                 "qml/SessionSaveRecovery.qml",
                 "qml/PaneButton.qml",
                 "qml/PlatformSearchState.qml",

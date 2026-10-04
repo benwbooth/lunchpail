@@ -670,6 +670,9 @@ impl qobject::SaveSyncModel {
             "Checking cloud saves for {} before continuing…",
             pending.emulator_slug
         )));
+        // Publish a complete busy snapshot, not just the terminal result.
+        // This also distinguishes consecutive syncs with identical outcomes.
+        self.as_mut().bump_revision();
         let qt_thread = self.as_ref().qt_thread();
         let spawn = std::thread::Builder::new()
             .name("lunchpail-save-sync-prepare".into())
@@ -822,6 +825,7 @@ impl qobject::SaveSyncModel {
         self.as_mut().set_status(qstring("busy"));
         self.as_mut()
             .set_message(qstring("Applying the reviewed save choices…"));
+        self.as_mut().bump_revision();
         let qt_thread = self.as_ref().qt_thread();
         let spawn = std::thread::Builder::new()
             .name("lunchpail-save-sync-apply".into())

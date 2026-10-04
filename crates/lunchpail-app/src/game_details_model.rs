@@ -138,7 +138,7 @@ pub mod qobject {
         #[qproperty(QString, launch_status)]
         #[qproperty(QString, save_file_notice)]
         #[qproperty(QString, save_file_notice_title)]
-        #[qproperty(bool, save_file_notice_success)]
+        #[qproperty(QString, save_file_notice_severity)]
         #[qproperty(QString, launch_sync_target_json)]
         #[qproperty(QString, emulator_preference_scope)]
         #[qproperty(bool, launch_profile_open)]
@@ -832,7 +832,7 @@ pub struct GameDetailsModelRust {
     launch_status: QString,
     save_file_notice: QString,
     save_file_notice_title: QString,
-    save_file_notice_success: bool,
+    save_file_notice_severity: QString,
     launch_sync_target_json: QString,
     emulator_preference_scope: QString,
     launch_profile_open: bool,
@@ -1104,7 +1104,7 @@ impl Default for GameDetailsModelRust {
             launch_status: QString::default(),
             save_file_notice: QString::default(),
             save_file_notice_title: QString::default(),
-            save_file_notice_success: false,
+            save_file_notice_severity: QString::from("info"),
             launch_sync_target_json: "null".into(),
             emulator_preference_scope: QString::default(),
             launch_profile_open: false,
@@ -6462,7 +6462,7 @@ impl qobject::GameDetailsModel {
             return;
         }
         self.as_mut().set_save_file_notice(QString::default());
-        self.as_mut().set_save_file_notice_success(false);
+        self.as_mut().set_save_file_notice_severity(qstring("info"));
         let firmware_statuses = self.as_ref().selected_firmware_statuses();
         if firmware_statuses
             .iter()
@@ -6983,7 +6983,7 @@ impl qobject::GameDetailsModel {
                                 generation,
                                 &notice_game_id,
                                 notice,
-                                false,
+                                "info",
                             );
                         });
                         // Let the notification appear before RetroArch takes
@@ -7483,12 +7483,12 @@ impl qobject::GameDetailsModel {
         generation: u64,
         _game_id: &str,
         notice: String,
-        success: bool,
+        severity: &str,
     ) {
         if generation != self.as_ref().rust().session_generation {
             return;
         }
-        self.as_mut().set_save_file_notice_success(success);
+        self.as_mut().set_save_file_notice_severity(qstring(severity));
         self.as_mut().set_save_file_notice(qstring(notice));
     }
 
@@ -7558,7 +7558,7 @@ impl qobject::GameDetailsModel {
                 generation,
                 &completed_game_id,
                 notice.clone(),
-                *success,
+                if *success { "success" } else { "warning" },
             );
         }
         if self.as_ref().game_id().to_string() != completed_game_id {

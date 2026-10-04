@@ -78,8 +78,10 @@ impl AutoSaveObservation {
             (true, true, _, _) => Some("Saved state and SRAM found; preparing to resume…"),
             (true, false, _, _) => Some("Saved state found; preparing to resume…"),
             (false, true, _, _) => Some("Saved SRAM found; preparing to load…"),
-            (false, false, _, true) => Some("Auto-save enabled; no previous state or SRAM yet"),
-            (false, false, true, false) => Some("Auto-resume enabled; no saved state yet"),
+            (false, false, _, true) => {
+                Some("No previous saves yet. Starting a new game with auto-save enabled.")
+            }
+            (false, false, true, false) => Some("No saved state yet. Starting a new game."),
             (false, false, false, false) => None,
         }
     }
@@ -277,7 +279,7 @@ mod tests {
         observation.auto_state_save_enabled = true;
         assert_eq!(
             observation.launch_notice(),
-            Some("Auto-save enabled; no previous state or SRAM yet")
+            Some("No previous saves yet. Starting a new game with auto-save enabled.")
         );
         assert_eq!(
             observation.exit_notice(),
