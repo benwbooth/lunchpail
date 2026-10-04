@@ -801,7 +801,7 @@ pub(crate) fn probe_retroarch_output_dimensions(
     _executable: &EmulatorExecutable,
     qt_dimensions: Option<(u32, u32)>,
 ) -> Result<(u32, u32)> {
-    let output = Command::new(std::env::current_exe()?)
+    let output = Command::new(display_probe_executable()?)
         .arg("--sdl3-display-inspect")
         .env(
             "LUNCHPAIL_SDL3_LIBRARY",
@@ -825,6 +825,20 @@ pub(crate) fn probe_retroarch_output_dimensions(
         );
     }
     Ok(dimensions)
+}
+
+fn display_probe_executable() -> Result<PathBuf> {
+    // Cargo atomically replaces a development binary. Linux then reports its
+    // old pathname with " (deleted)" from current_exe(), even while this app
+    // keeps running. Execute the running inode, not that vanished pathname.
+    #[cfg(target_os = "linux")]
+    {
+        Ok(PathBuf::from(format!("/proc/{}/exe", std::process::id())))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Ok(std::env::current_exe()?)
+    }
 }
 
 fn parse_sdl3_display_dimensions(report: &str) -> Option<(u32, u32)> {
@@ -1001,6 +1015,55 @@ fn prune_stale_launch_display_configs(directory: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn display_probe_survives_running_binary_replacement() {
+        const FLAG: &str = "LUNCHPAIL_TEST_UNLINK_DISPLAY_PROBE";
+        if let Some(path) = std::env::var_os(FLAG) {
+            fs::remove_file(path).unwrap();
+            assert!(
+                Command::new(std::env::current_exe().unwrap())
+                    .arg("--list")
+                    .output()
+                    .is_err()
+            );
+            let result = Command::new(display_probe_executable().unwrap())
+                .arg("--list")
+                .env_remove(FLAG)
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            assert!(
+                String::from_utf8_lossy(&result.stdout)
+                    .contains("display_probe_survives_running_binary_replacement")
+            );
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let copy = dir.path().join("running-app");
+        fs::copy(std::env::current_exe().unwrap(), &copy).unwrap();
+        let result = Command::new(&copy)
+            .args([
+                "--exact",
+                "display_setup::tests::display_probe_survives_running_binary_replacement",
+                "--nocapture",
+            ])
+            .env(FLAG, &copy)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&result.stdout),
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(String::from_utf8_lossy(&result.stdout).contains("1 passed"));
+    }
 
     #[test]
     fn lcd_presets_resolve_in_managed_and_legacy_shader_packs() {
