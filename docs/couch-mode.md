@@ -10,9 +10,9 @@ keyboard, or mouse. Open it from the main window's Couch Mode control.
 | View | Best for |
 | --- | --- |
 | Cover wall | Seeing many covers at once. |
-| Album | Browsing an animated, angled cover flow. |
-| Animated wheel | A curved, animated list of game logos. Missing logos use readable titles. |
-| Cover shelf | The original horizontal cover row. |
+| Cover flow | Browsing angled covers around a prominent selected game. |
+| Logo wheel | A curved, animated list of game logos beside a video preview. Missing logos use readable titles. |
+| Cover shelf | A horizontal cover row with stable spacing and a selected-game preview. |
 
 Use the view button, **Library & settings**, or the Couch Mode section in
 Settings. Press **V** to cycle views from the keyboard.
@@ -24,7 +24,7 @@ Lunchpail remembers the view and keeps the selected game when you switch.
 Choose a shelf such as My Collection, Favorites, or Recent. The platform and
 collection pickers narrow the same library used by normal mode.
 
-Use up/down through the wheel, left/right through the album or shelf, and
+Use up/down through the wheel, left/right through cover flow or the shelf, and
 both directions through the wall. Select a game to see its actions, then choose
 Play or download options.
 
@@ -32,14 +32,22 @@ The Game Menu includes favorite, release, view, and attract-mode choices.
 
 ## Game details and tools
 
-**Game details & tools** opens a TV-sized page with four tabs: Overview,
-Play & setup, Media, and Activity. Play and Favorites stay in the left action
+**Game details & tools** opens a full-screen page with five tabs: Overview,
+Play & setup, Media, Activity, and Library. Play and Favorites stay in the left action
 rail. Use the bumpers to switch tabs, then the D-pad to choose a tool.
 
+![Full-screen game details in Couch Mode](images/couch-game-details.png)
+
 Play & setup includes display settings, controller mappings, patches and cheats,
-RetroAchievements, ROM choices, and save locations. **Advanced game tools**
-opens the complete editing workspace for less common options; no game tools
-are removed in Couch Mode.
+RetroAchievements, ROM choices, and save locations. **Emulator & launch** includes
+runtime selection, game/system defaults, launch profiles, BIOS setup, GameBuddy,
+and PC installation preparation. Management sections stay in a full-screen game
+page with a persistent section rail; they do not open the normal details sidebar.
+
+Overview includes available release, developer, publisher, genre, player, region,
+series, age-rating, and catalog-rating information. Activity includes completion,
+notes, and session history. Library provides metadata editing, collection
+membership, related games, custom fields, tags, and external catalog links.
 
 **Library & settings** opens settings, downloads, notifications, imports,
 collections, firmware, media tools, and bulk editing. The full library
@@ -48,7 +56,8 @@ workspace is available for search, sorting, and organization.
 Use **Back to Couch Mode** to return from that workspace without losing the
 selected game.
 
-Some advanced forms still use the shared desktop dialogs. Text entry and
+Focused editors such as metadata, controller mapping, and launch profiles still
+use shared dialogs above the game page. Text entry and
 native file pickers may need a keyboard or mouse; not every workflow is a
 controller-only, TV-sized interface yet.
 
@@ -61,6 +70,30 @@ are useful sources; connect them in Settings. Coverage varies by game and releas
 
 If a logo is missing or incorrect, open **Media → Find better media** to choose
 another image. Until a logo is available, the wheel shows the game's title.
+
+![Game logo wheel with an animated HyperSpin video theme](images/couch-logo-wheel.png)
+
+## HyperSpin video themes and system media
+
+Open **Media → Themes & system media** (or **Themes & systems** in the section rail) to
+find a pre-rendered HyperSpin game theme, a system wheel logo, or a platform video
+through your connected EmuMovies account. Theme videos require FTP access from a
+supporting EmuMovies account. Availability varies by system and game.
+
+Game themes are stored separately from gameplay videos. The logo wheel and cover
+shelf prefer a cached theme and otherwise play the cached gameplay clip; browsing
+does not download video packs. Previews preserve aspect ratio, can be paused or
+opened full-screen, and share the global video mute preference. Background music
+stops while an audible preview is playing. Opening another page suspends previews.
+
+The platform picker displays cached system logos and platform videos. These use
+a separate system-media cache, never a game's box art or logo slot.
+
+![Platform wheel artwork and video presentation](images/couch-platform-media.png)
+
+This supports the [pre-rendered themes published by EmuMovies](https://emumovies.com/files/category/2031-video-themes/),
+not execution of raw HyperSpin theme packages. EmuMovies also publishes
+[system and game logo artwork](https://emumovies.com/files/category/1196-artwork/).
 
 ## Useful controls
 

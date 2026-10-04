@@ -110,6 +110,8 @@ ApplicationWindow {
     property int pendingThemeRemovalIndex: -1
     readonly property bool gridMode: library.view_mode !== "list"
     property bool couchModeActive: false
+    property bool devRestartRequested: false
+    property url couchFullscreenVideoUrl: ""
     // Shared management panes stay in the fullscreen couch session. They are
     // not reduced copies of desktop features and retain all nested dialogs.
     property string couchWorkspace: ""
@@ -344,7 +346,8 @@ ApplicationWindow {
     readonly property bool couchViewStyleUiProbe: couchViewStyleRestoreUiProbe
                                                   || Qt.application.arguments.indexOf("--couch-view-style-ui-probe") >= 0
     readonly property bool couchSmoothnessUiProbe: Qt.application.arguments.indexOf("--couch-smoothness-ui-probe") >= 0
-    readonly property bool couchModeUiProbe: couchSmoothnessUiProbe || couchGamepadUiProbe || couchPlatformUiProbe
+    readonly property bool couchPolishUiProbe: Qt.application.arguments.indexOf("--couch-polish-ui-probe") >= 0
+    readonly property bool couchModeUiProbe: couchPolishUiProbe || couchSmoothnessUiProbe || couchGamepadUiProbe || couchPlatformUiProbe
                                              || couchCollectionUiProbe
                                              || couchVariantUiProbe
                                              || couchAttractUiProbe
@@ -506,7 +509,7 @@ ApplicationWindow {
             root.rememberPlatformSearch(true)
         if (!root.automatedProbeRun && root.librarySessionFullRestored && root.startupPresented)
             root.saveLibrarySession()
-        if (root.couchLaunchUiProbe) {
+        if (root.devRestartRequested || root.automatedProbeRun) {
             close.accepted = true
         } else if (root.couchModeActive) {
             close.accepted = false
@@ -1167,26 +1170,35 @@ ApplicationWindow {
         if (section === "controllers") {
             gameControllerMapping.openForGame(gameDetails.title, gameDetails.platform,
                                               gameDetails.emulator_name, gameDetails.game_id)
-        } else if (section === "artwork") {
+        } else if (section === "box3d") {
             refreshSelectedArtwork()
-            openFullscreenMedia()
-        } else if (section === "find-media") openFindArtwork("clear-logo")
+            couchBoxDialog.open()
+        } else if (section === "find-media") openFindArtwork("box-front")
         else if (section === "video" && gameDetails.video_available) {
+            root.couchFullscreenVideoUrl = ""
             mediaFullscreen.open()
             gameVideoPlayer.play()
-        } else if (section === "activity") {
+        } else if (section === "theme-video") {
+            const record = JSON.parse(library.couch_preview_json || "{}")
+            if (record.game_id === gameDetails.game_id && record.theme_video_url) {
+                root.couchFullscreenVideoUrl = record.theme_video_url
+                mediaFullscreen.open()
+                gameVideoPlayer.play()
+            }
+        } else if (section === "sessions") {
             activityHistoryDialog.outcomeFilter = "all"
             activityHistoryDialog.open()
-        } else if (["display", "mods", "achievements", "files"].includes(section)) {
-            couchGameToolDialog.section = section
-            couchGameToolDialog.open()
-        } else {
-            // Less common editing tools remain available through an explicit
-            // advanced workspace, never as the default couch details page.
-            openCouchWorkspace("game")
-            if (section === "media") Qt.callLater(function() {
-                detailScroll.contentItem.contentY = Math.max(0, mediaCard.mapToItem(detailScroll.contentItem, 0, 0).y - 20)
-            })
+        } else if (section === "metadata") {
+            gameDetails.open_metadata_editor()
+            if (gameDetails.metadata_open) metadataDialog.open()
+        } else if (section === "emulators") root.openEmulatorManagerForPlatform(gameDetails.platform)
+        else if (section === "launch-profile") root.openLaunchProfileManager()
+        else if (section === "firmware") root.openFirmwareSetupPage()
+        else if (section === "emumovies") root.openSettingsFor("emumovies")
+        else if (section === "new-collection") root.openNewCollectionDialog()
+        else if (["display", "mods", "achievements", "files", "launch", "advanced", "artwork", "media", "themes", "activity", "collections", "related", "catalog"].includes(section)) {
+            couchGameToolDialog.section = section === "advanced" ? "launch" : section
+            if (!couchGameToolDialog.visible) couchGameToolDialog.open()
         }
     }
 
@@ -2385,6 +2397,8 @@ ApplicationWindow {
     GamepadInput {
         id: gamepadInput
         navigation_enabled: (root.active || root.couchGamepadUiProbe)
+                            && !root.couchPolishUiProbe
+                            && !root.couchSmoothnessUiProbe
                             && !root.controllerLearnActive
                             && !(settingsDialog.visible && controllerAutomaticSetup.testInput && !root.couchModeActive)
                             && !controllerAutomaticSetup.calibrationActive
@@ -2478,7 +2492,9 @@ ApplicationWindow {
         property bool resumeApplied: false
         property real unmuteResumePosition: -1
         property bool unmuteResumePlaying: false
-        source: !root.couchModeActive && !root.downloadPlanUiProbe
+        source: mediaFullscreen.opened && root.couchFullscreenVideoUrl.toString().length > 0
+                ? root.couchFullscreenVideoUrl
+                : (!root.couchModeActive || mediaFullscreen.opened) && !root.downloadPlanUiProbe
                 && gameDetails.video_available
                 ? gameDetails.video_url : ""
         // Silent video playback must not initialize a host audio backend.
@@ -2520,7 +2536,7 @@ ApplicationWindow {
                     if (unmuteResumePlaying) play()
                     else pause()
                     return
-                } else if (!resumeApplied && seekable
+                } else if (!resumeApplied && seekable && root.couchFullscreenVideoUrl.toString().length === 0
                         && gameDetails.video_resume_position > 0)
                     position = Math.min(gameDetails.video_resume_position, duration)
                 resumeApplied = true
@@ -2535,6 +2551,7 @@ ApplicationWindow {
                     && gameSoundtrackPlayer.playbackState === MediaPlayer.PlayingState)
                 gameSoundtrackPlayer.pause()
             if (playbackState === MediaPlayer.PausedState
+                    && root.couchFullscreenVideoUrl.toString().length === 0
                     && !gameDetails.video_progress_busy)
                 gameDetails.save_video_progress(position, duration)
             if (root.mediaBundleProbe
@@ -2554,7 +2571,7 @@ ApplicationWindow {
 
     MediaPlayer {
         id: gameSoundtrackPlayer
-        source: !root.couchModeActive
+        source: (!root.couchModeActive || (couchGameToolDialog.visible && couchGameToolDialog.section === "media"))
                 && gameDetails.panel_open
                 && !gameDetails.game_running
                 && gameDetails.soundtrack_available
@@ -3042,6 +3059,7 @@ ApplicationWindow {
         interval: 5000
         repeat: true
         running: gameVideoPlayer.playbackState === MediaPlayer.PlayingState
+                 && root.couchFullscreenVideoUrl.toString().length === 0
                  && gameDetails.video_available
         onTriggered: {
             if (!gameDetails.video_progress_busy)
@@ -3087,6 +3105,7 @@ ApplicationWindow {
         running: true
         onTriggered: {
             if (singleInstance.take_restart_request()) {
+                root.devRestartRequested = true
                 if (!root.automatedProbeRun) {
                     root.rememberPlatformSearch(true)
                     if (root.librarySessionFullRestored && root.startupPresented)
@@ -4303,6 +4322,8 @@ ApplicationWindow {
             root.refreshReviewedArtwork()
             if (gameDetails.panel_open && root.selectedGameId.length > 0)
                 gameDetails.refresh_media()
+            if (root.couchModeActive && couchModeView.selectedGameId.length > 0)
+                library.request_couch_preview(couchModeView.selectedGameId)
         }
     }
 
@@ -4485,7 +4506,12 @@ ApplicationWindow {
                     root.beginHoverPreviewProbe()
                 }
                 else if (root.couchModeUiProbe) {
-                    if (root.couchSmoothnessUiProbe) {
+                    if (root.couchPolishUiProbe) {
+                        root.selectedGameId = "9697a5eb-e0b4-4f24-8d43-672701414ee7"
+                        root.selectedPlatform = "Nintendo Entertainment System"
+                        searchField.text = "Mario"
+                        library.apply_filter(searchField.text, root.selectedPlatform, "")
+                    } else if (root.couchSmoothnessUiProbe) {
                         library.save_couch_view_style("wheel")
                         root.selectedPlatform = "Nintendo Entertainment System"
                         searchField.text = "Mario"
@@ -5410,7 +5436,7 @@ ApplicationWindow {
         interval: 650
         repeat: false
         onTriggered: {
-            if (root.couchLaunchUiProbe || root.couchDownloadUiProbe || root.couchSmoothnessUiProbe)
+            if (root.couchLaunchUiProbe || root.couchDownloadUiProbe || root.couchSmoothnessUiProbe || root.couchPolishUiProbe)
                 return
             if (!root.couchGamepadUiProbe && !root.couchPlatformUiProbe
                     && !root.couchCollectionUiProbe
@@ -6552,7 +6578,7 @@ ApplicationWindow {
 
     Timer {
         interval: 20000
-        running: root.couchModeUiProbe && !root.couchLaunchUiProbe && !root.couchSmoothnessUiProbe
+        running: root.couchModeUiProbe && !root.couchLaunchUiProbe && !root.couchSmoothnessUiProbe && !root.couchPolishUiProbe
                  && !root.couchModeProbeCaptured
         repeat: false
         onTriggered: {
@@ -9209,15 +9235,18 @@ ApplicationWindow {
         closePolicy: Popup.CloseOnEscape
         background: Rectangle { color: "#f205080c" }
         onClosed: {
-            if (!gameDetails.video_progress_busy)
+            if (!gameDetails.video_progress_busy && root.couchFullscreenVideoUrl.toString().length === 0)
                 gameDetails.save_video_progress(gameVideoPlayer.position,
                                                 gameVideoPlayer.duration)
+            root.couchFullscreenVideoUrl = ""
         }
 
+        contentItem: Item {
         VideoOutput {
             id: fullscreenVideoOutput
             anchors.fill: parent
             anchors.margins: 18
+            anchors.bottomMargin: root.couchModeActive ? fullscreenControls.height + 26 : 18
             fillMode: VideoOutput.PreserveAspectFit
         }
 
@@ -9238,12 +9267,12 @@ ApplicationWindow {
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             anchors.margins: 18
-            height: 54
+            height: root.couchModeActive ? 72 : 54
             spacing: 10
 
             LbButton {
-                Layout.preferredWidth: 54
-                Layout.preferredHeight: 38
+                Layout.preferredWidth: root.couchModeActive ? 72 : 54
+                Layout.preferredHeight: root.couchModeActive ? 60 : 38
                 text: gameVideoPlayer.playbackState === MediaPlayer.PlayingState ? "Ⅱ" : "▶"
                 onClicked: {
                     if (gameVideoPlayer.playbackState === MediaPlayer.PlayingState)
@@ -9258,18 +9287,18 @@ ApplicationWindow {
                 Layout.fillWidth: true
             }
             Text {
-                Layout.preferredWidth: 112
+                Layout.preferredWidth: root.couchModeActive ? 165 : 112
                 text: root.formatMediaTime(gameVideoPlayer.position)
                       + " / " + root.formatMediaTime(gameVideoPlayer.duration)
                 color: root.ink
-                font.pixelSize: 11
+                font.pixelSize: root.couchModeActive ? 17 : 11
                 font.features: { "tnum": 1 }
                 horizontalAlignment: Text.AlignHCenter
             }
             LbButton {
                 id: fullscreenMuteButton
-                Layout.preferredWidth: 48
-                Layout.preferredHeight: 38
+                Layout.preferredWidth: root.couchModeActive ? 64 : 48
+                Layout.preferredHeight: root.couchModeActive ? 60 : 38
                 leftPadding: 0
                 rightPadding: 0
                 topPadding: 0
@@ -9291,11 +9320,12 @@ ApplicationWindow {
                 onClicked: root.videoAudioMuted = !root.videoAudioMuted
             }
             LbButton {
-                Layout.preferredWidth: 72
-                Layout.preferredHeight: 38
+                Layout.preferredWidth: root.couchModeActive ? 96 : 72
+                Layout.preferredHeight: root.couchModeActive ? 60 : 38
                 text: "Close"
                 onClicked: mediaFullscreen.close()
             }
+        }
         }
     }
 
@@ -11665,6 +11695,17 @@ ApplicationWindow {
         preferredGameId: root.selectedGameId
         currentFilterKey: root.effectiveAvailability
         currentPlatformName: root.selectedPlatform
+        videoMuted: root.videoAudioMuted
+        onVideoMuteRequested: root.videoAudioMuted = !root.videoAudioMuted
+        onSystemMediaRequested: platform => {
+            couchSystemMediaDialog.platform = platform
+            couchSystemMediaDialog.open()
+        }
+        onVideoRequested: source => {
+            root.couchFullscreenVideoUrl = source
+            mediaFullscreen.open()
+            gameVideoPlayer.play()
+        }
         attractProbeEnabled: root.couchAttractUiProbe
         onExitRequested: root.exitCouchMode()
         onFilterRequested: key => root.selectNavigationShelf(key)
@@ -11710,6 +11751,17 @@ ApplicationWindow {
         }
     }
 
+    Loader {
+        active: root.couchPolishUiProbe
+        sourceComponent: CouchPolishProbe {
+            app: root; view: couchModeView; library: library; details: gameDetails
+            toolsPage: couchGameToolDialog
+            systemPage: couchSystemMediaDialog; boxPage: couchBoxDialog
+            videoPage: mediaFullscreen; videoOutput: fullscreenVideoOutput
+            videoPlayer: gameVideoPlayer
+        }
+    }
+
     Rectangle {
         anchors.fill: parent
         z: 1001
@@ -11750,23 +11802,99 @@ ApplicationWindow {
         id: couchGameToolDialog
         parent: Overlay.overlay
         property string section: "display"
-        title: ({display: "Display & save states", mods: "Translations & mods", achievements: "RetroAchievements", files: "ROMs & save files"})[section]
+        readonly property var sections: [
+            {key:"launch", label:"Emulator & launch"}, {key:"display", label:"Display & saves"},
+            {key:"mods", label:"Translations & mods"}, {key:"achievements", label:"Achievements"},
+            {key:"files", label:"ROMs & save files"}, {key:"media", label:"Media & manuals"},
+            {key:"artwork", label:"Artwork gallery"},
+            {key:"themes", label:"Themes & systems"},
+            {key:"activity", label:"My activity"}, {key:"collections", label:"Collections"},
+            {key:"related", label:"Related games"}, {key:"catalog", label:"Catalog & links"}]
+        readonly property real uiScale: root.couchUiScale
+        title: gameDetails.title
         modal: true
-        width: Math.min(root.width - 80, 1000 * Math.min(1.3, root.couchUiScale))
-        height: Math.min(root.height - 80, 850 * Math.min(1.3, root.couchUiScale))
+        width: root.width
+        height: root.height
         anchors.centerIn: parent
-        standardButtons: Dialog.Close
-        contentItem: MomentumFlickable {
-            clip: true; contentWidth: width; contentHeight: couchGameToolsLoader.height
+        padding: 0
+        header: Item {}
+        footer: Item {}
+        background: Rectangle { color: "#101620" }
+        onOpened: couchToolBack.forceActiveFocus()
+        onSectionChanged: Qt.callLater(function() { couchToolScroll.contentY = 0 })
+        contentItem: Rectangle {
+          color: "#101620"
+          Image { anchors.fill: parent; source: root.selectedFanartUrl; asynchronous: true; fillMode: Image.PreserveAspectCrop; opacity: 0.12; sourceSize: Qt.size(1920, 1080) }
+          Item {
+            anchors.centerIn: parent
+            width: parent.width / couchGameToolDialog.uiScale
+            height: parent.height / couchGameToolDialog.uiScale
+            scale: couchGameToolDialog.uiScale
+            RowLayout {
+                id: couchToolHeader
+                anchors { left: parent.left; right: parent.right; top: parent.top; margins: 36 }
+                spacing: 24
+                LbButton { id: couchToolBack; text: "‹  Game details"; implicitHeight: 54; onClicked: couchGameToolDialog.close() }
+                ColumnLayout {
+                    Layout.fillWidth: true; spacing: 6
+                    Text { text: gameDetails.platform.toUpperCase(); color: "#62dac8"; font.pixelSize: 13; font.letterSpacing: 1.5 }
+                    Text { Layout.fillWidth: true; text: gameDetails.title; color: "#f4f7fb"; font.pixelSize: 30; font.weight: Font.Bold; elide: Text.ElideRight }
+                }
+            }
+            MomentumFlickable {
+                id: couchToolRail
+                anchors { left: parent.left; top: couchToolHeader.bottom; bottom: parent.bottom; margins: 36 }
+                width: 255; clip: true; contentWidth: width; contentHeight: couchToolSections.implicitHeight
+                Column {
+                    id: couchToolSections
+                    width: parent.width; spacing: 7
+                    Repeater {
+                        model: couchGameToolDialog.sections
+                        delegate: LbButton {
+                            required property var modelData
+                            width: parent.width; height: 49; text: modelData.label
+                            highlighted: couchGameToolDialog.section === modelData.key
+                            contentItem: LbButtonLabel { control: parent; pixelSize: 16 }
+                            onClicked: couchGameToolDialog.section = modelData.key
+                        }
+                    }
+                }
+            }
+            MomentumFlickable {
+            id: couchToolScroll
+            anchors { left: couchToolRail.right; right: parent.right; top: couchToolHeader.bottom; bottom: parent.bottom; margins: 36 }
+            clip: true; contentWidth: width; contentHeight: couchGameToolsLoader.height * couchGameToolsLoader.scale
             ScrollBar.vertical: LbScrollBar { policy: ScrollBar.AsNeeded }
             Loader {
                 id: couchGameToolsLoader
-                width: parent.width - 20
+                // Shared forms keep their behavior, with readable TV sizing.
+                scale: ["mods", "achievements", "files"].includes(couchGameToolDialog.section) ? 1.5 : 1
+                transformOrigin: Item.TopLeft
+                width: Math.min(parent.width - 24, 1120) / scale
                 active: couchGameToolDialog.visible
                 sourceComponent: CouchGameTools {
                     section: couchGameToolDialog.section
                     details: gameDetails; mods: gameMods; patches: patchCatalog
                     achievements: retroAchievements; saveSync: saveSync
+                    library: library; emuMovies: emuMovies; soundtrackPlayer: gameSoundtrackPlayer
+                    onManageRequested: section => root.openCouchGameTool(section)
+                    onFindArtworkRequested: kind => root.openFindArtwork(kind)
+                    onTagRequested: tag => {
+                        couchGameToolDialog.close()
+                        couchModeView.closeOverlay()
+                        library.select_tag_filter(library.tag_filter === tag ? "" : tag)
+                    }
+                    onArtworkRequested: (source, provider) => {
+                        fullscreenMedia.mediaUrl = source
+                        fullscreenMedia.mediaTitle = gameDetails.title
+                        fullscreenMedia.mediaSource = provider
+                        fullscreenMedia.canRotate = false
+                        fullscreenMedia.open()
+                    }
+                    onRelatedRequested: index => {
+                        couchGameToolDialog.close()
+                        couchModeView.openRelatedGame(index)
+                    }
                     onBezelPickerRequested: bezelPicker.begin()
                     pickPatchFile: function() { return nativeFileDialog.pick_open_file("Import a translation or mod patch", "ROM/disc patches", "ips,ips32,bps,ups,ppf,xdelta,xdelta3,vcdiff") }
                     pickCheatFile: function() { return nativeFileDialog.pick_open_file("Import RetroArch cheats", "Cheat files", "cht") }
@@ -11777,6 +11905,58 @@ ApplicationWindow {
                     onTorrentRequested: root.openPlatformTorrentSourcesForGame(gameDetails.game_id, root.selectedDatabaseId, gameDetails.title, gameDetails.platform)
                     onReviewCandidateRequested: index => downloadReviewDialog.openFor(index)
                 }
+            }
+            }
+          }
+        }
+    }
+
+    LbDialog {
+        id: couchSystemMediaDialog
+        parent: Overlay.overlay
+        property string platform: ""
+        title: platform + " · System media"
+        modal: true
+        width: Math.min(root.width - 80, 960)
+        height: Math.min(root.height - 80, 580)
+        anchors.centerIn: parent
+        standardButtons: Dialog.Close
+        onOpened: systemLogoDownload.forceActiveFocus()
+        contentItem: Column {
+            spacing: 22
+            Text { width: parent.width; text: "Add EmuMovies wheel artwork and a pre-rendered platform theme. Downloads are cached for this system, separately from game artwork."; color: root.muted; font.pixelSize: 19; wrapMode: Text.WordWrap }
+            LbButton {
+                id: systemLogoDownload
+                width: parent.width; height: 60; enabled: !emuMovies.busy
+                text: emuMovies.credentials_saved ? "Download wheel logo" : "Connect EmuMovies"
+                contentItem: LbButtonLabel { control: parent; pixelSize: 19 }
+                onClicked: emuMovies.credentials_saved ? emuMovies.download_platform_media(couchSystemMediaDialog.platform, "clear-logo") : root.openSettingsFor("emumovies")
+            }
+            LbButton {
+                width: parent.width; height: 60; enabled: !emuMovies.busy
+                text: "Download platform video theme"
+                contentItem: LbButtonLabel { control: parent; pixelSize: 19 }
+                onClicked: emuMovies.credentials_saved ? emuMovies.download_platform_media(couchSystemMediaDialog.platform, "video") : root.openSettingsFor("emumovies")
+            }
+            InlineProgressBar { width: parent.width; height: 8; visible: emuMovies.busy; from: 0; to: 100; value: Math.max(0, emuMovies.transfer_progress) }
+            Text { width: parent.width; text: emuMovies.message; color: root.muted; font.pixelSize: 17; wrapMode: Text.WordWrap }
+            LbButton { width: parent.width; height: 50; visible: emuMovies.busy; text: "Cancel download"; enabled: !emuMovies.cancel_requested; onClicked: emuMovies.cancel() }
+        }
+    }
+
+    LbDialog {
+        id: couchBoxDialog
+        parent: Overlay.overlay
+        width: root.width; height: root.height
+        anchors.centerIn: parent
+        title: gameDetails.title + " · 3D box"
+        modal: true
+        standardButtons: Dialog.Close
+        contentItem: Loader {
+            active: couchBoxDialog.visible
+            sourceComponent: Box3DViewer {
+                frontSource: root.selectedBoxFrontUrl
+                backSource: root.selectedBoxBackUrl
             }
         }
     }
@@ -11865,8 +12045,8 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Repeater {
                         model: [ { label: "Cover wall", value: "wall" },
-                                 { label: "Album", value: "album" },
-                                 { label: "Animated wheel", value: "wheel" },
+                                 { label: "Cover flow", value: "album" },
+                                 { label: "Logo wheel", value: "wheel" },
                                  { label: "Cover shelf", value: "shelf" } ]
                         delegate: LbButton {
                             required property var modelData
@@ -20746,10 +20926,10 @@ ApplicationWindow {
                             textRole: "label"
                             valueRole: "value"
                             model: [
-                                { label: "Animated wheel", value: "wheel" },
+                                { label: "Logo wheel", value: "wheel" },
                                 { label: "Cover shelf", value: "shelf" },
                                 { label: "Cover wall", value: "wall" },
-                                { label: "Album", value: "album" }
+                                { label: "Cover flow", value: "album" }
                             ]
                             currentIndex: Math.max(0, ["wheel", "shelf", "wall", "album"].indexOf(library.couch_view_style))
                             onActivated: library.save_couch_view_style(currentValue)

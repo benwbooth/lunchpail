@@ -31,6 +31,7 @@ Item {
     property bool downloadOverlayOpen: false
     property bool overlayOpen: false
     property string overlayMode: "details"
+    readonly property var detailsPage: nativeDetails.item
     property int menuActionIndex: 0
     property string preferredGameId: ""
     property string currentFilterKey: ""
@@ -40,11 +41,15 @@ Item {
     property int selectedDatabaseId: 0
     property double selectedMediaId: 0
     property double heroMediaId: 0
+    property bool videoMuted: true
+    signal videoMuteRequested()
+    signal videoRequested(url source)
+    signal systemMediaRequested(string platform)
     readonly property var previewRecord: JSON.parse(library.couch_preview_json || "{}")
     readonly property var browsing: Object.assign({
         game_id: "", description: "", release_date: "", genre: "", players: "",
         cooperative: "", rating: "", soundtrack_available: false,
-        soundtrack_url: "", soundtrack_title: ""
+        soundtrack_url: "", soundtrack_title: "", video_url: "", theme_video_url: ""
     }, previewRecord.game_id === selectedGameId ? previewRecord : {},
        { game_running: details.game_running, title: selectedTitle })
     property string selectedTitle: ""
@@ -52,6 +57,7 @@ Item {
     property bool selectedLocal: false
     property bool selectedDownloadable: false
     property int mediaRevision: library.media_revision
+    onMediaRevisionChanged: if (active && selectedGameId) previewRefresh.restart()
     readonly property color background: library.couch_theme_background
     readonly property color panel: library.couch_theme_panel
     readonly property color panelRaised: library.couch_theme_panel_raised
@@ -66,8 +72,12 @@ Item {
     readonly property bool cinematicWheel: library.couch_view_style === "wheel"
     readonly property bool wallView: library.couch_view_style === "wall"
     readonly property bool albumView: library.couch_view_style === "album"
+    readonly property url previewVideoUrl: browsing.theme_video_url || browsing.video_url || ""
+    readonly property bool hasPreviewVideo: previewVideoUrl.toString().length > 0
+    readonly property var gameVideoPreview: couchVideo
+    readonly property var systemVideoPreview: platformVideo
     readonly property var viewStyles: ["wheel", "shelf", "wall", "album"]
-    readonly property var viewLabels: ["Animated wheel", "Cover shelf", "Cover wall", "Album"]
+    readonly property var viewLabels: ["Logo wheel", "Cover shelf", "Cover wall", "Cover flow"]
     readonly property string viewLabel: viewLabels[Math.max(0, viewStyles.indexOf(library.couch_view_style))]
     readonly property int menuActionCount: 8
     readonly property var categories: [
@@ -485,6 +495,24 @@ Item {
         return true
     }
 
+    function openRelatedGame(index) {
+        // Related records may be outside the current shelf/filter. Keep their
+        // identity explicit instead of reopening the highlighted shelf card.
+        const gameId = details.related_game_id_at(index)
+        if (!gameId) return false
+        selectedDatabaseId = details.related_game_database_id_at(index)
+        selectedTitle = details.related_game_title_at(index)
+        selectedPlatform = details.related_game_platform_at(index)
+        selectedLocal = details.related_game_is_local_at(index)
+        selectedDownloadable = details.related_game_is_downloadable_at(index)
+        selectedGameId = gameId
+        selectedMediaId = library.media_id_for_game(gameId)
+        heroMediaId = selectedMediaId
+        library.request_couch_preview(gameId)
+        requestDetails()
+        return true
+    }
+
     function moveCollectionWheel(delta) {
         if (library.collection_count <= 0)
             return
@@ -511,6 +539,7 @@ Item {
     }
 
     function captureCurrentGame() {
+        if (overlayOpen) return true
         const item = shelf.currentItem
         if (!item) {
             selectionRetry.restart()
@@ -625,6 +654,8 @@ Item {
 
     function closeOverlay() {
         overlayOpen = false
+        loadedGameId = ""
+        loadCurrentGame()
         if (active)
             forceActiveFocus()
     }
@@ -839,6 +870,8 @@ Item {
         if (platformWheelOpen) {
             if (action === "back") {
                 closePlatformWheel()
+            } else if (action === "details") {
+                systemMediaRequested(library.platform_name_at(platformWheelIndex))
             } else if (action === "up" || action === "left") {
                 movePlatformWheel(-1)
             } else if (action === "down" || action === "right") {
@@ -1299,7 +1332,7 @@ Item {
                            && view.navigationZone === 0 ? view.background
                            : view.categoryIndex === categoryButton.index
                              ? view.ink : view.muted
-                    font.pixelSize: 10
+                    font.pixelSize: 12
                     font.weight: Font.Bold
                     font.letterSpacing: 0.8
                 }
@@ -1525,10 +1558,10 @@ Item {
         Text {
             width: parent.width
             height: Math.min(implicitHeight, 112)
-            visible: !view.wallView && !view.albumView
+            visible: !view.wallView && !view.albumView && !(view.cinematicWheel && view.hasPreviewVideo)
             text: view.browsing.description
             color: view.withAlpha(view.ink, 0.86)
-            font.pixelSize: 14
+            font.pixelSize: 18
             lineHeight: 1.34
             wrapMode: Text.WordWrap
             maximumLineCount: 5
@@ -1548,7 +1581,7 @@ Item {
                                             && view.actionIndex === index
                     readonly property bool playAction: index === 0
                                                        && view.primaryAction === "Play"
-                    width: index === 0 ? 190 : index === 1 ? 170 : 52
+                    width: index === 0 ? 190 : index === 1 ? 185 : 52
                     height: 50
                     radius: Math.max(8, view.cardRadius - 4)
                     color: index === 0
@@ -1567,10 +1600,10 @@ Item {
                     Text {
                         anchors.centerIn: parent
                         text: actionButton.index === 0 ? view.primaryAction
-                              : actionButton.index === 1 ? "Game details & tools"
+                              : actionButton.index === 1 ? "Game details"
                               : view.favoriteBusy ? "…" : view.favorite ? "★" : "☆"
                         color: actionButton.index === 0 ? view.background : view.ink
-                        font.pixelSize: actionButton.index === 2 ? 22 : 11
+                        font.pixelSize: actionButton.index === 2 ? 22 : 16
                         font.weight: Font.Bold
                         font.letterSpacing: actionButton.index === 2 ? 0 : 0.7
                     }
@@ -1602,7 +1635,7 @@ Item {
 
     Rectangle {
         id: coverFrame
-        visible: !view.cinematicWheel && !view.wallView && !view.albumView
+        visible: !view.cinematicWheel && !view.wallView && !view.albumView && !view.hasPreviewVideo
         anchors.right: parent.right
         anchors.rightMargin: Math.max(74, parent.width * 0.075)
         anchors.top: brand.bottom
@@ -1647,6 +1680,26 @@ Item {
         }
     }
 
+    CouchVideoPreview {
+        id: couchVideo
+        visible: view.hasPreviewVideo && !view.wallView && !view.albumView
+        x: view.cinematicWheel ? 70 : view.width * 0.55
+        y: view.cinematicWheel ? gameCopy.y + gameCopy.height + 18 : categoryRow.y + categoryRow.height + 38
+        width: view.cinematicWheel ? Math.min(view.width * 0.49, Math.max(200, footer.y - y - 66) * 1.6)
+                                  : view.width * 0.4
+        height: view.cinematicWheel ? Math.max(160, footer.y - y - 20)
+                                   : Math.min(width * 0.62 + 46, shelfArea.y - y - 18)
+        source: view.previewVideoUrl
+        active: view.active && visible && view.inputEnabled && !view.overlayOpen
+                && !view.platformWheelOpen && !view.collectionWheelOpen && !view.variantWheelOpen
+                && !view.attractOpen && !view.launchStatusOverlayOpen && !view.downloadOverlayOpen
+                && !view.details.game_running
+        muted: view.videoMuted
+        label: view.browsing.theme_video_url ? "HYPERSPIN VIDEO THEME" : "GAMEPLAY PREVIEW"
+        onMuteRequested: view.videoMuteRequested()
+        onFullscreenRequested: source => view.videoRequested(source)
+    }
+
     Item {
         id: shelfArea
         x: view.cinematicWheel ? parent.width - width - 44 : view.wallView ? 60 : 0
@@ -1657,7 +1710,7 @@ Item {
         height: view.cinematicWheel
                 ? Math.max(320, footer.y - categoryRow.y - categoryRow.height - 46)
                 : view.wallView || view.albumView ? Math.max(180, footer.y - gameCopy.y - gameCopy.height - 28)
-                : Math.max(250, parent.height * 0.265)
+                : Math.max(250, parent.height * 0.30)
 
         Text {
             anchors.left: parent.left
@@ -1700,8 +1753,10 @@ Item {
             onCardActivated: index => {
                 view.noteActivity()
                 view.navigationZone = 2
+                const selectedAgain = shelf.currentIndex === index
                 shelf.currentIndex = index
                 view.forceActiveFocus()
+                if (selectedAgain) view.requestDetails()
             }
         }
     }
@@ -1793,6 +1848,7 @@ Item {
         selectedGameId: view.selectedGameId
         active: view.active
         blocked: !view.inputEnabled || view.launchStatusOverlayOpen
+                 || (couchVideo.playing && !view.videoMuted)
                  || view.downloadOverlayOpen
                  || view.platformWheelOpen
                  || view.collectionWheelOpen
@@ -2183,11 +2239,11 @@ Item {
         inputHint: view.gamepad.connected_count > 0
                    ? view.gamepad.button_label("accept")
                      + (view.details.launch_busy ? "  CANCEL   ·   " : "  CLOSE   ·   ")
-                     + view.gamepad.button_label("details") + "  DESKTOP DETAILS   ·   "
+                     + view.gamepad.button_label("details") + "  GAME DETAILS   ·   "
                      + view.gamepad.button_label("menu") + "  GAME MENU   ·   "
                      + view.gamepad.button_label("back") + "  CLOSE"
                    : (view.details.launch_busy ? "ENTER  CANCEL   ·   " : "ENTER  CLOSE   ·   ")
-                     + "D  DESKTOP DETAILS   ·   M  GAME MENU   ·   ESC  CLOSE"
+                     + "D  GAME DETAILS   ·   M  GAME MENU   ·   ESC  CLOSE"
         onCloseRequested: view.closeLaunchStatus()
         onCancelRequested: view.details.cancel_launch()
         onDetailsRequested: {
@@ -2221,8 +2277,8 @@ Item {
         Rectangle {
             id: platformWheelPanel
             anchors.centerIn: parent
-            width: Math.min(880, parent.width - 180)
-            height: Math.min(860, parent.height - 120)
+            width: parent.width - 100
+            height: parent.height - 90
             radius: Math.min(32, view.cardRadius + 10)
             color: view.withAlpha(view.panel, 0.97)
             border.color: view.withAlpha(view.muted, 0.58)
@@ -2285,8 +2341,7 @@ Item {
                 id: platformWheel
                 anchors.left: parent.left
                 anchors.leftMargin: 34
-                anchors.right: parent.right
-                anchors.rightMargin: 34
+                width: parent.width * 0.48
                 anchors.top: parent.top
                 anchors.topMargin: 128
                 anchors.bottom: parent.bottom
@@ -2315,7 +2370,7 @@ Item {
                     property bool selected: platformWheel.currentIndex === index
                     property int distance: Math.abs(index - platformWheel.currentIndex)
                     width: platformWheel.width
-                    height: selected ? 84 : 70
+                    height: 84
                     opacity: selected ? 1 : distance <= 2 ? 0.74 : 0.42
                     scale: selected ? 1 : 0.975
                     Behavior on height { NumberAnimation { duration: 110 } }
@@ -2339,13 +2394,20 @@ Item {
                             anchors.left: parent.left
                             anchors.leftMargin: 16
                             anchors.verticalCenter: parent.verticalCenter
-                            width: platformRow.selected ? 52 : 44
-                            height: width
+                            width: 96
+                            height: 58
                             radius: 14
-                            color: view.accentFor(platformRow.platformName)
-                            border.color: view.withAlpha(view.ink, 0.51)
+                            color: platformRowLogo.status === Image.Ready ? "transparent" : view.withAlpha(view.panel, 0.8)
+                            border.color: "transparent"
+                            Image {
+                                id: platformRowLogo
+                                anchors { fill: parent; margins: 4 }
+                                source: { view.mediaRevision; return view.library.platform_media_url(platformRow.platformName, "clear-logo") }
+                                asynchronous: true; fillMode: Image.PreserveAspectFit; sourceSize: Qt.size(240, 140)
+                            }
                             Text {
                                 anchors.centerIn: parent
+                                visible: platformRowLogo.status !== Image.Ready
                                 text: platformRow.platformName.length > 0
                                       ? platformRow.platformName.charAt(0).toUpperCase() : "?"
                                 color: view.withAlpha(view.ink, 0.97)
@@ -2356,7 +2418,7 @@ Item {
 
                         Column {
                             anchors.left: parent.left
-                            anchors.leftMargin: platformRow.selected ? 88 : 78
+                            anchors.leftMargin: 128
                             anchors.right: countColumn.left
                             anchors.rightMargin: 24
                             anchors.verticalCenter: parent.verticalCenter
@@ -2409,6 +2471,52 @@ Item {
                         }
                     }
                 }
+            }
+
+            MomentumFlickable {
+                anchors { left: platformWheel.right; right: parent.right; top: parent.top; bottom: parent.bottom; topMargin: 145; bottomMargin: 90; leftMargin: 40; rightMargin: 40 }
+                clip: true; contentWidth: width; contentHeight: platformPresentation.height
+              Column {
+                id: platformPresentation
+                width: parent.width
+                property string platform: view.library.platform_name_at(view.platformWheelIndex)
+                property url videoUrl: { view.mediaRevision; return view.library.platform_media_url(platform, "video") }
+                spacing: 24
+                Image {
+                    id: platformHeroLogo
+                    width: parent.width; height: status === Image.Ready ? 120 : 0
+                    source: { view.mediaRevision; return view.library.platform_media_url(platformPresentation.platform, "clear-logo") }
+                    asynchronous: true; fillMode: Image.PreserveAspectFit; sourceSize: Qt.size(800, 260)
+                }
+                Text {
+                    width: parent.width; text: platformPresentation.platform
+                    color: view.ink; font.pixelSize: 30; font.weight: Font.Bold
+                    wrapMode: Text.WordWrap; horizontalAlignment: Text.AlignHCenter
+                }
+                CouchVideoPreview {
+                    id: platformVideo
+                    width: parent.width
+                    height: Math.min(width * 0.5625 + 46, platformWheelPanel.height * 0.43)
+                    visible: platformPresentation.videoUrl.toString().length > 0
+                    source: platformPresentation.videoUrl
+                    active: view.active && view.platformWheelOpen && view.inputEnabled && visible
+                    muted: view.videoMuted; label: "PLATFORM VIDEO THEME"
+                    onMuteRequested: view.videoMuteRequested()
+                    onFullscreenRequested: source => view.videoRequested(source)
+                }
+                Text {
+                    width: parent.width
+                    text: "Browse this system’s games, or customize its wheel artwork and video theme."
+                    color: view.muted; font.pixelSize: 16; lineHeight: 1.3
+                    wrapMode: Text.WordWrap; horizontalAlignment: Text.AlignHCenter
+                }
+                LbButton {
+                    width: parent.width; height: 52
+                    text: (view.gamepad.connected_count > 0 ? view.gamepad.button_label("details") : "D") + "  ·  System media"
+                    contentItem: LbButtonLabel { control: parent; pixelSize: 18 }
+                    onClicked: view.systemMediaRequested(platformPresentation.platform)
+                }
+              }
             }
 
             Rectangle {
@@ -3105,6 +3213,8 @@ Item {
                 gameTitle: view.selectedTitle
                 platform: view.selectedPlatform
                 coverUrl: view.coverUrl
+                backgroundUrl: view.heroUrl
+                logoUrl: { view.library.media_revision; return view.library.exact_artwork_url(view.selectedMediaId, "clear-logo") }
                 primaryAction: view.primaryAction
                 favorite: view.favorite
                 ready: view.detailsCurrent && !view.details.loading
@@ -3760,6 +3870,12 @@ Item {
             if (view.active)
                 view.loadCurrentGame()
         }
+    }
+
+    Timer {
+        id: previewRefresh
+        interval: 240
+        onTriggered: if (view.active && view.selectedGameId) view.library.request_couch_preview(view.selectedGameId)
     }
 
     Timer {

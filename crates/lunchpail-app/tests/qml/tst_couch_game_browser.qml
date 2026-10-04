@@ -71,6 +71,19 @@ TestCase {
         browser.positionViewAtEnd()
         tryVerify(function() { return browser.currentItem && browser.currentItem.gameId === "game-35" })
     }
+    function test_switching_to_wall_keeps_selected_cover_fully_visible() {
+        const browser = createTemporaryObject(browserComponent, this, {width: 1800, height: 658})
+        tryCompare(browser, "count", 36)
+        browser.currentIndex = 7
+        browser.viewStyle = "wall"
+        tryVerify(function() { return browser.currentItem && browser.currentItem.gameId === "game-7" })
+        browser.height = 450
+        tryVerify(function() {
+            const card = browser.currentItem
+            const position = card.mapToItem(browser, 0, 0)
+            return position.y >= -1 && position.y + card.height <= browser.height + 1
+        }, 1000, "The selected wall cover must not be clipped by the viewport")
+    }
     function test_all_views_report_visible_media_and_clear_old_view() {
         const browser = createTemporaryObject(browserComponent, this)
         tryCompare(browser, "count", 36)

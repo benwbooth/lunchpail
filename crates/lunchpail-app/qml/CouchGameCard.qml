@@ -57,9 +57,9 @@ Item {
         anchors.fill: parent
         anchors.margins: 9
         radius: 12
-        color: card.wheel ? "transparent" : card.panel
-        border.color: card.wheel ? "transparent" : card.selected ? card.accent : Qt.rgba(1, 1, 1, 0.14)
-        border.width: card.wheel ? 0 : card.selected ? 2 : 1
+        color: card.wheel ? (card.selected ? Qt.rgba(0.03, 0.06, 0.1, 0.72) : "transparent") : card.panel
+        border.color: card.wheel ? (card.selected ? Qt.rgba(card.accent.r, card.accent.g, card.accent.b, 0.6) : "transparent") : card.selected ? card.accent : Qt.rgba(1, 1, 1, 0.14)
+        border.width: card.selected ? 2 : 1
         scale: card.wheel || card.selected ? 1 : hover.hovered ? 1.025 : 0.97
         Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
         Image {
@@ -68,8 +68,8 @@ Item {
             anchors.margins: card.wheel ? 14 : 5
             anchors.bottomMargin: card.wheel ? 14 : 52
             source: card.artwork
-            sourceSize.width: card.wheel ? 640 : 320
-            sourceSize.height: card.wheel ? 240 : 448
+            sourceSize.width: card.wheel ? 640 : 480
+            sourceSize.height: card.wheel ? 240 : 640
             asynchronous: true
             cache: true
             mipmap: !card.wheel
@@ -102,8 +102,8 @@ Item {
             height: 34
             text: card.gameTitle
             color: card.ink
-            font.pixelSize: 14
-            minimumPixelSize: 10
+            font.pixelSize: 16
+            minimumPixelSize: 12
             fontSizeMode: Text.Fit
             font.weight: Font.DemiBold
             wrapMode: Text.WordWrap
@@ -117,6 +117,11 @@ Item {
             width: 8; height: 8; radius: 4
             visible: card.gameLocal && !card.wheel
             color: "#5ee391"
+        }
+        Rectangle {
+            visible: card.wheel && card.selected
+            anchors { left: parent.left; verticalCenter: parent.verticalCenter; leftMargin: 7 }
+            width: 4; height: parent.height * 0.42; radius: 2; color: card.accent
         }
         FavoriteButton {
             anchors.left: parent.left

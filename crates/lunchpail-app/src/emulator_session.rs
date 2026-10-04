@@ -127,12 +127,25 @@ fn write(path: &Path, session: &impl Serialize) -> Result<()> {
     Ok(())
 }
 
+fn has_owned_launch_argument(command: &[std::ffi::OsString], data: &Path, cache: &Path) -> bool {
+    let display_prefix = data.join("launch-display").join("retroarch-");
+    let preparation_prefix = cache.join("launch-preparation").join("session-");
+    command.iter().any(|argument| {
+        let value = argument.to_string_lossy();
+        value.contains(display_prefix.to_string_lossy().as_ref())
+            || value.contains(preparation_prefix.to_string_lossy().as_ref())
+    })
+}
+
 fn owned_retroarch_orphan() -> Option<Session> {
     // Migration for games started before this record existed. The generated
     // Lunchpail config/content path distinguishes our session from a user's
     // independently launched RetroArch process.
     // Refresh processes once. `new_all()` already refreshes everything, so
     // pairing it with `refresh_processes` doubled the cost of every poll.
+    // Match this profile's directories, not any path named "lunchpail". An
+    // isolated test/profile must never adopt another profile's real game.
+    let directories = crate::app_paths::project_dirs()?;
     let mut system = System::new();
     system.refresh_processes_specifics(
         ProcessesToUpdate::All,
@@ -149,11 +162,11 @@ fn owned_retroarch_orphan() -> Option<Session> {
                 .name()
                 .to_string_lossy()
                 .eq_ignore_ascii_case("retroarch")
-            && process.cmd().iter().any(|arg| {
-                let value = arg.to_string_lossy();
-                value.contains("/lunchpail/launch-display/retroarch-")
-                    || value.contains("/lunchpail/launch-preparation/session-")
-            })
+            && has_owned_launch_argument(
+                process.cmd(),
+                directories.data_local_dir(),
+                directories.cache_dir(),
+            )
     })?;
     let pid = process.pid().as_u32();
     let title = process
@@ -474,6 +487,43 @@ pub fn stop(session: &Session) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn orphan_recovery_does_not_cross_profile_directories() {
+        let data = Path::new("/profiles/real/data/lunchpail");
+        let cache = Path::new("/profiles/real/cache/lunchpail");
+        let command = vec![
+            "retroarch".into(),
+            "--appendconfig".into(),
+            format!(
+                "/controller/settings.cfg|{}",
+                data.join("launch-display")
+                    .join("retroarch-test.cfg")
+                    .display()
+            )
+            .into(),
+        ];
+        assert!(has_owned_launch_argument(&command, data, cache));
+        assert!(!has_owned_launch_argument(
+            &command,
+            Path::new("/profiles/test/data/lunchpail"),
+            Path::new("/profiles/test/cache/lunchpail"),
+        ));
+        assert!(has_owned_launch_argument(
+            &[cache
+                .join("launch-preparation")
+                .join("session-test")
+                .join("game.nes")
+                .into_os_string()],
+            data,
+            cache,
+        ));
+        assert!(!has_owned_launch_argument(
+            &["/games/game.nes".into()],
+            data,
+            cache
+        ));
+    }
 
     #[test]
     fn current_process_identity_is_stable_and_wrong_birth_time_is_rejected() {

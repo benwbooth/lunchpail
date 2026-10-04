@@ -457,6 +457,7 @@ pub struct MediaAsset {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct SupplementalMedia {
     pub video: Option<MediaAsset>,
+    pub theme_video: Option<MediaAsset>,
     pub manual: Option<MediaAsset>,
     pub soundtrack: Vec<SoundtrackAsset>,
 }
@@ -645,6 +646,14 @@ impl MediaIndex {
         self.games.get(&database_id)?.exact(kind)
     }
 
+    pub fn exact_candidates(&self, database_id: i64, kind: ArtworkKind) -> &[MediaAsset] {
+        self.games
+            .get(&database_id)
+            .and_then(|media| media.assets.get(&kind))
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
     pub fn candidate_count(&self, database_id: i64, kind: ArtworkKind) -> usize {
         self.games
             .get(&database_id)
@@ -725,11 +734,21 @@ pub fn supplemental_media(game_id: &str, database_id: i64) -> Result<Supplementa
     for directory in directories {
         let candidate = scan_supplemental_directory(&root, &directory, &provider_priority)?;
         select_supplemental_asset(&mut selected.video, candidate.video);
+        select_supplemental_asset(&mut selected.theme_video, candidate.theme_video);
         select_supplemental_asset(&mut selected.manual, candidate.manual);
         selected.soundtrack.extend(candidate.soundtrack);
     }
     sort_soundtrack_assets(&mut selected.soundtrack);
     Ok(selected)
+}
+
+/// Platform artwork has its own identity namespace, never a synthetic game ID.
+pub fn platform_media_directory(platform: &str) -> PathBuf {
+    let digest = format!(
+        "{:x}",
+        Sha256::digest(platform.trim().to_lowercase().as_bytes())
+    );
+    requested_media_directory().join("platforms").join(digest)
 }
 
 pub fn game_media_directory(game_id: &str, database_id: i64) -> Result<PathBuf> {
@@ -887,7 +906,12 @@ fn scan_supplemental_directory(
                 continue;
             };
             let extension = extension.to_ascii_lowercase();
-            let (target, format_rank) = if stem == "video" {
+            let (target, format_rank) = if stem == "theme-video" {
+                let Some(rank) = video_format_rank(&extension) else {
+                    continue;
+                };
+                (&mut result.theme_video, rank)
+            } else if stem == "video" {
                 let Some(rank) = video_format_rank(&extension) else {
                     continue;
                 };
@@ -3201,6 +3225,19 @@ mod tests {
             PathBuf::from("cover.png")
         );
         assert!(media.exact(ArtworkKind::ClearLogo).is_none());
+        let mut index = MediaIndex::default();
+        index.games.insert(140, media);
+        assert_eq!(index.exact_candidates(140, ArtworkKind::BoxFront).len(), 1);
+        assert!(
+            index
+                .exact_candidates(140, ArtworkKind::ClearLogo)
+                .is_empty()
+        );
+        assert!(
+            index
+                .exact_candidates(140, ArtworkKind::Screenshot)
+                .is_empty()
+        );
     }
 
     #[test]
@@ -3327,6 +3364,43 @@ mod tests {
         let manual = media.manual.unwrap();
         assert_eq!(manual.source, "minerva");
         assert!(manual.path.ends_with("minerva/manual.zip"));
+    }
+
+    #[test]
+    fn hyperspin_themes_do_not_replace_gameplay_video() {
+        let directory = tempfile::tempdir().unwrap();
+        touch(&directory.path().join("lb-140/emumovies/video.mp4"));
+        touch(&directory.path().join("lb-140/emumovies/theme-video.mp4"));
+        touch(&directory.path().join("lb-140/local/theme-video.webm"));
+        let media = scan_supplemental_directory(
+            directory.path(),
+            &directory.path().join("lb-140"),
+            &default_provider_priority(),
+        )
+        .unwrap();
+        assert!(media.video.unwrap().path.ends_with("emumovies/video.mp4"));
+        assert!(
+            media
+                .theme_video
+                .unwrap()
+                .path
+                .ends_with("local/theme-video.webm")
+        );
+    }
+
+    #[test]
+    fn platform_media_paths_are_contained_and_distinct_from_games() {
+        let root = requested_media_directory().join("platforms");
+        let system = platform_media_directory("../../Nintendo Entertainment System");
+        assert_eq!(system.parent(), Some(root.as_path()));
+        assert_ne!(
+            system,
+            platform_media_directory("Nintendo Entertainment System")
+        );
+        assert_eq!(
+            platform_media_directory(" NES "),
+            platform_media_directory("nes")
+        );
     }
 
     #[test]

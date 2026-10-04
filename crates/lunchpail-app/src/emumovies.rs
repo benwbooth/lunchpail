@@ -723,6 +723,34 @@ fn video_folder_name(folder_path: &str) -> &str {
     folder_path.rsplit('/').next().unwrap_or(folder_path)
 }
 
+fn choose_platform_video(entries: &[String], candidates: &[String]) -> Option<String> {
+    let mut ranked = entries
+        .iter()
+        .filter_map(|path| {
+            let filename = path.rsplit('/').next()?;
+            if !filename.to_ascii_lowercase().ends_with(".mp4") {
+                return None;
+            }
+            let stem = filename.split(" - ").next()?.split(" (").next()?.trim();
+            let identity = candidates
+                .iter()
+                .position(|candidate| exact_platform_key_match(stem, candidate))?;
+            let lower = filename.to_ascii_lowercase();
+            // The standard widescreen Unified theme is the least surprising default.
+            let rank = (
+                identity,
+                !lower.contains(" - unified ("),
+                !lower.contains("16x9"),
+                !lower.contains("(hd)"),
+            );
+            Some((rank, path))
+        })
+        .collect::<Vec<_>>();
+    ranked
+        .sort_by(|(a_rank, a_path), (b_rank, b_path)| a_rank.cmp(b_rank).then(a_path.cmp(b_path)));
+    ranked.first().map(|(_, path)| (*path).clone())
+}
+
 fn video_folder_platform_stem(folder_path: &str) -> &str {
     let folder_name = video_folder_name(folder_path);
     folder_name.split(" (").next().unwrap_or(folder_name).trim()
@@ -2368,13 +2396,27 @@ impl EmuMoviesClient {
         game_cache_dir: Option<&Path>,
         progress: Option<&ProgressCallback>,
     ) -> Result<Vec<String>> {
+        self.find_video_folders_kind(platform, game_cache_dir, progress, false)
+    }
+
+    fn find_video_folders_kind(
+        &self,
+        platform: &str,
+        game_cache_dir: Option<&Path>,
+        progress: Option<&ProgressCallback>,
+        themes: bool,
+    ) -> Result<Vec<String>> {
         report_progress(progress, 0.0)?;
         let search_candidates = emumovies_platform_search_candidates(platform);
-        let cache_key = search_candidates
-            .iter()
-            .map(|candidate| normalize_emumovies_platform_key(candidate))
-            .collect::<Vec<_>>()
-            .join("|");
+        let cache_key = format!(
+            "{}:{}",
+            if themes { "themes" } else { "snaps" },
+            search_candidates
+                .iter()
+                .map(|candidate| normalize_emumovies_platform_key(candidate))
+                .collect::<Vec<_>>()
+                .join("|")
+        );
 
         if let Some(cached) = VIDEO_FOLDER_CACHE
             .get_or_init(|| Mutex::new(HashMap::new()))
@@ -2386,15 +2428,15 @@ impl EmuMoviesClient {
             return Ok(cached);
         }
 
-        let bases = ["/Official/Video Snaps (HQ)", "/Official/Video Snaps (SQ)"];
+        let bases = if themes {
+            ["/Official/Video Themes (HD)", "/Official/Video Themes (HQ)"]
+        } else {
+            ["/Official/Video Snaps (HQ)", "/Official/Video Snaps (SQ)"]
+        };
         let mut matches: Vec<VideoFolderCandidate> = Vec::new();
 
         for (source_order, video_base) in bases.iter().enumerate() {
-            let base_label = if video_base.contains("(HQ)") {
-                "HQ video folders"
-            } else {
-                "SQ video folders"
-            };
+            let base_label = video_base.rsplit('/').next().unwrap_or(video_base);
             if let Some(game_cache_dir) = game_cache_dir {
                 update_video_download_status(
                     game_cache_dir,
@@ -2473,6 +2515,101 @@ impl EmuMoviesClient {
         }
 
         Ok(ordered_paths)
+    }
+
+    /// HyperSpin themes are pre-rendered videos, not gameplay snaps. Keep a
+    /// distinct filename so a theme can never replace a game's preview clip.
+    pub fn get_theme_video(
+        &self,
+        platform: &str,
+        game_name: &str,
+        game_cache_dir: &Path,
+        progress: Option<&ProgressCallback>,
+    ) -> Result<PathBuf> {
+        let output = game_cache_dir.join("emumovies").join("theme-video.mp4");
+        let lock = get_soundtrack_download_lock(&output);
+        let _guard = lock
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Theme video transfer lock unavailable"))?;
+        if is_nonempty_file(&output) {
+            return Ok(output);
+        }
+        let folders = self.find_video_folders_kind(platform, None, progress, true)?;
+        let mut selected: Option<(String, VideoMatchKind, f32, u8, usize)> = None;
+        for (order, folder) in folders.iter().enumerate() {
+            report_progress(progress, 0.0)?;
+            let index = self.get_video_index(folder, None, progress)?;
+            let Some((path, kind, score)) = find_best_video_match(&index, game_name) else {
+                continue;
+            };
+            let rank = video_folder_match_rank_for_platform(folder, platform).unwrap_or(255);
+            if selected.as_ref().is_none_or(
+                |(_, current_kind, current_score, current_rank, current_order)| {
+                    compare_video_candidates(
+                        kind,
+                        rank,
+                        score,
+                        order,
+                        *current_kind,
+                        *current_rank,
+                        *current_score,
+                        *current_order,
+                    ) == Ordering::Greater
+                },
+            ) {
+                selected = Some((path, kind, score, rank, order));
+            }
+        }
+        let (remote, _, _, _, _) = selected.ok_or_else(|| anyhow::anyhow!(
+            "No EmuMovies HyperSpin video theme found for '{game_name}' on {platform}. Theme coverage is incomplete; gameplay videos remain available separately."
+        ))?;
+        self.download_direct_file(&remote, &output, progress, "HyperSpin video theme")?;
+        Ok(output)
+    }
+
+    pub fn get_platform_logo(
+        &self,
+        platform: &str,
+        directory: &Path,
+        progress: Option<&ProgressCallback>,
+    ) -> Result<PathBuf> {
+        for candidate in emumovies_platform_search_candidates(platform) {
+            if let Some(path) = self.try_get_media_from_archive(
+                platform,
+                EmuMoviesMediaType::ClearLogo,
+                &candidate,
+                directory,
+                progress,
+            )? {
+                return Ok(path);
+            }
+        }
+        anyhow::bail!("No system logo found in the EmuMovies logo pack for {platform}")
+    }
+
+    pub fn get_platform_video(
+        &self,
+        platform: &str,
+        directory: &Path,
+        progress: Option<&ProgressCallback>,
+    ) -> Result<PathBuf> {
+        let output = directory.join("emumovies").join("theme-video.mp4");
+        let lock = get_soundtrack_download_lock(&output);
+        let _guard = lock
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Platform video transfer lock unavailable"))?;
+        if is_nonempty_file(&output) {
+            return Ok(output);
+        }
+        report_progress(progress, 0.0)?;
+        let candidates = emumovies_platform_search_candidates(platform);
+        let entries = self.list_files_with_progress("/Official/Platform Videos", |_| {
+            progress.is_none_or(|callback| callback(0.0))
+        })?;
+        let remote = choose_platform_video(&entries, &candidates)
+            .ok_or_else(|| anyhow::anyhow!("No platform video found for {platform}"))?;
+        self.download_direct_file(&remote, &output, progress, "platform video theme")?;
+        Ok(output)
     }
 
     /// Build or load a cached video index for a specific FTP folder.
@@ -2962,6 +3099,59 @@ fn move_article_to_end(name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn platform_video_selection_prefers_unified_widescreen_without_crossing_systems() {
+        let entries = [
+            "/Official/Platform Videos/Nintendo Entertainment System - EM Default (4x3)(HQ).mp4",
+            "/Official/Platform Videos/Super Nintendo Entertainment System - Unified (16x9)(HD).mp4",
+            "/Official/Platform Videos/Nintendo Entertainment System - Unified (16x9)(HD).mp4",
+            "/Official/Platform Videos/Nintendo Entertainment System - Unified Alt (16x9)(HD).mp4",
+        ].map(str::to_owned);
+        let selected = choose_platform_video(
+            &entries,
+            &emumovies_platform_search_candidates("Nintendo Entertainment System"),
+        );
+        assert_eq!(selected.as_deref(), Some(entries[2].as_str()));
+        assert!(
+            choose_platform_video(
+                &entries,
+                &emumovies_platform_search_candidates("Nintendo 64")
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn cached_theme_is_distinct_from_cached_gameplay_and_needs_no_ftp() {
+        let directory = tempfile::tempdir().unwrap();
+        let provider = directory.path().join("emumovies");
+        std::fs::create_dir_all(&provider).unwrap();
+        std::fs::write(provider.join("video.mp4"), b"gameplay").unwrap();
+        std::fs::write(provider.join("theme-video.mp4"), b"theme").unwrap();
+        let client =
+            EmuMoviesClient::new(EmuMoviesConfig::default(), directory.path().to_path_buf());
+        assert_eq!(
+            client
+                .get_theme_video("NES", "Game", directory.path(), None)
+                .unwrap(),
+            provider.join("theme-video.mp4")
+        );
+        assert_eq!(
+            std::fs::read(provider.join("video.mp4")).unwrap(),
+            b"gameplay"
+        );
+    }
+
+    #[test]
+    fn hyperspin_folder_names_match_their_exact_platform() {
+        let path = "/Official/Video Themes (HD)/Nintendo Entertainment System (Video Themes-HyperSpin)(4x3)(HD)(Riffman81 1.1)";
+        assert_eq!(
+            video_folder_match_rank_for_platform(path, "Nintendo Entertainment System"),
+            Some(0)
+        );
+        assert!(video_folder_match_rank_for_platform(path, "Nintendo 64").is_none());
+    }
 
     /// Scratch diagnostic: report what the details model loads for Zelda LttP.
     #[test]

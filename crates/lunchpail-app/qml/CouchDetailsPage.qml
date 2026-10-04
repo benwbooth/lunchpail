@@ -11,6 +11,8 @@ Rectangle {
     property string gameTitle: ""
     property string platform: ""
     property url coverUrl: ""
+    property url backgroundUrl: ""
+    property url logoUrl: ""
     property string primaryAction: "Play"
     property bool favorite: false
     property bool ready: false
@@ -23,20 +25,44 @@ Rectangle {
     property int navigationArea: 0 // action rail, tabs, content
     property int actionIndex: 0
     property int toolIndex: 0
-    readonly property var tabs: ["Overview", "Play & setup", "Media", "Activity"]
+    readonly property real gutter: Math.max(24, Math.min(64, width * 0.035))
+    readonly property var tabs: ["Overview", "Play & setup", "Media", "Activity", "Library"]
     readonly property var tools: tabIndex === 1 ? [
         { label: "Display & save states", hint: "Display shaders, bezels and automatic resume", key: "display" },
         { label: "Controllers", hint: "Players and button mappings", key: "controllers" },
         { label: "Translations & mods", hint: "Community patches and cheats", key: "mods" },
         { label: "RetroAchievements", hint: "Achievement mode and account", key: "achievements" },
         { label: "ROMs & save files", hint: "Versions, backups and uninstall", key: "files" },
-        { label: "Advanced game tools", hint: "Every remaining game option", key: "advanced" }
+        { label: "Emulator & launch", hint: "Runtime, defaults, launch profiles and PC setup", key: "launch" }
     ] : tabIndex === 2 ? [
         { label: "View artwork", hint: "Full-size artwork gallery", key: "artwork" },
-        { label: "Play video", hint: "Gameplay preview", key: "video" },
+        { label: "Watch video", hint: "Gameplay preview and playback controls", key: "video" },
         { label: "Find better media", hint: "Choose replacement artwork", key: "find-media" },
-        { label: "Manual & music", hint: "Cached media and downloads", key: "media" }
+        { label: "Themes & system media", hint: "HyperSpin videos and system wheel artwork", key: "themes" },
+        { label: "Manual & music", hint: "Cached media and downloads", key: "media" },
+        { label: "3D box", hint: "Rotate and inspect the game box", key: "box3d" }
+    ] : tabIndex === 4 ? [
+        { label: "Edit information", hint: "Metadata, notes, tags and custom fields", key: "metadata" },
+        { label: "Collections", hint: "Organize this game in your library", key: "collections" },
+        { label: "Related games", hint: "More from this series and its creators", key: "related" },
+        { label: "Catalog & links", hint: "Sources, release information and websites", key: "catalog" }
     ] : []
+    readonly property var facts: {
+        if (!ready) return []
+        const fields = [["Released", "release_date"], ["Developer", "developer"],
+            ["Publisher", "publisher"], ["Genre", "genre"], ["Players", "players"],
+            ["Play mode", "play_mode"], ["Series", "series"], ["Region", "region"],
+            ["Version", "version"], ["Age rating", "esrb"], ["Release type", "release_type"],
+            ["Status", "release_status"], ["Rating", "rating"]]
+        const result = []
+        for (const field of fields) {
+            const value = details[field[1]]
+            if (value) result.push({label: field[0], value: String(value)})
+        }
+        if (details.cooperative && details.cooperative !== "unknown")
+            result.push({label: "Co-op", value: details.cooperative === "yes" ? "Supported" : "Not supported"})
+        return result
+    }
     signal closeRequested()
     signal primaryRequested()
     signal favoriteRequested()
@@ -45,8 +71,35 @@ Rectangle {
 
     objectName: "couchDetailsPage"
     color: background
+    Image {
+        anchors.fill: parent; source: page.backgroundUrl
+        asynchronous: true; fillMode: Image.PreserveAspectCrop
+        sourceSize: Qt.size(1920, 1080); opacity: 0.35
+    }
+    Rectangle {
+        anchors.fill: parent
+        gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0; color: page.background }
+            GradientStop { position: 0.55; color: Qt.rgba(page.background.r, page.background.g, page.background.b, 0.90) }
+            GradientStop { position: 1; color: Qt.rgba(page.background.r, page.background.g, page.background.b, 0.48) }
+        }
+    }
+    Rectangle {
+        anchors.fill: parent
+        gradient: Gradient {
+            GradientStop { position: 0; color: "transparent" }
+            GradientStop { position: 1; color: page.background }
+        }
+    }
     function reset() { tabIndex = 0; navigationArea = 0; actionIndex = 0; toolIndex = 0; overview.contentY = 0 }
-    function chooseTab(index) { tabIndex = Math.max(0, Math.min(tabs.length - 1, index)); toolIndex = 0; overview.contentY = 0 }
+    function chooseTab(index) { tabIndex = Math.max(0, Math.min(tabs.length - 1, index)); toolIndex = 0; overview.contentY = 0; toolScroll.contentY = 0 }
+    onToolIndexChanged: {
+        const item = toolRepeater.itemAt(toolIndex)
+        if (item) toolScroll.contentY = Math.max(0, Math.min(toolScroll.contentHeight - toolScroll.height,
+            item.y + item.height > toolScroll.contentY + toolScroll.height
+            ? item.y + item.height - toolScroll.height : Math.min(item.y, toolScroll.contentY)))
+    }
     function activateRail() {
         if (actionIndex === 0) primaryRequested()
         else if (actionIndex === 1) favoriteRequested()
@@ -87,26 +140,27 @@ Rectangle {
 
     RowLayout {
         id: header
-        anchors { left: parent.left; right: parent.right; top: parent.top; margins: 38 }
+        anchors { left: parent.left; right: parent.right; top: parent.top; margins: page.gutter }
         spacing: 24
         ColumnLayout {
             Layout.fillWidth: true
             spacing: 7
-            Text { text: page.platform; color: page.accent; font.pixelSize: 15; font.weight: Font.DemiBold }
+            Text { text: page.platform.toUpperCase(); color: page.accent; font.pixelSize: 14; font.letterSpacing: 1.6; font.weight: Font.DemiBold }
             Text {
                 Layout.fillWidth: true
-                text: page.gameTitle; color: page.ink; font.pixelSize: 36; font.weight: Font.Bold
+                text: page.gameTitle; color: page.ink; font.pixelSize: 42; font.weight: Font.Bold
                 minimumPixelSize: 22; fontSizeMode: Text.Fit; maximumLineCount: 2; wrapMode: Text.WordWrap
             }
         }
         LbRoundButton { text: "×"; implicitWidth: 48; implicitHeight: 48; Accessible.name: "Back to games"; onClicked: page.closeRequested() }
     }
     RowLayout {
-        anchors { left: parent.left; right: parent.right; top: header.bottom; bottom: help.top; margins: 38 }
-        spacing: 42
+        anchors { left: parent.left; right: parent.right; top: header.bottom; bottom: help.top; margins: page.gutter }
+        spacing: page.gutter
         ColumnLayout {
             id: rail
-            Layout.preferredWidth: Math.min(340, page.width * 0.28)
+            Layout.preferredWidth: Math.min(320, page.width * 0.25)
+            Layout.maximumWidth: Math.min(320, page.width * 0.25)
             Layout.fillHeight: true
             spacing: 12
             Item {
@@ -114,9 +168,15 @@ Rectangle {
                 Image {
                     id: cover
                     anchors.fill: parent; source: page.coverUrl; fillMode: Image.PreserveAspectFit
-                    asynchronous: true; sourceSize: Qt.size(480, 680); cache: true
+                    asynchronous: true; sourceSize: Qt.size(640, 900); cache: true; mipmap: true
                 }
                 Text { anchors.centerIn: parent; visible: cover.status !== Image.Ready; text: page.gameTitle.charAt(0); color: page.muted; font.pixelSize: 96 }
+            }
+            Image {
+                Layout.fillWidth: true; Layout.preferredHeight: visible ? 46 : 0
+                visible: status === Image.Ready
+                source: page.logoUrl; fillMode: Image.PreserveAspectFit; asynchronous: true
+                sourceSize: Qt.size(560, 160)
             }
             Repeater {
                 model: [page.primaryAction, page.favorite ? "Remove favorite" : "Add favorite", "Other releases"]
@@ -148,7 +208,7 @@ Rectangle {
                         objectName: "couchDetailsTab" + index
                         Layout.fillWidth: true; Layout.preferredHeight: 48
                         text: modelData; highlighted: page.tabIndex === index
-                        contentItem: LbButtonLabel { control: parent; pixelSize: 17 }
+                        contentItem: LbButtonLabel { control: parent; pixelSize: 16 }
                         onClicked: { page.chooseTab(index); page.navigationArea = 1 }
                     }
                 }
@@ -171,13 +231,18 @@ Rectangle {
                                   : page.details.activity_visible ? page.details.play_count + " plays · " + page.details.play_time : "You haven’t played this game yet."
                             color: page.ink; font.pixelSize: 21; lineHeight: 1.4; wrapMode: Text.WordWrap
                         }
-                        Flow {
-                            width: parent.width; spacing: 18
+                        GridLayout {
+                            width: parent.width; columns: 2; columnSpacing: 32; rowSpacing: 22
                             Repeater {
-                                model: !page.ready ? [] : page.tabIndex === 0
-                                    ? [page.details.release_date, page.details.genre, page.details.developer, page.details.players ? page.details.players + " players" : "", page.details.rating ? "★ " + page.details.rating : ""]
-                                    : [page.details.last_played ? "Last played " + page.details.last_played : "", (page.details.completion_state || "").replace(/-/g, " ")]
-                                delegate: Text { required property var modelData; visible: !!modelData; text: modelData || ""; color: page.muted; font.pixelSize: 17; width: Math.min(implicitWidth, copy.width); wrapMode: Text.WordWrap }
+                                model: page.tabIndex === 0 ? page.facts : !page.ready ? [] : [
+                                    {label: "Last played", value: page.details.last_played || "Not yet"},
+                                    {label: "Completion", value: (page.details.completion_state || "Not set").replace(/[-_]/g, " ")}]
+                                delegate: ColumnLayout {
+                                    required property var modelData
+                                    Layout.fillWidth: true; spacing: 5
+                                    Text { text: parent.modelData.label.toUpperCase(); color: page.muted; font.pixelSize: 12; font.letterSpacing: 1.2 }
+                                    Text { Layout.fillWidth: true; text: parent.modelData.value; color: page.ink; font.pixelSize: 19; wrapMode: Text.WordWrap }
+                                }
                             }
                         }
                         Text {
@@ -186,22 +251,29 @@ Rectangle {
                         }
                         LbButton {
                             visible: page.tabIndex === 3; width: parent.width; height: 52
-                            text: "View play sessions"; enabled: page.ready
+                            text: "Activity, completion & play sessions"; enabled: page.ready
                             onClicked: page.manageRequested("activity")
                         }
                     }
                 }
-                GridLayout {
-                    anchors { left: parent.left; right: parent.right; top: parent.top }
+                MomentumFlickable {
+                    id: toolScroll
+                    anchors.fill: parent; clip: true
                     visible: page.tools.length > 0
+                    contentWidth: width; contentHeight: toolGrid.implicitHeight
+                    ScrollBar.vertical: LbScrollBar { policy: ScrollBar.AsNeeded }
+                    GridLayout {
+                    id: toolGrid
+                    width: parent.width - 16
                     columns: 2; columnSpacing: 16; rowSpacing: 16
                     Repeater {
+                        id: toolRepeater
                         model: page.tools
                         delegate: LbButton {
                             required property int index
                             required property var modelData
                             objectName: "couchDetailsTool" + index
-                            Layout.fillWidth: true; Layout.preferredHeight: 118
+                            Layout.fillWidth: true; Layout.preferredHeight: Math.max(102, Math.min(132, (toolScroll.height - 32) / 3))
                             highlighted: page.navigationArea === 2 && page.toolIndex === index
                             enabled: page.ready
                             text: modelData.label
@@ -216,6 +288,7 @@ Rectangle {
                             }
                             onClicked: { page.navigationArea = 2; page.toolIndex = index; page.manageRequested(modelData.key) }
                         }
+                    }
                     }
                 }
             }

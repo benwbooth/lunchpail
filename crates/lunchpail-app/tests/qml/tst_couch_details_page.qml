@@ -16,6 +16,10 @@ TestCase {
         property string developer: "Nintendo"
         property string players: "2"
         property string rating: "4.5"
+        property string publisher: "Nintendo"
+        property string region: "North America"
+        property string series: "Super Mario"
+        property string cooperative: "no"
         property bool activity_visible: true
         property int play_count: 4
         property string play_time: "2 hours"
@@ -49,7 +53,7 @@ TestCase {
         page.handleNavigation("down")
         page.handleNavigation("down")
         page.handleNavigation("accept")
-        compare(managed.signalArguments[1][0], "advanced")
+        compare(managed.signalArguments[1][0], "launch")
         page.handleNavigation("page_right")
         page.handleNavigation("down")
         page.handleNavigation("accept")
@@ -82,5 +86,30 @@ TestCase {
         page.handleNavigation("accept")
         compare(managed.count, 0)
         verify(!findChild(page, "couchDetailsTool0").enabled)
+    }
+    function test_library_and_media_tools_are_controller_accessible() {
+        const page = createTemporaryObject(pageComponent, this)
+        managed.target = page; managed.clear()
+        for (const tab of [2, 4]) {
+            page.chooseTab(tab)
+            page.navigationArea = 2
+            for (let i = 0; i < page.tools.length; i++) {
+                page.toolIndex = i
+                page.handleNavigation("accept")
+                compare(managed.signalArguments[managed.count - 1][0], page.tools[i].key)
+            }
+        }
+        verify(page.tools.some(tool => tool.key === "collections"))
+        page.handleNavigation("page_right")
+        compare(page.tabIndex, 0)
+    }
+    function test_metadata_and_action_rail_on_ultrawide() {
+        const page = createTemporaryObject(pageComponent, this, {width: 3440, height: 1440})
+        wait(30)
+        verify(page.facts.some(fact => fact.label === "Publisher" && fact.value === "Nintendo"))
+        verify(page.facts.some(fact => fact.label === "Co-op" && fact.value === "Not supported"))
+        verify(findChild(page, "couchDetailsAction0").width <= 320)
+        page.ready = false
+        compare(page.facts.length, 0)
     }
 }

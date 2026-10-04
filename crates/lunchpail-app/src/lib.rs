@@ -485,6 +485,18 @@ pub fn run() -> i32 {
             }
         };
     }
+    if std::env::args().any(|argument| argument == "--emumovies-couch-media-probe") {
+        return match emumovies_model::couch_media_saved_probe() {
+            Ok(evidence) => {
+                println!("LUNCHPAIL_EMUMOVIES_COUCH_MEDIA_READY {evidence}");
+                0
+            }
+            Err(error) => {
+                eprintln!("LUNCHPAIL_EMUMOVIES_COUCH_MEDIA_FAILED error={error:#}");
+                1
+            }
+        };
+    }
     if std::env::args().any(|argument| argument == "--emumovies-soundtrack-probe") {
         return match emumovies_model::soundtrack_saved_probe() {
             Ok(evidence) => {

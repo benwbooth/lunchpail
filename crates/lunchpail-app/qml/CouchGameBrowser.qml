@@ -56,6 +56,13 @@ Item {
     }
     function positionViewAtBeginning() { positionViewAtIndex(0, ListView.Beginning) }
     function positionViewAtEnd() { positionViewAtIndex(count - 1, ListView.End) }
+    function settleSelection() {
+        if (!presentation.item || count <= 0 || viewStyle === "wheel" || viewStyle === "album") return
+        presentation.item.forceLayout()
+        positionViewAtIndex(currentIndex, ListView.Contain)
+    }
+    onWidthChanged: Qt.callLater(settleSelection)
+    onHeightChanged: Qt.callLater(settleSelection)
     onCurrentIndexChanged: {
         selectionPending = true
         applySelection()
@@ -73,6 +80,7 @@ Item {
             browser.reportedGameId = ""
             browser.applySelection()
             browser.positionViewAtIndex(browser.currentIndex, ListView.Center)
+            Qt.callLater(browser.settleSelection)
             Qt.callLater(browser.reportSelection)
         }
     }
@@ -114,10 +122,10 @@ Item {
                 viewId: "couch-wall"
             }
             objectName: "couchWallGrid"
-            readonly property int columnCount: Math.max(3, Math.floor(verticalContentWidth / 190))
+            readonly property int columnCount: Math.max(3, Math.min(10, Math.floor(verticalContentWidth / 220)))
             model: browser.library
             cellWidth: verticalContentWidth / columnCount
-            cellHeight: Math.min(300, cellWidth * 1.42)
+            cellHeight: Math.min(365, cellWidth * 1.42)
             clip: true
             cacheBuffer: height / 2
             boundsBehavior: Flickable.StopAtBounds
@@ -149,12 +157,12 @@ Item {
             readonly property bool wheel: browser.viewStyle === "wheel"
             model: browser.library
             clip: true
-            pathItemCount: 7
+            pathItemCount: wheel ? 7 : 9
             cacheItemCount: 2
             preferredHighlightBegin: 0.5
             preferredHighlightEnd: 0.5
             highlightRangeMode: PathView.StrictlyEnforceRange
-            highlightMoveDuration: 160
+            highlightMoveDuration: 210
             snapMode: PathView.SnapToItem
             dragMargin: width
             flickDeceleration: 450
@@ -162,8 +170,8 @@ Item {
             delegate: CouchGameCard {
                 id: pathCard
                 library: browser.library
-                width: carousel.wheel ? carousel.width * 0.78 : Math.min(300, carousel.width * 0.23)
-                height: carousel.wheel ? Math.min(140, carousel.height * 0.22) : carousel.height * 0.87
+                width: carousel.wheel ? carousel.width * 0.80 : Math.min(carousel.height * 0.68, carousel.width * 0.23)
+                height: carousel.wheel ? Math.min(154, carousel.height * 0.205) : carousel.height * 0.93
                 wheel: carousel.wheel
                 selected: PathView.isCurrentItem
                 ink: browser.ink
@@ -205,21 +213,33 @@ Item {
             }
             Path {
                 id: albumPath
-                startX: -carousel.width * 0.15; startY: carousel.height * 0.55
-                PathAttribute { name: "itemScale"; value: 0.58 }
-                PathAttribute { name: "itemOpacity"; value: 0.25 }
-                PathAttribute { name: "itemAngle"; value: -58 }
+                startX: -carousel.width * 0.08; startY: carousel.height * 0.53
+                PathAttribute { name: "itemScale"; value: 0.64 }
+                PathAttribute { name: "itemOpacity"; value: 0.22 }
+                PathAttribute { name: "itemAngle"; value: 60 }
                 PathAttribute { name: "itemDepth"; value: 0 }
+                PathLine { x: carousel.width * 0.33; y: carousel.height * 0.53 }
+                PathPercent { value: 0.38 }
+                PathAttribute { name: "itemScale"; value: 0.78 }
+                PathAttribute { name: "itemOpacity"; value: 0.8 }
+                PathAttribute { name: "itemAngle"; value: 55 }
+                PathAttribute { name: "itemDepth"; value: 4 }
                 PathLine { x: carousel.width * 0.5; y: carousel.height * 0.47 }
                 PathPercent { value: 0.5 }
                 PathAttribute { name: "itemScale"; value: 1 }
                 PathAttribute { name: "itemOpacity"; value: 1 }
                 PathAttribute { name: "itemAngle"; value: 0 }
                 PathAttribute { name: "itemDepth"; value: 10 }
-                PathLine { x: carousel.width * 1.15; y: carousel.height * 0.55 }
-                PathAttribute { name: "itemScale"; value: 0.58 }
-                PathAttribute { name: "itemOpacity"; value: 0.25 }
-                PathAttribute { name: "itemAngle"; value: 58 }
+                PathLine { x: carousel.width * 0.67; y: carousel.height * 0.53 }
+                PathPercent { value: 0.62 }
+                PathAttribute { name: "itemScale"; value: 0.78 }
+                PathAttribute { name: "itemOpacity"; value: 0.8 }
+                PathAttribute { name: "itemAngle"; value: -55 }
+                PathAttribute { name: "itemDepth"; value: 4 }
+                PathLine { x: carousel.width * 1.08; y: carousel.height * 0.53 }
+                PathAttribute { name: "itemScale"; value: 0.64 }
+                PathAttribute { name: "itemOpacity"; value: 0.22 }
+                PathAttribute { name: "itemAngle"; value: -60 }
                 PathAttribute { name: "itemDepth"; value: 0 }
             }
         }

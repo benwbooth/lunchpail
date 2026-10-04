@@ -341,6 +341,16 @@ pub mod qobject {
         fn exact_artwork_url(self: &LibraryModel, media_id: i64, artwork_type: QString) -> QUrl;
 
         #[qinvokable]
+        fn platform_media_url(self: &LibraryModel, platform: QString, kind: QString) -> QUrl;
+
+        #[qinvokable]
+        fn exact_artwork_candidates_json(
+            self: &LibraryModel,
+            media_id: i64,
+            artwork_type: QString,
+        ) -> QString;
+
+        #[qinvokable]
         fn artwork_source(self: &LibraryModel, media_id: i64, artwork_type: QString) -> QString;
 
         #[qinvokable]
@@ -3936,6 +3946,8 @@ impl qobject::LibraryModel {
                         "release_date": details.release_date, "genre": details.genre,
                         "players": details.players, "cooperative": details.cooperative,
                         "rating": details.rating,
+                        "video_url": details.supplemental_media.video.as_ref().and_then(|asset| url::Url::from_file_path(&asset.path).ok()).map(|url| url.to_string()).unwrap_or_default(),
+                        "theme_video_url": details.supplemental_media.theme_video.as_ref().and_then(|asset| url::Url::from_file_path(&asset.path).ok()).map(|url| url.to_string()).unwrap_or_default(),
                         "soundtrack_available": track.is_some(),
                         "soundtrack_url": track.and_then(|track| url::Url::from_file_path(&track.path).ok()).map(|url| url.to_string()).unwrap_or_default(),
                         "soundtrack_title": track.map(|track| track.title.as_str()).unwrap_or_default()
@@ -3966,6 +3978,27 @@ impl qobject::LibraryModel {
             .unwrap_or_default()
     }
 
+    pub fn platform_media_url(&self, platform: QString, kind: QString) -> QUrl {
+        let directory = crate::media::platform_media_directory(&platform.to_string());
+        let names: &[&str] = match kind.to_string().as_str() {
+            "video" => &["theme-video.mp4"],
+            "clear-logo" => &["clear-logo.png", "clear-logo.webp", "clear-logo.jpg"],
+            _ => return QUrl::default(),
+        };
+        for provider in ["local", "emumovies"] {
+            for name in names {
+                let path = directory.join(provider).join(name);
+                if path
+                    .metadata()
+                    .is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
+                {
+                    return QUrl::from_local_file(&qstring(path.to_string_lossy()));
+                }
+            }
+        }
+        QUrl::default()
+    }
+
     pub fn artwork_source(&self, media_id: i64, artwork_type: QString) -> QString {
         self.media_asset(media_id, &artwork_type.to_string(), false)
             .map(|asset| qstring(&asset.source))
@@ -3976,6 +4009,28 @@ impl qobject::LibraryModel {
         let kind =
             ArtworkKind::parse(&artwork_type.to_string()).unwrap_or(self.rust().artwork_kind);
         saturating_i32(self.rust().media.candidate_count(media_id, kind))
+    }
+
+    pub fn exact_artwork_candidates_json(&self, media_id: i64, artwork_type: QString) -> QString {
+        let Some(kind) = ArtworkKind::parse(&artwork_type.to_string()) else {
+            return qstring("[]");
+        };
+        qstring(
+            serde_json::Value::Array(
+                self.rust()
+                    .media
+                    .exact_candidates(media_id, kind)
+                    .iter()
+                    .map(|asset| {
+                        serde_json::json!({
+                            "url": media_asset_url(asset, *self.media_revision()).to_string(),
+                            "source": asset.source,
+                        })
+                    })
+                    .collect(),
+            )
+            .to_string(),
+        )
     }
 
     pub fn artwork_candidate_url(&self, media_id: i64, artwork_type: QString, index: i32) -> QUrl {

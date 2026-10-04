@@ -74,6 +74,22 @@ pub mod qobject {
         );
 
         #[qinvokable]
+        fn download_theme_video(
+            self: Pin<&mut EmuMoviesModel>,
+            game_id: QString,
+            database_id: i32,
+            title: QString,
+            platform: QString,
+        );
+
+        #[qinvokable]
+        fn download_platform_media(
+            self: Pin<&mut EmuMoviesModel>,
+            platform: QString,
+            kind: QString,
+        );
+
+        #[qinvokable]
         fn discover_soundtrack(
             self: Pin<&mut EmuMoviesModel>,
             game_id: QString,
@@ -165,6 +181,16 @@ impl Default for EmuMoviesModelRust {
 }
 
 enum DownloadRequest {
+    PlatformMedia {
+        platform: String,
+        video: bool,
+    },
+    ThemeVideo {
+        game_id: String,
+        database_id: i64,
+        title: String,
+        platform: String,
+    },
     Artwork {
         database_id: i64,
         title: String,
@@ -188,6 +214,9 @@ enum DownloadRequest {
 impl DownloadRequest {
     fn kind(&self) -> &'static str {
         match self {
+            Self::PlatformMedia { video: true, .. } => "platform-video",
+            Self::PlatformMedia { video: false, .. } => "platform-logo",
+            Self::ThemeVideo { .. } => "theme-video",
             Self::Artwork { .. } => "artwork",
             Self::Supplemental { media_type, .. } if *media_type == EmuMoviesMediaType::Video => {
                 "video"
@@ -250,6 +279,36 @@ pub(crate) fn list_saved_library_path(path: &str) -> Result<Vec<String>> {
     client(username, password).list_files(path)
 }
 
+pub(crate) fn couch_media_saved_probe() -> Result<String> {
+    const GAME_UID: &str = "9697a5eb-e0b4-4f24-8d43-672701414ee7";
+    const PLATFORM: &str = "Nintendo Entertainment System";
+    crate::catalog::requested_path("--media-directory", "LUNCHPAIL_MEDIA_DIRECTORY")
+        .context("the couch media probe requires an explicit --media-directory")?;
+    let (username, password) = effective_credentials(String::new(), String::new())?;
+    let client = client(username, password);
+    let game_directory = crate::media::game_media_directory(GAME_UID, 140)?;
+    let platform_directory = crate::media::platform_media_directory(PLATFORM);
+    let theme = client.get_theme_video(PLATFORM, "Super Mario Bros.", &game_directory, None)?;
+    let logo = client.get_platform_logo(PLATFORM, &platform_directory, None)?;
+    let platform = client.get_platform_video(PLATFORM, &platform_directory, None)?;
+    for path in [&theme, &logo, &platform] {
+        if !path.is_file() || path.metadata()?.len() == 0 {
+            bail!("empty couch media asset: {}", path.display());
+        }
+    }
+    let indexed = crate::media::supplemental_media(GAME_UID, 140)?;
+    if indexed
+        .theme_video
+        .as_ref()
+        .is_none_or(|asset| asset.path != theme)
+    {
+        bail!("the game theme was not indexed separately from gameplay");
+    }
+    Ok(format!(
+        "theme={theme:?} logo={logo:?} platform={platform:?}"
+    ))
+}
+
 pub(crate) fn soundtrack_saved_probe() -> Result<String> {
     const GAME_UID: &str = "9697a5eb-e0b4-4f24-8d43-672701414ee7";
     const DATABASE_ID: i64 = 140;
@@ -306,6 +365,34 @@ fn execute_download(
     let (username, password) = effective_credentials(String::new(), String::new())?;
     let client = client(username, password);
     match request {
+        DownloadRequest::PlatformMedia { platform, video } => {
+            let directory = crate::media::platform_media_directory(&platform);
+            if video {
+                Ok((
+                    client.get_platform_video(&platform, &directory, progress)?,
+                    "platform-video",
+                ))
+            } else {
+                Ok((
+                    client.get_platform_logo(&platform, &directory, progress)?,
+                    "platform-logo",
+                ))
+            }
+        }
+        DownloadRequest::ThemeVideo {
+            game_id,
+            database_id,
+            title,
+            platform,
+        } => {
+            let directory = crate::media::game_media_directory(&game_id, database_id)?;
+            let lookup =
+                crate::emumovies::resolve_video_lookup_name(&platform, &title, Some(database_id));
+            Ok((
+                client.get_theme_video(&platform, &lookup, &directory, progress)?,
+                "theme-video",
+            ))
+        }
         DownloadRequest::Artwork {
             database_id,
             title,
@@ -598,6 +685,38 @@ impl qobject::EmuMoviesModel {
             platform: platform.to_string(),
             media_type: EmuMoviesMediaType::Manual,
         });
+    }
+
+    pub fn download_theme_video(
+        mut self: Pin<&mut Self>,
+        game_id: QString,
+        database_id: i32,
+        title: QString,
+        platform: QString,
+    ) {
+        self.as_mut().start_download(DownloadRequest::ThemeVideo {
+            game_id: game_id.to_string(),
+            database_id: i64::from(database_id),
+            title: title.to_string(),
+            platform: platform.to_string(),
+        });
+    }
+
+    pub fn download_platform_media(mut self: Pin<&mut Self>, platform: QString, kind: QString) {
+        let kind = kind.to_string();
+        if platform.to_string().trim().is_empty()
+            || !["video", "clear-logo"].contains(&kind.as_str())
+        {
+            self.as_mut().set_message(qstring(
+                "Choose a system and either its logo or video theme.",
+            ));
+            return;
+        }
+        self.as_mut()
+            .start_download(DownloadRequest::PlatformMedia {
+                platform: platform.to_string(),
+                video: kind == "video",
+            });
     }
 
     pub fn discover_soundtrack(
@@ -912,5 +1031,35 @@ mod tests {
         };
 
         assert_eq!(request.kind(), "soundtrack");
+    }
+
+    #[test]
+    fn couch_media_downloads_have_distinct_status_kinds() {
+        assert_eq!(
+            DownloadRequest::ThemeVideo {
+                game_id: "game".into(),
+                database_id: 140,
+                title: "Super Mario Bros.".into(),
+                platform: "NES".into()
+            }
+            .kind(),
+            "theme-video"
+        );
+        assert_eq!(
+            DownloadRequest::PlatformMedia {
+                platform: "NES".into(),
+                video: false
+            }
+            .kind(),
+            "platform-logo"
+        );
+        assert_eq!(
+            DownloadRequest::PlatformMedia {
+                platform: "NES".into(),
+                video: true
+            }
+            .kind(),
+            "platform-video"
+        );
     }
 }
