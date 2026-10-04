@@ -53,6 +53,24 @@ An app that builds successfully may still need platform-specific packaging,
 multimedia plugins, and GPU support. In particular, do not assume a custom
 build includes live-translation acceleration just because the main UI opens.
 
+OCR loads its GPU-capable ONNX Runtime dynamically, independently of the static
+CPU runtime used by Couch Mode speech search. Nix supplies `ORT_DYLIB_PATH`;
+Flatpak supplies the runtime in `/app/lib`. For native source builds, stage the
+pinned runtime next to the executable before using translation:
+
+~~~sh
+# Windows x86-64
+python packaging/stage-ocr-runtime.py windows-x86_64 --runtime-dir target/release --licenses-dir target/release/licenses
+# Apple Silicon macOS
+python3 packaging/stage-ocr-runtime.py macos-arm64 --runtime-dir target/release --licenses-dir target/release/licenses
+~~~
+
+The package workflow runs these staging steps automatically. The optional
+`couch_speech::tests::real_model_transcribes_fixture` test accepts
+`LUNCHPAIL_SPEECH_TEST_WAV` and `LUNCHPAIL_SPEECH_EXPECT`. Set
+`LUNCHPAIL_SPEECH_TEST_GPU_OCR=1` to also initialize and warm installed GPU OCR
+models in the same process before transcribing; the test never opens a microphone.
+
 ## Contribute
 
 Keep changes focused and describe how you tested the behavior. For a visual

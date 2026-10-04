@@ -234,6 +234,13 @@ fn with_warm_ocr<T>(action: impl FnOnce(&mut RapidOcr) -> Result<T>) -> Result<T
 
 /// Warm GPU inference while the library loads, before a game is selected.
 /// The work is optional and never delays the visible Lunchpail window.
+#[cfg(test)]
+pub(crate) fn warm_gpu_ocr_for_speech_test() -> Result<()> {
+    #[cfg(all(target_os = "linux", feature = "rocm-ocr"))]
+    configure_gpu_cache()?;
+    with_warm_ocr(|_| Ok(()))
+}
+
 pub fn prewarm_saved_settings_background() {
     let _ = thread::Builder::new()
         .name("lunchpail-translation-prewarm".into())

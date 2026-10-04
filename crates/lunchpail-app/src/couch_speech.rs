@@ -296,6 +296,9 @@ mod tests {
     #[test]
     #[ignore = "Downloads the pinned model; uses a supplied WAV, never the microphone"]
     fn real_model_transcribes_fixture() {
+        if std::env::var_os("LUNCHPAIL_SPEECH_TEST_GPU_OCR").is_some() {
+            crate::translation::warm_gpu_ocr_for_speech_test().unwrap();
+        }
         let (tx, _) = mpsc::channel();
         prepare(&AtomicU8::new(0), &tx).unwrap();
         let recognizer = recognizer().unwrap();

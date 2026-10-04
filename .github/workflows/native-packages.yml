@@ -60,6 +60,8 @@ jobs:
           New-Item -ItemType Directory -Force "$stage\bin", "$stage\share\lunchpail" | Out-Null
           Copy-Item 'target\release\lunchpail.exe' "$stage\bin\lunchpail.exe"
           Copy-Item 'target\release\lunchpail-controller-probe.exe' "$stage\bin\lunchpail-controller-probe.exe"
+          python packaging/stage-ocr-runtime.py windows-x86_64 --runtime-dir "$stage\bin" --licenses-dir "$stage\share\lunchpail"
+          if ($LASTEXITCODE -ne 0) { throw 'OCR runtime staging failed' }
           $sdlArchive = Join-Path $env:RUNNER_TEMP 'SDL3-3.4.12-x64.zip'
           Invoke-WebRequest 'https://github.com/libsdl-org/SDL/releases/download/release-3.4.12/SDL3-3.4.12-win32-x64.zip' -OutFile $sdlArchive
           if ((Get-FileHash $sdlArchive -Algorithm SHA256).Hash.ToLower() -ne '326e9f5ae2cbab478c03a9e2b22a560e5a9358b5f5eed8e61f5a7c8333750cf1') { throw 'SDL3 archive checksum mismatch' }
@@ -117,6 +119,7 @@ jobs:
           mkdir -p dist/Lunchpail.app/Contents/MacOS dist/Lunchpail.app/Contents/share/lunchpail
           install -m 0755 target/release/lunchpail dist/Lunchpail.app/Contents/MacOS/lunchpail
           install -m 0755 target/release/lunchpail-controller-probe dist/Lunchpail.app/Contents/MacOS/lunchpail-controller-probe
+          python3 packaging/stage-ocr-runtime.py macos-arm64 --runtime-dir dist/Lunchpail.app/Contents/MacOS --licenses-dir dist/Lunchpail.app/Contents/share/lunchpail
           sdl_source="$(mktemp -d "${RUNNER_TEMP}/lunchpail-sdl3.XXXXXX")"
           curl --fail --location --retry 3 https://github.com/libsdl-org/SDL/releases/download/release-3.4.12/SDL3-3.4.12.tar.gz -o "$sdl_source/source.tar.gz"
           echo "f07b958a9ac5020fb7a44cadb957f658b2149c3c8abb4f63145fac9303249db7  $sdl_source/source.tar.gz" | shasum -a 256 -c -

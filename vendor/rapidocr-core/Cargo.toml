@@ -73,7 +73,12 @@ version = "0.17"
 
 [dependencies.ort]
 version = "2.0.0-rc.12"
-default-features = true
+# Keep OCR's GPU-capable runtime separate from sherpa-onnx's static CPU runtime.
+# A link-time OrtGetApiBase can otherwise bind to Sherpa's different ORT build.
+# API 24 also supports Microsoft's pinned DirectML 1.24.4 package on Windows;
+# Linux/macOS may provide newer runtimes through the same backwards-compatible API.
+default-features = false
+features = ["std", "ndarray", "tracing", "load-dynamic", "api-24"]
 
 [dependencies.reqwest]
 version = "0.12"
