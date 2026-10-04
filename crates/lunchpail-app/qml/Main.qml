@@ -347,7 +347,8 @@ ApplicationWindow {
                                                   || Qt.application.arguments.indexOf("--couch-view-style-ui-probe") >= 0
     readonly property bool couchSmoothnessUiProbe: Qt.application.arguments.indexOf("--couch-smoothness-ui-probe") >= 0
     readonly property bool couchPolishUiProbe: Qt.application.arguments.indexOf("--couch-polish-ui-probe") >= 0
-    readonly property bool couchModeUiProbe: couchPolishUiProbe || couchSmoothnessUiProbe || couchGamepadUiProbe || couchPlatformUiProbe
+    readonly property bool couchSearchUiProbe: Qt.application.arguments.indexOf("--couch-search-ui-probe") >= 0
+    readonly property bool couchModeUiProbe: couchSearchUiProbe || couchPolishUiProbe || couchSmoothnessUiProbe || couchGamepadUiProbe || couchPlatformUiProbe
                                              || couchCollectionUiProbe
                                              || couchVariantUiProbe
                                              || couchAttractUiProbe
@@ -521,8 +522,10 @@ ApplicationWindow {
     }
 
     onActiveChanged: {
-        if (active && couchModeActive && !couchInputSuspended)
-            couchModeView.forceActiveFocus()
+        if (active && couchModeActive && !couchInputSuspended) {
+            if (couchModeView.searchOpen) couchModeView.searchPanel.focusInput()
+            else couchModeView.forceActiveFocus()
+        }
     }
 
     function scheduleFilter() {
@@ -708,6 +711,14 @@ ApplicationWindow {
         id: notificationSettings
         category: "Notifications"
     }
+
+    Settings {
+        id: couchFeedbackSettings
+        category: "CouchFeedback"
+        property bool soundsEnabled: true
+        property real soundVolume: 0.22
+    }
+    CouchSpeechModel { id: couchSpeech }
 
     NotificationHistory {
         id: notificationHistory
@@ -4506,7 +4517,11 @@ ApplicationWindow {
                     root.beginHoverPreviewProbe()
                 }
                 else if (root.couchModeUiProbe) {
-                    if (root.couchPolishUiProbe) {
+                    if (root.couchSearchUiProbe) {
+                        root.selectedPlatform = "Nintendo Entertainment System"
+                        searchField.text = ""
+                        library.apply_filter("", root.selectedPlatform, "")
+                    } else if (root.couchPolishUiProbe) {
                         root.selectedGameId = "9697a5eb-e0b4-4f24-8d43-672701414ee7"
                         root.selectedPlatform = "Nintendo Entertainment System"
                         searchField.text = "Mario"
@@ -5436,7 +5451,7 @@ ApplicationWindow {
         interval: 650
         repeat: false
         onTriggered: {
-            if (root.couchLaunchUiProbe || root.couchDownloadUiProbe || root.couchSmoothnessUiProbe || root.couchPolishUiProbe)
+            if (root.couchSearchUiProbe || root.couchLaunchUiProbe || root.couchDownloadUiProbe || root.couchSmoothnessUiProbe || root.couchPolishUiProbe)
                 return
             if (!root.couchGamepadUiProbe && !root.couchPlatformUiProbe
                     && !root.couchCollectionUiProbe
@@ -6578,7 +6593,7 @@ ApplicationWindow {
 
     Timer {
         interval: 20000
-        running: root.couchModeUiProbe && !root.couchLaunchUiProbe && !root.couchSmoothnessUiProbe && !root.couchPolishUiProbe
+        running: root.couchModeUiProbe && !root.couchSearchUiProbe && !root.couchLaunchUiProbe && !root.couchSmoothnessUiProbe && !root.couchPolishUiProbe
                  && !root.couchModeProbeCaptured
         repeat: false
         onTriggered: {
@@ -11678,6 +11693,13 @@ ApplicationWindow {
         }
     }
 
+    Loader {
+        active: root.couchSearchUiProbe
+        sourceComponent: CouchSearchProbe {
+            app: root; view: couchModeView; library: library; speech: couchSpeech
+        }
+    }
+
     CouchModeView {
         id: couchModeView
         anchors.centerIn: parent
@@ -11696,6 +11718,15 @@ ApplicationWindow {
         currentFilterKey: root.effectiveAvailability
         currentPlatformName: root.selectedPlatform
         videoMuted: root.videoAudioMuted
+        speech: couchSpeech
+        searchText: searchField.text
+        sfxEnabled: couchFeedbackSettings.soundsEnabled
+        sfxVolume: couchFeedbackSettings.soundVolume
+        onSearchRequested: text => {
+            searchField.text = text
+            root.rememberPlatformSearch(false)
+            root.scheduleFilter()
+        }
         onVideoMuteRequested: root.videoAudioMuted = !root.videoAudioMuted
         onSystemMediaRequested: platform => {
             couchSystemMediaDialog.platform = platform
@@ -21107,6 +21138,7 @@ ApplicationWindow {
                     CouchAudioSettings {
                         Layout.fillWidth: true
                         library: library
+                        feedbackSettings: couchFeedbackSettings
                         inkColor: root.ink
                         mutedColor: root.muted
                         accentColor: root.accent

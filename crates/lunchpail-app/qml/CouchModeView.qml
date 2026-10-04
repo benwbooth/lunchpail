@@ -1,6 +1,7 @@
 pragma ComponentBehavior: Bound
 
 import QtQuick
+import QtQuick.Controls
 
 Item {
     id: view
@@ -9,6 +10,15 @@ Item {
     required property var details
     required property var gamepad
     required property var downloadQueue
+    required property var speech
+    property string searchText: ""
+    property bool searchOpen: false
+    property bool sfxEnabled: true
+    property real sfxVolume: 0.22
+    signal searchRequested(string text)
+    readonly property bool microphoneActive: searchOverlay.microphoneBusy
+    readonly property bool feedbackReady: feedback.ready
+    readonly property var searchPanel: searchOverlay
     property bool active: false
     property bool inputEnabled: true
     property var pendingSc2Actions: []
@@ -79,7 +89,7 @@ Item {
     readonly property var viewStyles: ["wheel", "shelf", "wall", "album"]
     readonly property var viewLabels: ["Logo wheel", "Cover shelf", "Cover wall", "Cover flow"]
     readonly property string viewLabel: viewLabels[Math.max(0, viewStyles.indexOf(library.couch_view_style))]
-    readonly property int menuActionCount: 8
+    readonly property int menuActionCount: 9
     readonly property var categories: [
         { label: "All games", key: "" },
         { label: "Platforms", key: "platform" },
@@ -193,6 +203,66 @@ Item {
     visible: active
     focus: active
 
+    CouchFeedback {
+        id: feedback
+        active: view.active && view.inputEnabled
+        muted: !view.sfxEnabled || view.microphoneActive
+        volume: view.sfxVolume
+    }
+
+    function openSearch(initialText, microphone) {
+        if (!active || !inputEnabled) return
+        stopAttractMode()
+        overlayOpen = false
+        platformWheelOpen = false
+        collectionWheelOpen = false
+        variantWheelOpen = false
+        searchOpen = true
+        searchOverlay.open(initialText)
+        if (initialText !== searchText) searchRequested(initialText)
+        if (microphone && speech.ready) searchOverlay.microphone()
+        else feedback.play("confirm")
+        noteActivity()
+    }
+
+    function closeSearch() {
+        searchOverlay.cancelVoice()
+        searchOpen = false
+        navigationZone = 2
+        if (active && inputEnabled) forceActiveFocus()
+        noteActivity()
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        z: 99
+        visible: view.searchOpen
+        onClicked: view.closeSearch()
+        onWheel: event => { event.accepted = true }
+    }
+
+    CouchSearchOverlay {
+        id: searchOverlay
+        z: 100
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: 105
+        width: Math.min(960, parent.width - 100)
+        height: 335
+        visible: view.searchOpen && view.active
+        speech: view.speech
+        query: view.searchText
+        resultCount: shelf.count
+        panelColor: view.panel
+        inkColor: view.ink
+        mutedColor: view.muted
+        accentColor: view.accent
+        onQueryEdited: text => view.searchRequested(text)
+        onCloseRequested: view.closeSearch()
+        onFeedbackRequested: kind => feedback.play(kind)
+    }
+
+    onInputEnabledChanged: if (!inputEnabled && searchOpen) closeSearch()
+
     function accentFor(value) {
         const colors = [view.accent, view.accentCool,
                         Qt.lighter(view.accent, 1.22),
@@ -227,8 +297,10 @@ Item {
         if (shelf.count <= 0)
             return
         noteActivity()
+        const previous = shelf.currentIndex
         shelf.currentIndex = Math.max(0, Math.min(shelf.count - 1,
                                                  shelf.currentIndex + delta))
+        if (previous !== shelf.currentIndex) feedback.play("move")
         shelf.positionViewAtIndex(shelf.currentIndex, ListView.Contain)
     }
 
@@ -281,6 +353,7 @@ Item {
     }
 
     function chooseCategory(index) {
+        feedback.play("confirm")
         noteActivity()
         categoryIndex = Math.max(0, Math.min(categories.length - 1, index))
         if (categories[categoryIndex].key === "platform") {
@@ -375,6 +448,7 @@ Item {
     }
 
     function choosePlatform(index) {
+        feedback.play("confirm")
         noteActivity()
         const platform = library.platform_name_at(index)
         if (platform.length === 0
@@ -548,6 +622,7 @@ Item {
     }
 
     function chooseCollection(index) {
+        feedback.play("confirm")
         noteActivity()
         const collectionId = library.collection_id_at(index)
         const collectionName = library.collection_name_at(index)
@@ -621,6 +696,7 @@ Item {
     }
 
     function activateAction(index) {
+        feedback.play("confirm")
         if (index === 0 && details.game_running) {
             details.stop_emulator()
             return
@@ -660,6 +736,7 @@ Item {
     }
 
     function openOverlay(mode) {
+        feedback.play("confirm")
         if (!detailsCurrent && selectedGameId.length > 0)
             detailsRequested(selectedGameId, selectedDatabaseId, selectedTitle,
                              selectedPlatform, selectedLocal, selectedDownloadable)
@@ -676,6 +753,7 @@ Item {
     }
 
     function closeOverlay() {
+        feedback.play("back")
         overlayOpen = false
         loadedGameId = ""
         loadCurrentGame()
@@ -736,6 +814,7 @@ Item {
     }
 
     function menuActionLabel(index) {
+        if (index === 8) return "Search games · voice or keyboard"
         if (index === 0)
             return primaryAction
         if (index === 1)
@@ -755,6 +834,7 @@ Item {
     }
 
     function menuActionDescription(index) {
+        if (index === 8) return "Search this shelf without leaving Couch Mode. Speak a title or type it."
         if (index === 0) {
             if (details.can_launch)
                 return "Launch with the selected emulator and exact local file."
@@ -801,6 +881,7 @@ Item {
     }
 
     function activateMenuAction(index) {
+        if (index === 8) { openSearch(searchText, false); return }
         if (index === 0) {
             closeOverlay()
             activateAction(0)
@@ -828,6 +909,15 @@ Item {
     }
 
     function handleNavigation(action) {
+        if (!active || !inputEnabled) return false
+        if (searchOpen) return searchOverlay.handleNavigation(action)
+        const handled = navigate(action)
+        if (handled) feedback.play(action === "back" ? "back"
+            : ["accept", "favorite", "details", "menu"].indexOf(action) >= 0 ? "confirm" : "move")
+        return handled
+    }
+
+    function navigate(action) {
         if (!active || !inputEnabled)
             return false
         // Desktop gives analog triggers Home/End; keep the established couch
@@ -1004,7 +1094,8 @@ Item {
             return true
         }
         if (action === "back") {
-            exitRequested()
+            if (searchText.length > 0) searchRequested("")
+            else exitRequested()
         } else if (action === "up") {
             if (wallView && navigationZone === 2 && shelf.currentIndex >= shelf.columns)
                 moveShelf(-shelf.columns)
@@ -1094,6 +1185,7 @@ Item {
                 shelf.positionViewAtIndex(shelf.currentIndex, ListView.Center)
             selectionDelay.restart()
         } else {
+            closeSearch()
             overlayOpen = false
             platformWheelOpen = false
             collectionWheelOpen = false
@@ -1149,10 +1241,28 @@ Item {
     onCurrentFilterKeyChanged: syncCategory()
     onCurrentPlatformNameChanged: syncCategory()
 
-    Keys.onPressed: event => {
+    Keys.onPressed: event => handleKey(event)
+
+    function handleKey(event) {
         if (!inputEnabled) return
         if (!active)
             return
+        if (searchOpen) return
+        const shortcut = (event.modifiers & Qt.ControlModifier) !== 0
+        if (event.key === Qt.Key_F3 || event.key === Qt.Key_F2) {
+            openSearch(searchText, event.key === Qt.Key_F2)
+            event.accepted = true
+            return
+        }
+        if (!(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
+                && event.text.length > 0 && event.text.charCodeAt(0) >= 32
+                && event.key !== Qt.Key_Space && !overlayOpen && !platformWheelOpen
+                && !collectionWheelOpen && !variantWheelOpen && !downloadOverlayOpen
+                && !launchStatusOverlayOpen) {
+            openSearch(event.text, false)
+            event.accepted = true
+            return
+        }
         let action = ""
         if (event.key === Qt.Key_Escape || event.key === Qt.Key_Back) {
             action = "back"
@@ -1198,30 +1308,30 @@ Item {
         } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
                    || event.key === Qt.Key_Space) {
             action = "accept"
-        } else if (event.key === Qt.Key_F && !favoriteBusy) {
+        } else if (event.key === Qt.Key_F && shortcut && !favoriteBusy) {
             action = "favorite"
-        } else if (event.key === Qt.Key_D) {
+        } else if (event.key === Qt.Key_D && shortcut) {
             action = "details"
-        } else if (event.key === Qt.Key_M) {
+        } else if (event.key === Qt.Key_M && shortcut) {
             action = "menu"
-        } else if (event.key === Qt.Key_O) {
+        } else if (event.key === Qt.Key_O && shortcut) {
             toolsRequested()
             event.accepted = true
             return
-        } else if (event.key === Qt.Key_A) {
+        } else if (event.key === Qt.Key_A && shortcut) {
             if (attractOpen)
                 action = "back"
             else {
                 event.accepted = startAttractMode("manual")
                 return
             }
-        } else if (event.key === Qt.Key_V
+        } else if (event.key === Qt.Key_V && shortcut
                    && !overlayOpen && !attractOpen
                    && !platformWheelOpen && !collectionWheelOpen
                    && !variantWheelOpen && !launchStatusOverlayOpen) {
             event.accepted = toggleViewStyle()
             return
-        } else if (event.key === Qt.Key_P
+        } else if (event.key === Qt.Key_P && shortcut
                    && couchMusic.visible
                    && !overlayOpen && !platformWheelOpen
                    && !collectionWheelOpen && !variantWheelOpen
@@ -1376,6 +1486,33 @@ Item {
         anchors.rightMargin: 50
         anchors.verticalCenter: brand.verticalCenter
         spacing: 10
+
+        Button {
+            id: searchButton
+            text: view.searchText.length > 0 ? "Search: " + view.searchText : "Search · F3"
+            width: Math.min(250, implicitWidth)
+            height: 40
+            onClicked: view.openSearch(view.searchText, false)
+            background: Rectangle { radius: 10; color: view.panel; border.color: view.muted }
+            contentItem: Text {
+                text: searchButton.text; color: view.ink; font.pixelSize: 12
+                horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+            }
+            Accessible.name: "Search games in Couch Mode"
+        }
+        Button {
+            id: micButton
+            text: "Mic · F2"
+            height: 40
+            onClicked: view.openSearch(view.searchText, true)
+            background: Rectangle { radius: 10; color: view.panel; border.color: view.muted }
+            contentItem: Text {
+                text: micButton.text; color: view.ink; font.pixelSize: 12
+                horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+            }
+            Accessible.name: "Local voice search"
+        }
 
         Rectangle {
             visible: true
@@ -1717,7 +1854,7 @@ Item {
                 && !view.platformWheelOpen && !view.collectionWheelOpen && !view.variantWheelOpen
                 && !view.attractOpen && !view.launchStatusOverlayOpen && !view.downloadOverlayOpen
                 && !view.details.game_running
-        muted: view.videoMuted
+        muted: view.videoMuted || view.microphoneActive
         label: view.browsing.theme_video_url ? "HYPERSPIN VIDEO THEME" : "GAMEPLAY PREVIEW"
         onMuteRequested: view.videoMuteRequested()
         onFullscreenRequested: source => view.videoRequested(source)
@@ -1770,13 +1907,18 @@ Item {
             onCurrentGameChanged: {
                 if (!view.active)
                     return
+                const previousGame = view.selectedGameId
                 view.captureCurrentGame()
+                if (previousGame.length > 0 && previousGame !== view.selectedGameId
+                        && !view.searchOpen && !view.attractOpen)
+                    feedback.play("move")
                 selectionDelay.restart()
             }
             onCardActivated: index => {
                 view.noteActivity()
                 view.navigationZone = 2
                 const selectedAgain = shelf.currentIndex === index
+                feedback.play(selectedAgain ? "confirm" : "move")
                 shelf.currentIndex = index
                 view.forceActiveFocus()
                 if (selectedAgain) view.requestDetails()
@@ -1831,7 +1973,7 @@ Item {
         Text {
             text: view.gamepad.connected_count > 0
                   ? view.gamepad.button_label("details") + "  DETAILS"
-                  : "F  FAVORITE"
+                  : "CTRL+F  FAVORITE"
             color: view.muted
             font.pixelSize: 9
             font.weight: Font.Bold
@@ -1839,7 +1981,7 @@ Item {
         }
         Text {
             visible: view.gamepad.connected_count === 0
-            text: "A  ATTRACT    V  CHANGE VIEW    P  MUSIC"
+            text: "TYPE TO SEARCH · F2 MIC · CTRL+A ATTRACT · CTRL+V VIEW · CTRL+P MUSIC"
             color: view.muted
             font.pixelSize: 9
             font.weight: Font.Bold
@@ -1870,6 +2012,7 @@ Item {
         details: view.browsing
         selectedGameId: view.selectedGameId
         active: view.active
+        microphoneActive: view.microphoneActive
         blocked: !view.inputEnabled || view.launchStatusOverlayOpen
                  || (couchVideo.playing && !view.videoMuted)
                  || view.downloadOverlayOpen
@@ -2266,7 +2409,7 @@ Item {
                      + view.gamepad.button_label("menu") + "  GAME MENU   ·   "
                      + view.gamepad.button_label("back") + "  CLOSE"
                    : (view.details.launch_busy ? "ENTER  CANCEL   ·   " : "ENTER  CLOSE   ·   ")
-                     + "D  GAME DETAILS   ·   M  GAME MENU   ·   ESC  CLOSE"
+                     + "CTRL+D  GAME DETAILS   ·   CTRL+M  GAME MENU   ·   ESC  CLOSE"
         onCloseRequested: view.closeLaunchStatus()
         onCancelRequested: view.details.cancel_launch()
         onDetailsRequested: {
@@ -2523,7 +2666,7 @@ Item {
                     visible: platformPresentation.videoUrl.toString().length > 0
                     source: platformPresentation.videoUrl
                     active: view.active && view.platformWheelOpen && view.inputEnabled && visible
-                    muted: view.videoMuted; label: "PLATFORM VIDEO THEME"
+                    muted: view.videoMuted || view.microphoneActive; label: "PLATFORM VIDEO THEME"
                     onMuteRequested: view.videoMuteRequested()
                     onFullscreenRequested: source => view.videoRequested(source)
                 }
@@ -3874,6 +4017,7 @@ Item {
                  && (view.library.couch_attract_enabled
                      || view.attractProbeEnabled)
                  && !view.attractOpen
+                 && !view.searchOpen
                  && !view.overlayOpen
                  && !view.platformWheelOpen
                  && !view.collectionWheelOpen

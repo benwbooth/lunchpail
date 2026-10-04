@@ -17,6 +17,19 @@
         onnxruntimeForHost = if system == "x86_64-linux" then onnxruntimeRocm else pkgs.onnxruntime;
         dwarfsPkgs = import nixpkgs-dwarfs { inherit system; };
         dwarfs = dwarfsPkgs.dwarfs;
+        sherpaArchives = {
+          x86_64-linux = { target = "linux-x64"; sha256 = "e1fdc5b67530e15741ef897fa5ffff297056f3bf0c6d829a27af9225a4c4b5a6"; };
+          aarch64-linux = { target = "linux-aarch64"; sha256 = "77983e3cf29aa60f2e531d249dbd01d15596530550c8db2e9e02fc6a655da6bb"; };
+          aarch64-darwin = { target = "osx-arm64"; sha256 = "9091bf160dc7fdacedbc906b212badf53c2993f4e5277a0e03998e96c31d60da"; };
+        };
+        sherpaArchive = pkgs.fetchurl {
+          url = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-v1.13.8-${sherpaArchives.${system}.target}-static-lib.tar.bz2";
+          inherit (sherpaArchives.${system}) sha256;
+        };
+        sherpaLibraries = pkgs.runCommand "sherpa-onnx-1.13.8-static" { nativeBuildInputs = [ pkgs.bzip2 ]; } ''
+          mkdir -p $out
+          tar -xjf ${sherpaArchive} -C $out --strip-components=1
+        '';
         # MAME's CHD core, linked so compressed disc images (CHD) work on every
         # host without a chdman install. libchdman-rs ships its static archives
         # as release assets; the URLs and hashes below are the pinned inputs,
@@ -96,7 +109,9 @@
             ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
             dwarfs
             pkgs.systemd
+            pkgs.alsa-lib
           ];
+          SHERPA_ONNX_LIB_DIR = "${sherpaLibraries}/lib";
           dontUseCmakeConfigure = true;
           dontUseNinjaBuild = true;
           dontUseNinjaInstall = true;
@@ -245,8 +260,10 @@
             dwarfs
             pkgs.mold
             pkgs.systemd
+            pkgs.alsa-lib
           ];
 
+          SHERPA_ONNX_LIB_DIR = "${sherpaLibraries}/lib";
           QMAKE = "${qtEnv}/bin/qmake";
           ORT_LIB_PATH = "${onnxruntimeForHost}/lib";
           ORT_DYLIB_PATH = "${onnxruntimeForHost}/lib/${if pkgs.stdenv.hostPlatform.isDarwin then "libonnxruntime.dylib" else "libonnxruntime.so"}";

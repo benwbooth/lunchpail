@@ -8,11 +8,42 @@ ColumnLayout {
     id: settings
 
     required property var library
+    property var feedbackSettings: null
     required property color inkColor
     required property color mutedColor
     required property color accentColor
     required property color lineColor
     spacing: 10
+
+    Text {
+        text: "NAVIGATION SOUNDS"
+        color: settings.inkColor
+        font.pixelSize: 12
+        font.bold: true
+    }
+    LbSwitch {
+        text: "Play Couch Mode navigation sounds"
+        checked: settings.feedbackSettings ? settings.feedbackSettings.soundsEnabled : true
+        onToggled: if (settings.feedbackSettings) settings.feedbackSettings.soundsEnabled = checked
+        Accessible.name: "Couch Mode navigation sounds"
+    }
+    RowLayout {
+        Layout.fillWidth: true
+        Text { text: "Sound volume"; color: settings.inkColor; font.pixelSize: 12 }
+        LbSlider {
+            Layout.fillWidth: true
+            from: 0; to: 1; stepSize: 0.01
+            value: settings.feedbackSettings ? settings.feedbackSettings.soundVolume : 0.22
+            enabled: settings.feedbackSettings && settings.feedbackSettings.soundsEnabled
+            onMoved: if (settings.feedbackSettings) settings.feedbackSettings.soundVolume = value
+            Accessible.name: "Couch Mode navigation sound volume"
+        }
+    }
+    Text {
+        Layout.fillWidth: true
+        text: "Separate from game videos and background music. Voice search temporarily silences previews and navigation sounds while listening."
+        color: settings.mutedColor; font.pixelSize: 11; wrapMode: Text.WordWrap
+    }
 
     Timer {
         id: volumeCommit

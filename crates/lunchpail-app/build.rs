@@ -46,6 +46,51 @@ struct GeneratedArcadeEntry {
     gambling: bool,
 }
 
+// Tiny original feedback tones, synthesized at build time and preloaded by Qt.
+fn generate_couch_sounds() -> PathBuf {
+    let output = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
+    let mut qrc = String::from("<RCC><qresource prefix=\"/couch-sounds\">\n");
+    for (name, frequencies, duration) in [
+        ("move", [660.0f64, 880.0], 0.045),
+        ("confirm", [660.0, 990.0], 0.105),
+        ("back", [580.0, 390.0], 0.09),
+    ] {
+        let count = (48000.0 * duration) as u32;
+        let size = count * 2;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + size).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        bytes.extend_from_slice(&1u16.to_le_bytes()); // mono
+        bytes.extend_from_slice(&48000u32.to_le_bytes());
+        bytes.extend_from_slice(&96000u32.to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&size.to_le_bytes());
+        let mut phase = 0.0;
+        for index in 0..count {
+            let fraction = f64::from(index) / f64::from(count);
+            let frequency = frequencies[if fraction < 0.45 { 0 } else { 1 }];
+            phase += std::f64::consts::TAU * frequency / 48000.0;
+            let envelope = (fraction * 20.0).min(1.0) * (1.0 - fraction).powi(2);
+            let sample = (phase.sin() * envelope * 11000.0) as i16;
+            bytes.extend_from_slice(&sample.to_le_bytes());
+        }
+        let path = output.join(format!("couch-{name}.wav"));
+        if fs::read(&path).ok().as_deref() != Some(bytes.as_slice()) {
+            fs::write(&path, bytes).expect("write couch feedback sound");
+        }
+        writeln!(qrc, "<file alias=\"{name}.wav\">{}</file>", path.display()).unwrap();
+    }
+    qrc.push_str("</qresource></RCC>\n");
+    let path = output.join("couch_sounds.qrc");
+    write_if_changed(&path, &qrc, "couch feedback resource manifest");
+    path
+}
+
 fn main() {
     println!("cargo:rerun-if-env-changed=LUNCHPAIL_SDL3_LIBRARY");
     if let Ok(path) = std::env::var("LUNCHPAIL_SDL3_LIBRARY") {
@@ -139,6 +184,9 @@ fn main() {
                 "qml/GameFileIdentityDialog.qml",
                 "qml/CollectionMemberPresentationDialog.qml",
                 "qml/CouchAudioSettings.qml",
+                "qml/CouchFeedback.qml",
+                "qml/CouchSearchOverlay.qml",
+                "qml/CouchSearchProbe.qml",
                 "qml/CouchBackgroundMusic.qml",
                 "qml/CouchDownloadScreen.qml",
                 "qml/CouchGameShelf.qml",
@@ -216,12 +264,14 @@ fn main() {
     )
     .crate_include_root(Some("include".to_owned()))
     .qrc(platform_resources)
+    .qrc(generate_couch_sounds())
     .qt_module("Quick")
     .qt_module("QuickControls2")
     .qt_module("Widgets")
     .qt_module("Quick3D")
     .qt_module("Multimedia")
     .file("src/build_info.rs")
+    .file("src/couch_speech_model.rs")
     .file("src/desktop_application.rs")
     .file("src/collection_identity_model.rs")
     .file("src/download_queue_model.rs")

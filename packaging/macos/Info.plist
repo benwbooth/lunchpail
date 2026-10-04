@@ -24,5 +24,7 @@
   <string>13.0</string>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>Search your game library by voice in Couch Mode. Audio is transcribed locally and is never uploaded or saved.</string>
 </dict>
 </plist>

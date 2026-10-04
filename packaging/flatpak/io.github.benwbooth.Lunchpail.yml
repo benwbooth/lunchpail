@@ -47,6 +47,7 @@ modules:
         # MAME's CHD core is linked from a pinned prebuilt archive (declared
         # below), so no target downloads anything at build time.
         LIBCHDMAN_PREBUILT_LOCAL_ARCHIVE: /run/build/lunchpail/chdman/libchdman_rs-x86_64-linux.a
+        SHERPA_ONNX_LIB_DIR: /run/build/lunchpail/sherpa-onnx/lib
         # The Flatpak sandbox has no build-time network access. Link against
         # the declared CPU ONNX Runtime instead of ort-sys downloading one.
         ORT_LIB_PATH: /run/build/lunchpail/onnxruntime/lib
@@ -74,6 +75,10 @@ modules:
           - result
           - target
       - cargo-sources.json
+      - type: archive
+        url: https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-v1.13.8-linux-x64-static-lib.tar.bz2
+        sha256: e1fdc5b67530e15741ef897fa5ffff297056f3bf0c6d829a27af9225a4c4b5a6
+        dest: sherpa-onnx
       - type: archive
         url: https://github.com/microsoft/onnxruntime/releases/download/v1.28.0/onnxruntime-linux-x64-1.28.0.tgz
         sha256: a3e1b79d7bb1bf09696ce675f49e4064e6c81f6202b8225624fff0e93f8d6407

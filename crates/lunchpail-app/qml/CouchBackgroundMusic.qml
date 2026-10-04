@@ -16,6 +16,7 @@ Item {
     required property color mutedColor
     required property color accentColor
     property bool blocked: false
+    property bool microphoneActive: false
     property bool userPaused: false
     property url committedSource: ""
     readonly property bool detailsCurrent: selectedGameId.length > 0
@@ -90,7 +91,7 @@ Item {
 
     AudioOutput {
         id: audioOutput
-        muted: false
+        muted: deck.microphoneActive
         volume: Math.max(0, Math.min(1, deck.library.couch_music_volume / 100.0))
     }
 

@@ -16,6 +16,8 @@ rocm-ocr = ["rapidocr-core/migraphx"]
 [dependencies]
 anyhow.workspace = true
 chrono.workspace = true
+cpal = "0.16"
+sherpa-onnx = "=1.13.8"
 chd = "=0.3.4"
 cxx.workspace = true
 cxx-qt.workspace = true

@@ -8,6 +8,8 @@ mod bezel_orionsangel;
 mod bezel_project;
 mod bezel_library;
 mod build_info;
+mod couch_speech;
+mod couch_speech_model;
 mod catalog;
 mod collection_identity;
 pub mod collection_identity_model;

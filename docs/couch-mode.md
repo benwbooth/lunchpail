@@ -15,7 +15,7 @@ keyboard, or mouse. Open it from the main window's Couch Mode control.
 | Cover shelf | A horizontal cover row with stable spacing and a selected-game preview. |
 
 Use the view button, **Library & settings**, or the Couch Mode section in
-Settings. Press **V** to cycle views from the keyboard.
+Settings. Press **Ctrl+V** to cycle views from the keyboard.
 
 Lunchpail remembers the view and keeps the selected game when you switch.
 
@@ -29,6 +29,38 @@ both directions through the wall. Select a game to see its actions, then choose
 Play or download options.
 
 The Game Menu includes favorite, release, view, and attract-mode choices.
+
+## Search with a keyboard or microphone
+
+Start typing while browsing to open the large search panel. **F3** or the Search
+button opens the current query. Results update in the current shelf/platform;
+Enter or Escape returns to those results. Back once more clears the query before
+leaving Couch Mode. The Game Menu's **Search games · voice or keyboard** action
+opens the same panel with a controller. In the panel, the D-pad selects the mic,
+clear, or browse button, and the south face button activates it.
+
+**F2** or the Mic button offers a one-time **191 MB English model download** from
+the model publisher on Hugging Face. This setup step does not open the microphone.
+After setup, activate **Speak** to capture from the system's default microphone.
+Local sherpa-onnx recognition updates the editable query while you speak. Capture
+stops at a speech pause, after 15 seconds, when you press Stop, or when you leave
+the panel. Typing cancels voice input so late results cannot replace your edits.
+Audio is never saved or uploaded. A network connection is only needed for model
+setup; recognition then works offline. Voice search never installs or launches a
+game. Search accepts spoken “Brothers” for titles written “Bros.” while keeping
+literal matches too. Unusual game titles may need a keyboard correction.
+
+Navigation uses quiet movement, confirm, and back sounds. Their saved toggle and
+volume are in **Settings → Couch Mode**, separately from video and music settings.
+While the microphone is active, navigation sounds and preview audio are silenced
+without changing the shared video mute preference or the music's paused state.
+
+The recognizer is [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), Apache-2.0,
+with the Apache-2.0 [English streaming Zipformer model](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-21).
+Model files are revision-pinned and SHA-256 checked before use, and stored in the
+application data directory under `speech/zipformer-en-2023-06-21`. To choose another
+microphone, change your operating system's default input device before starting
+voice search.
 
 ## Game details and tools
 
@@ -106,8 +138,10 @@ not execution of raw HyperSpin theme packages. EmuMovies also publishes
 - South face button: select.
 - East face button: back or close the current panel.
 - Bumpers: page through the focused list.
-- **O** on the keyboard: Library & settings.
-- **V** on the keyboard: change view.
+- **F3**: search. **F2**: voice search/setup.
+- **Ctrl+F**: favorite. **Ctrl+D**: details. **Ctrl+M**: game menu.
+- **Ctrl+O**: Library & settings. **Ctrl+V**: change view.
+- **Ctrl+A**: attract mode. **Ctrl+P**: pause/resume background music.
 
 When a dialog is open, controller navigation stays with that dialog rather
 than moving the game list behind it.

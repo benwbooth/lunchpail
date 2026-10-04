@@ -2037,13 +2037,14 @@ pub(crate) fn is_adult_game(title: &str, esrb: Option<&str>, genre: Option<&str>
 
 pub fn filter_indices(catalog: &Catalog, filter: &Filter) -> Vec<usize> {
     let search = filter.search.trim().to_lowercase();
+    let search_alias = spoken_search_alias(&search);
     let selected_tag = filter.tag.trim().to_lowercase();
     let indices = catalog
         .games
         .iter()
         .enumerate()
         .filter(|(index, _)| {
-            game_matches_filter(catalog, filter, *index, None, &search, &selected_tag)
+            game_matches_filter(catalog, filter, *index, None, &search, search_alias.as_deref(), &selected_tag)
         })
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
@@ -2115,10 +2116,11 @@ pub(crate) fn list_facet_values(
 ) -> ListFacetResult {
     let query = query.trim().to_lowercase();
     let search = filter.search.trim().to_lowercase();
+    let search_alias = spoken_search_alias(&search);
     let selected_tag = filter.tag.trim().to_lowercase();
     let mut counts = HashMap::<String, usize>::new();
     for index in 0..catalog.games.len() {
-        if !game_matches_filter(catalog, filter, index, Some(column), &search, &selected_tag) {
+        if !game_matches_filter(catalog, filter, index, Some(column), &search, search_alias.as_deref(), &selected_tag) {
             continue;
         }
         let value = catalog.list_metadata.filter_value(
@@ -2151,12 +2153,27 @@ pub(crate) fn list_facet_values(
     }
 }
 
+// Speech spells out abbreviations that appear in published game titles. Keep
+// the literal query as well, so games actually named "Brothers" still match.
+fn spoken_search_alias(search: &str) -> Option<String> {
+    let mut changed = false;
+    let words: Vec<_> = search.split_whitespace().map(|word| {
+        match word.trim_end_matches('.') {
+            "brothers" => { changed = true; "bros" },
+            "bros" => { changed = true; "brothers" },
+            _ => word,
+        }
+    }).collect();
+    changed.then(|| words.join(" "))
+}
+
 fn game_matches_filter(
     catalog: &Catalog,
     filter: &Filter,
     index: usize,
     ignored_list_column: Option<ListColumn>,
     search: &str,
+    search_alias: Option<&str>,
     selected_tag: &str,
 ) -> bool {
     let Some(game) = catalog.games.get(index) else {
@@ -2170,6 +2187,7 @@ fn game_matches_filter(
         && (!filter.hide_adult || !game.adult);
     (search.is_empty()
         || game.search_key.contains(&search)
+        || search_alias.is_some_and(|alias| game.search_key.contains(alias))
         || filter
             .display_titles
             .get(&game.id)
@@ -2226,6 +2244,29 @@ fn game_matches_filter(
 mod tests {
     use super::*;
     use crate::list_view::MetadataInput;
+
+    #[test]
+    fn spoken_brothers_search_keeps_literal_matches_and_platform_scope() {
+        let catalog = Catalog {
+            games: vec![
+                Game { id: "mario".into(), title: "Super Mario Bros.".into(),
+                    search_key: "super mario bros.".into(), platform: "Nintendo Entertainment System".into(), ..Game::default() },
+                Game { id: "brothers".into(), title: "Two Brothers".into(),
+                    search_key: "two brothers".into(), platform: "Windows".into(), ..Game::default() },
+            ],
+            ..Catalog::default()
+        };
+        let mut filter = Filter { search: "SUPER MARIO BROTHERS".into(), ..Filter::default() };
+        assert_eq!(filter_indices(&catalog, &filter), vec![0]);
+        filter.search = "brothers".into();
+        assert_eq!(filter_indices(&catalog, &filter), vec![0, 1]);
+        filter.platform = "Windows".into();
+        assert_eq!(filter_indices(&catalog, &filter), vec![1]);
+        filter.search = "two bros.".into();
+        assert_eq!(filter_indices(&catalog, &filter), vec![1]);
+        assert_eq!(spoken_search_alias("brotherhood"), None);
+        assert_eq!(spoken_search_alias("brosnan"), None);
+    }
 
     fn fixture_catalog() -> Catalog {
         Catalog {
