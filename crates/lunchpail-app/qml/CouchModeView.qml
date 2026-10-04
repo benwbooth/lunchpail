@@ -149,6 +149,29 @@ Item {
             : selectedDownloadable ? "Download options"
             : "View details"
 
+    CouchPrimaryAction {
+        id: detailsPrimary
+        details: view.details
+        current: view.detailsCurrent
+        local: view.detailsCurrent ? view.details.local : view.selectedLocal
+        downloadable: view.detailsCurrent ? view.details.downloadable : view.selectedDownloadable
+        downloadState: view.downloadJobState
+        downloadProgress: {
+            view.downloadQueue.revision
+            return view.downloadJobIndex >= 0 ? view.downloadQueue.job_progress_at(view.downloadJobIndex) : 0
+        }
+        onRequested: function(kind) {
+            if (kind === "install") view.openDownloadOverlay()
+            else if (kind === "download") view.downloadsRequested()
+            else if (kind === "setup") view.manageGameRequested("launch")
+            else if (kind === "files") view.manageGameRequested("files")
+            else {
+                view.closeOverlay()
+                view.activateAction(0)
+            }
+        }
+    }
+
     signal exitRequested()
     signal filterRequested(string key)
     signal platformRequested(string platform)
@@ -579,7 +602,7 @@ Item {
     }
 
     function openDownloadOverlay() {
-        if (!detailsCurrent || details.loading || !selectedDownloadable)
+        if (!detailsCurrent || details.loading || !details.downloadable)
             return
         attractOpen = false
         platformWheelOpen = false
@@ -3215,13 +3238,17 @@ Item {
                 coverUrl: view.coverUrl
                 backgroundUrl: view.heroUrl
                 logoUrl: { view.library.media_revision; return view.library.exact_artwork_url(view.selectedMediaId, "clear-logo") }
-                primaryAction: view.primaryAction
+                primaryAction: detailsPrimary.label
+                primaryHint: detailsPrimary.hint
+                primaryKind: detailsPrimary.kind
+                primaryEnabled: detailsPrimary.enabled
+                primaryProgress: detailsPrimary.progress
                 favorite: view.favorite
                 ready: view.detailsCurrent && !view.details.loading
                 background: view.background; panel: view.panel
                 ink: view.ink; muted: view.muted; accent: view.accentCool
                 onCloseRequested: view.closeOverlay()
-                onPrimaryRequested: { view.closeOverlay(); view.activateAction(0) }
+                onPrimaryRequested: detailsPrimary.activate()
                 onFavoriteRequested: view.activateAction(2)
                 onVersionsRequested: view.openVariantWheel()
                 onManageRequested: section => view.manageGameRequested(section)

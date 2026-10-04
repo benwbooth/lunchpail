@@ -147,6 +147,7 @@ fn main() {
                 "qml/CouchLaunchScreen.qml",
                 "qml/CouchModeView.qml",
                 "qml/CouchDetailsPage.qml",
+                "qml/CouchPrimaryAction.qml",
                 "qml/CouchVideoPreview.qml",
                 "qml/CouchPolishProbe.qml",
                 "qml/CouchPerformanceProbe.qml",

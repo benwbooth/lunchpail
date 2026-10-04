@@ -33,8 +33,13 @@ The Game Menu includes favorite, release, view, and attract-mode choices.
 ## Game details and tools
 
 **Game details & tools** opens a full-screen page with five tabs: Overview,
-Play & setup, Media, Activity, and Library. Play and Favorites stay in the left action
-rail. Use the bumpers to switch tabs, then the D-pad to choose a tool.
+Play & setup, Media, Activity, and Library. A large green **Install / Play** button
+stays at the top of every tab and is the default controller action. **Install**
+opens the version and download review before anything is queued; installed games
+show **Play** when ready. If setup is needed, the button opens launch settings.
+Downloads in progress show installation status and open the queue, including
+paused or failed installs. Favorites and other releases stay beside the cover.
+Use the bumpers to switch tabs, then the D-pad to choose a tool.
 
 ![Full-screen game details in Couch Mode](images/couch-game-details.png)
 

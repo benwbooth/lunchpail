@@ -108,8 +108,55 @@ TestCase {
         wait(30)
         verify(page.facts.some(fact => fact.label === "Publisher" && fact.value === "Nintendo"))
         verify(page.facts.some(fact => fact.label === "Co-op" && fact.value === "Not supported"))
-        verify(findChild(page, "couchDetailsAction0").width <= 320)
+        verify(findChild(page, "couchDetailsAction0").width >= 800)
+        verify(findChild(page, "couchDetailsAction1").width <= 320)
         page.ready = false
         compare(page.facts.length, 0)
+    }
+    function test_primary_is_prominent_and_visible_on_every_tab_data() {
+        return [
+            {tag:"720p-install",width:1280,height:720,label:"Install",kind:"install"},
+            {tag:"1080p-play",width:1920,height:1080,label:"Play",kind:"play"},
+            {tag:"ultrawide-install",width:3440,height:1440,label:"Install",kind:"install"}
+        ]
+    }
+    function test_primary_is_prominent_and_visible_on_every_tab(data) {
+        const page = createTemporaryObject(pageComponent, this, {
+            width:data.width,height:data.height,primaryAction:data.label,primaryKind:data.kind
+        })
+        played.target = page; played.clear()
+        const primary = findChild(page, "couchDetailsAction0")
+        const secondary = findChild(page, "couchDetailsAction1")
+        wait(30)
+        verify(primary.width >= 400 && primary.height >= 120)
+        verify(primary.width * primary.height >= secondary.width * secondary.height * 3)
+        const label = findChild(page, "couchDetailsPrimaryLabel")
+        compare(label.text, data.label.toUpperCase())
+        verify(label.font.pixelSize >= 36)
+        verify(primary.highlighted)
+        for (let tab = 0; tab < page.tabs.length; ++tab) {
+            page.chooseTab(tab)
+            verify(primary.visible && primary.enabled)
+            const edge = primary.mapToItem(page, primary.width, primary.height)
+            verify(edge.x <= page.width && edge.y < page.height / 3)
+        }
+        mouseClick(primary)
+        compare(played.count, 1)
+        page.reset(); page.handleNavigation("accept")
+        compare(played.count, 2)
+    }
+    function test_disabled_primary_does_not_fire_for_mouse_or_controller() {
+        const page = createTemporaryObject(pageComponent, this, {
+            primaryAction:"Loading…",primaryEnabled:false,primaryKind:"loading"
+        })
+        played.target = page; played.clear()
+        const primary = findChild(page, "couchDetailsAction0")
+        verify(!primary.enabled)
+        mouseClick(primary)
+        page.handleNavigation("accept")
+        compare(played.count, 0)
+        page.primaryAction = "Install"; page.primaryEnabled = true; page.primaryKind = "install"
+        page.handleNavigation("accept")
+        compare(played.count, 1)
     }
 }

@@ -14,6 +14,10 @@ Rectangle {
     property url backgroundUrl: ""
     property url logoUrl: ""
     property string primaryAction: "Play"
+    property string primaryHint: "Installed and ready to play"
+    property string primaryKind: "play"
+    property bool primaryEnabled: ready
+    property real primaryProgress: -1
     property bool favorite: false
     property bool ready: false
     property color background: "#101620"
@@ -101,7 +105,7 @@ Rectangle {
             ? item.y + item.height - toolScroll.height : Math.min(item.y, toolScroll.contentY)))
     }
     function activateRail() {
-        if (actionIndex === 0) primaryRequested()
+        if (actionIndex === 0) { if (primaryEnabled) primaryRequested() }
         else if (actionIndex === 1) favoriteRequested()
         else if (ready) versionsRequested()
     }
@@ -152,6 +156,81 @@ Rectangle {
                 minimumPixelSize: 22; fontSizeMode: Text.Fit; maximumLineCount: 2; wrapMode: Text.WordWrap
             }
         }
+        LbButton {
+            id: primaryButton
+            objectName: "couchDetailsAction0"
+            Layout.preferredWidth: Math.max(400, Math.min(840, page.width * 0.38))
+            Layout.preferredHeight: Math.max(120, Math.min(160, page.height * 0.13))
+            Layout.alignment: Qt.AlignVCenter
+            text: page.primaryAction
+            enabled: page.primaryEnabled
+            highlighted: page.navigationArea === 0 && page.actionIndex === 0
+            leftPadding: 24; rightPadding: 24; topPadding: 18; bottomPadding: 18
+            Accessible.name: page.primaryAction + " · " + page.gameTitle
+            Accessible.description: page.primaryHint
+            background: Rectangle {
+                radius: 18
+                color: !primaryButton.enabled ? "#344454"
+                    : primaryButton.down ? "#40bb76" : primaryButton.hovered ? "#83f4af" : "#61e394"
+                border.color: primaryButton.highlighted || primaryButton.visualFocus ? "#f4fff8" : "#91f7b7"
+                border.width: primaryButton.highlighted || primaryButton.visualFocus ? 4 : 1
+                Rectangle {
+                    anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 10 }
+                    height: 5; radius: 2
+                    visible: page.primaryProgress >= 0
+                    color: "#319b61"
+                    Rectangle { width: parent.width * Math.max(0, Math.min(1, page.primaryProgress)); height: parent.height; radius: 2; color: "#0a3220" }
+                }
+            }
+            contentItem: RowLayout {
+                spacing: 22
+                Canvas {
+                    id: primaryIcon
+                    Layout.preferredWidth: 52; Layout.preferredHeight: 52
+                    readonly property string kind: page.primaryKind
+                    readonly property color ink: primaryButton.enabled ? "#082d1a" : "#bcc9d6"
+                    onKindChanged: requestPaint()
+                    onInkChanged: requestPaint()
+                    onPaint: {
+                        const ctx = getContext("2d")
+                        ctx.clearRect(0, 0, width, height)
+                        ctx.fillStyle = ink; ctx.strokeStyle = ink; ctx.lineWidth = 5
+                        ctx.lineCap = "round"; ctx.lineJoin = "round"
+                        if (kind === "play") {
+                            ctx.beginPath(); ctx.moveTo(10, 5); ctx.lineTo(46, 26); ctx.lineTo(10, 47); ctx.closePath(); ctx.fill()
+                        } else if (kind === "install" || kind === "download") {
+                            ctx.beginPath(); ctx.moveTo(26, 4); ctx.lineTo(26, 33); ctx.moveTo(13, 22); ctx.lineTo(26, 35); ctx.lineTo(39, 22)
+                            ctx.moveTo(7, 39); ctx.lineTo(7, 47); ctx.lineTo(45, 47); ctx.lineTo(45, 39); ctx.stroke()
+                        } else if (kind === "stop" || kind === "cancel") {
+                            ctx.fillRect(9, 9, 34, 34)
+                        } else if (kind === "setup" || kind === "files") {
+                            ctx.beginPath(); ctx.moveTo(26, 8); ctx.lineTo(26, 44); ctx.moveTo(8, 26); ctx.lineTo(44, 26); ctx.stroke()
+                        } else {
+                            for (let x = 10; x <= 42; x += 16) { ctx.beginPath(); ctx.arc(x, 26, 4, 0, Math.PI * 2); ctx.fill() }
+                        }
+                    }
+                }
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 5
+                    Text {
+                        objectName: "couchDetailsPrimaryLabel"
+                        Layout.fillWidth: true
+                        text: page.primaryAction.toUpperCase()
+                        color: primaryButton.enabled ? "#082d1a" : "#d3deea"
+                        font.pixelSize: Math.max(36, Math.min(52, page.width / 36)); font.weight: Font.Black
+                        minimumPixelSize: 24; fontSizeMode: Text.Fit; maximumLineCount: 1
+                    }
+                    Text {
+                        Layout.fillWidth: true
+                        text: page.primaryHint
+                        color: primaryButton.enabled ? "#123f28" : "#bcc9d6"
+                        font.pixelSize: 16; wrapMode: Text.WordWrap
+                    }
+                }
+            }
+            onClicked: { page.navigationArea = 0; page.actionIndex = 0; page.activateRail() }
+        }
         LbRoundButton { text: "×"; implicitWidth: 48; implicitHeight: 48; Accessible.name: "Back to games"; onClicked: page.closeRequested() }
     }
     RowLayout {
@@ -179,18 +258,17 @@ Rectangle {
                 sourceSize: Qt.size(560, 160)
             }
             Repeater {
-                model: [page.primaryAction, page.favorite ? "Remove favorite" : "Add favorite", "Other releases"]
+                model: [page.favorite ? "Remove favorite" : "Add favorite", "Other releases"]
                 delegate: LbButton {
                     required property int index
                     required property string modelData
-                    objectName: "couchDetailsAction" + index
+                    objectName: "couchDetailsAction" + (index + 1)
                     Layout.fillWidth: true; Layout.preferredHeight: 54
                     text: modelData
-                    highlighted: page.navigationArea === 0 && page.actionIndex === index
-                    positive: index === 0 && page.primaryAction === "Play"
+                    highlighted: page.navigationArea === 0 && page.actionIndex === index + 1
                     contentItem: LbButtonLabel { control: parent; pixelSize: 18 }
-                    enabled: index !== 2 || (page.ready && page.details.variant_count > 1)
-                    onClicked: { page.navigationArea = 0; page.actionIndex = index; page.activateRail() }
+                    enabled: index !== 1 || (page.ready && page.details.variant_count > 1)
+                    onClicked: { page.navigationArea = 0; page.actionIndex = index + 1; page.activateRail() }
                 }
             }
         }
