@@ -28,4 +28,25 @@ TestCase {
         compare(preview.playing, false)
         compare(preview.position, 0)
     }
+    function test_real_video_continues_when_unmuted() {
+        const preview = createTemporaryObject(previewComponent, this)
+        preview.source = Qt.resolvedUrl("../fixtures/video-audio-sync.mp4")
+        preview.active = true
+        tryVerify(function() { return preview.playing && preview.position > 1000 }, 5000)
+        const before = preview.position
+        preview.muted = false
+        wait(400)
+        verify(preview.playing)
+        verify(preview.position >= before)
+        compare(preview.errorMessage, "")
+        preview.muted = true
+        preview.paused = true
+        tryCompare(preview, "playing", false)
+        const pausedPosition = preview.position
+        preview.muted = false
+        wait(200)
+        verify(preview.paused)
+        verify(!preview.playing)
+        compare(preview.position, pausedPosition)
+    }
 }

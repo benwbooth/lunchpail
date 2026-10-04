@@ -70,16 +70,11 @@ TestCase {
                 "file:///tmp/lunchpail-retrying-player-probe.mp4")
     }
 
-    function test_audio_reload_preserves_bound_video_selection() {
+    function test_underlying_player_follows_bound_video_selection() {
         const first = "file:///tmp/lunchpail-retrying-player-probe.mp4"
         const second = "file:///tmp/lunchpail-next-player-probe.mp4"
         player.source = Qt.binding(function() { return selectedVideo.current })
         selectedVideo.current = first
-        tryVerify(function() { return player.player.source.toString() === first }, 250)
-
-        player.reloadPipeline()
-        compare(player.source.toString(), first)
-        compare(player.player.source.toString(), "")
         tryVerify(function() { return player.player.source.toString() === first }, 250)
 
         selectedVideo.current = second

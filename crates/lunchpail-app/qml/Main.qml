@@ -208,10 +208,6 @@ ApplicationWindow {
     // One user choice for every grid preview and the details/fullscreen video.
     // Changing games or closing a player must not reset it.
     property bool videoAudioMuted: true
-    onVideoAudioMutedChanged: {
-        if (!videoAudioMuted)
-            gameVideoPlayer.enableAudio()
-    }
     property string hoverPreviewPlaybackError: ""
     property int hoverPreviewProbeStage: 0
     property int hoverPreviewPlaybackCycles: 0
@@ -2492,45 +2488,34 @@ ApplicationWindow {
         function onController_profile_editor_openChanged() { root.controllerLearnActive = false }
     }
 
-    AudioOutput {
-        id: gameVideoAudio
-        muted: root.videoAudioMuted
+    PreviewAudioCompanion {
+        id: gameVideoSound
+        videoSource: gameVideoPlayer.source
+        videoPosition: gameVideoPlayer.position
+        previewPlaying: gameVideoPlayer.playbackState === MediaPlayer.PlayingState
+        unmuted: !root.videoAudioMuted
         volume: 0.45
+        onPlaybackError: function(message) {
+            root.mediaPlaybackMessage = "Video audio playback failed: " + message
+        }
     }
 
     RetryingMediaPlayer {
         id: gameVideoPlayer
         property bool resumeApplied: false
-        property real unmuteResumePosition: -1
-        property bool unmuteResumePlaying: false
         source: mediaFullscreen.opened && root.couchFullscreenVideoUrl.toString().length > 0
                 ? root.couchFullscreenVideoUrl
                 : (!root.couchModeActive || mediaFullscreen.opened) && !root.downloadPlanUiProbe
                 && gameDetails.video_available
                 ? gameDetails.video_url : ""
-        // Silent video playback must not initialize a host audio backend.
-        // Enabling sound explicitly attaches the real output.
-        // Disable both the track and sink while muted. Qt can still load and
-        // render the video stream without initializing a host audio backend.
-        activeAudioTrack: gameVideoAudio.muted ? -1 : 0
-        audioOutput: gameVideoAudio.muted ? null : gameVideoAudio
+        // Sound follows this timeline through a separate decoder. Toggling
+        // mute must never change the video track, source, or playback state.
+        activeAudioTrack: -1
+        audioOutput: null
         videoOutput: mediaFullscreen.opened ? fullscreenVideoOutput : detailVideoOutput
         loops: MediaPlayer.Infinite
-        function enableAudio() {
-            if (source.toString().length > 0
-                    && playbackState !== MediaPlayer.StoppedState) {
-                // The pipeline was built with the audio track detached, and a
-                // late-attached output is not wired into a running decoder.
-                // Tearing the source down and restoring it rebuilds the whole
-                // pipeline with sound, resuming at the same position.
-                unmuteResumePosition = position
-                unmuteResumePlaying = playbackState === MediaPlayer.PlayingState
-                reloadPipeline()
-            }
-        }
         onSourceChanged: {
             resumeApplied = false
-            unmuteResumePosition = -1
             root.mediaPlaybackMessage = ""
             if (source.toString().length === 0) {
                 stop()
@@ -2538,16 +2523,7 @@ ApplicationWindow {
         }
         onMediaStatusChanged: {
             if (mediaStatus === MediaPlayer.LoadedMedia) {
-                if (unmuteResumePosition >= 0) {
-                    position = unmuteResumePosition
-                    unmuteResumePosition = -1
-                    resumeApplied = true
-                    // Unmuting a grid card must not start a paused details
-                    // video (including one paused while an emulator runs).
-                    if (unmuteResumePlaying) play()
-                    else pause()
-                    return
-                } else if (!resumeApplied && seekable && root.couchFullscreenVideoUrl.toString().length === 0
+                if (!resumeApplied && seekable && root.couchFullscreenVideoUrl.toString().length === 0
                         && gameDetails.video_resume_position > 0)
                     position = Math.min(gameDetails.video_resume_position, duration)
                 resumeApplied = true
@@ -9328,7 +9304,7 @@ ApplicationWindow {
                         anchors.centerIn: parent
                         width: 20
                         height: 20
-                        name: gameVideoAudio.muted ? "mute" : "volume"
+                        name: root.videoAudioMuted ? "mute" : "volume"
                         color: fullscreenMuteButton.enabled ? "#f4f7fb" : root.muted
                     }
                 }
@@ -14300,7 +14276,7 @@ ApplicationWindow {
                                         rightPadding: 0
                                         topPadding: 0
                                         bottomPadding: 0
-                                        highlighted: !gameVideoAudio.muted
+                                        highlighted: !root.videoAudioMuted
                                         Accessible.name: root.videoAudioMuted ? "Unmute all game videos" : "Mute all game videos"
                                         contentItem: Item {
                                             implicitWidth: 18
@@ -14309,7 +14285,7 @@ ApplicationWindow {
                                                 anchors.centerIn: parent
                                                 width: 18
                                                 height: 18
-                                                name: gameVideoAudio.muted ? "mute" : "volume"
+                                                name: root.videoAudioMuted ? "mute" : "volume"
                                                 color: !detailVideoMuteButton.enabled ? root.muted
                                                        : detailVideoMuteButton.highlighted ? "#ffcb84" : "#f4f7fb"
                                             }

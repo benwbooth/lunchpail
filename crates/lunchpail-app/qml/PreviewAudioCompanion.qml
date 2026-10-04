@@ -1,8 +1,8 @@
 import QtQuick
 import QtMultimedia
 
-// The hover video stays on its silent player. Opening a separate audio-only
-// decoder on demand avoids resetting the video sink when the user unmutes.
+// Videos stay on their silent players. Opening a separate audio-only decoder
+// on demand avoids resetting a video sink when the user unmutes.
 QtObject {
     id: companion
 
@@ -10,10 +10,13 @@ QtObject {
     property int videoPosition: 0
     property bool previewPlaying: false
     property bool unmuted: false
+    property alias volume: soundOutput.volume
     readonly property alias audioSource: audioPlayer.source
     readonly property alias audioPlaybackState: audioPlayer.playbackState
     readonly property alias audioMuted: soundOutput.muted
     signal playbackError(string message)
+
+    onVideoPositionChanged: audioPlayer.syncPosition(false)
 
     property AudioOutput output: AudioOutput {
         id: soundOutput
@@ -30,6 +33,20 @@ QtObject {
         activeVideoTrack: -1
         loops: MediaPlayer.Infinite
 
+        function syncPosition(force) {
+            if (!companion.unmuted || !companion.previewPlaying || !seekable
+                    || (!force && (!positionedForSource
+                                  || playbackState !== MediaPlayer.PlayingState)))
+                return
+            const target = duration > 0
+                         ? Math.min(Math.max(0, companion.videoPosition), duration)
+                         : Math.max(0, companion.videoPosition)
+            // Follow seeks and loop boundaries, but tolerate normal differences
+            // between the two decoders' position-notification intervals.
+            if (force || Math.abs(position - target) > 500)
+                position = target
+        }
+
         function startIfReady() {
             if (!companion.unmuted || !companion.previewPlaying
                     || source.toString().length === 0
@@ -37,10 +54,8 @@ QtObject {
                         && mediaStatus !== MediaPlayer.BufferedMedia))
                 return
             if (!positionedForSource) {
-                position = duration > 0
-                           ? Math.min(Math.max(0, companion.videoPosition), duration)
-                           : Math.max(0, companion.videoPosition)
                 positionedForSource = true
+                syncPosition(true)
             }
             if (playbackState !== MediaPlayer.PlayingState)
                 play()
@@ -54,6 +69,10 @@ QtObject {
                 Qt.callLater(startIfReady)
         }
         onMediaStatusChanged: startIfReady()
+        onSeekableChanged: {
+            if (audioPlayer.seekable && positionedForSource)
+                syncPosition(true)
+        }
         onErrorOccurred: function(error, errorString) {
             companion.playbackError(errorString)
         }
