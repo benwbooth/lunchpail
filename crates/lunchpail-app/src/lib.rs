@@ -404,6 +404,18 @@ fn needs_widget_application(
 
 pub fn run() -> i32 {
     app_paths::import_legacy_environment();
+    if std::env::args().nth(1).as_deref() == Some("--prepare-dev-restart") {
+        return match std::env::args().nth(2).and_then(|pid| pid.parse::<u32>().ok()) {
+            Some(pid) => match single_instance::prepare_dev_restart(pid) {
+                Ok(()) => 0,
+                Err(error) => {
+                    eprintln!("LUNCHPAIL_DEV_RESTART_DEFERRED: {error:#}");
+                    1
+                }
+            },
+            None => 1,
+        };
+    }
     if std::env::args().nth(1).as_deref() == Some("--cheat-core-identity") {
         return game_mods::core_identity_helper();
     }
@@ -859,12 +871,20 @@ pub fn run() -> i32 {
         return 1;
     }
     let mut engine = QQmlApplicationEngine::new();
-    let engine = engine
+    let mut engine_ref = engine
         .as_mut()
         .expect("Qt did not construct a QQmlApplicationEngine");
-    engine.load(&QUrl::from("qrc:/qt/qml/Lunchpail/qml/Main.qml"));
+    engine_ref.as_mut().load(&QUrl::from("qrc:/qt/qml/Lunchpail/qml/Main.qml"));
 
-    application_ref.exec()
+    let result = application_ref.exec();
+    if single_instance::restarting() {
+        // Destroy the old window/models and release the visible-instance slot,
+        // but keep Rust launch workers and their input/display resources alive.
+        drop(engine);
+        drop(_instance_guard);
+        emulator_session::finish_owned_session_after_ui_restart();
+    }
+    result
 }
 
 #[cfg(test)]

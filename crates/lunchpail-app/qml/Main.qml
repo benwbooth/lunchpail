@@ -3086,6 +3086,15 @@ ApplicationWindow {
         repeat: true
         running: true
         onTriggered: {
+            if (singleInstance.take_restart_request()) {
+                if (!root.automatedProbeRun) {
+                    root.rememberPlatformSearch(true)
+                    if (root.librarySessionFullRestored && root.startupPresented)
+                        root.saveLibrarySession()
+                }
+                Qt.quit()
+                return
+            }
             if (!singleInstance.take_raise_request())
                 return
             if (root.startupPresented)

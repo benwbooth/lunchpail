@@ -29,6 +29,15 @@ The script enters the development environment when needed, watches source
 changes, rebuilds, and relaunches Lunchpail. Leave one watcher running rather
 than starting another after every edit.
 
+Development restarts hand off the UI without terminating a running emulator.
+The replacement UI adopts the existing game; the original process remains a
+background session host only until that game finishes, keeping calibrated
+controllers, GameBuddy, and launch resources alive. Save-exit notifications and
+automatic backup are handed to the replacement UI. If the running build cannot
+acknowledge a safe handoff, the watcher defers the restart instead of killing it.
+When upgrading from an older build without this protocol, close the old UI after
+finishing your game and start `./dev.sh` again once.
+
 Do not use this workflow against an irreplaceable profile without a backup.
 For a separate writable profile, the app supports
 `--state-database /path/to/test-state.db`. That isolates Lunchpail's profile,
@@ -50,4 +59,3 @@ Keep changes focused and describe how you tested the behavior. For a visual
 change, a screenshot helps reviewers understand it.
 
 For normal use, return to the [user guide](README.md).
-

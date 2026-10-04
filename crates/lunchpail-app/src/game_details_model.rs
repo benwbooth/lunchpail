@@ -6569,6 +6569,7 @@ impl qobject::GameDetailsModel {
         let qt_thread = self.as_ref().qt_thread();
         let started_thread = qt_thread.clone();
         let worker_session_token = session_token.clone();
+        let launch_worker = crate::emulator_session::LaunchWorker::new();
         let spawn_result = std::thread::Builder::new()
             .name("lunchpail-emulator-launch".into())
             // The launch planner's controller preparation carries very large
@@ -6576,6 +6577,7 @@ impl qobject::GameDetailsModel {
             // overflows before the plan builder runs its first statement.
             .stack_size(64 * 1024 * 1024)
             .spawn(move || {
+                let _launch_worker = launch_worker;
                 let launch = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> anyhow::Result<(Result<(), String>, Option<String>, bool, Option<(String, bool)>)> {
                     let preparation_started = Instant::now();
                     let mods = crate::game_mods::Profile::load(&crate::settings::SettingsStore::open_default()?, &game_id)?;

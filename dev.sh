@@ -27,14 +27,9 @@ fi
 
 stop_app() {
   if [[ -n "$app_pid" ]] && kill -0 "$app_pid" 2>/dev/null; then
-    kill "$app_pid" 2>/dev/null || true
-    # Wait for a clean exit so the next launch can take the instance lock, but
-    # never hang: the window should be gone for about a second at most.
-    for _ in $(seq 1 60); do
-      kill -0 "$app_pid" 2>/dev/null || break
-      sleep 0.05
-    done
-    kill -9 "$app_pid" 2>/dev/null || true
+    if ! target/debug/lunchpail --prepare-dev-restart "$app_pid"; then
+      echo "[dev] leaving the current app running because a safe handoff was unavailable" >&2
+    fi
   fi
   app_pid=""
 }
@@ -52,7 +47,17 @@ build() {
 
 # Swaps the app for the freshly built binary.
 swap() {
-  stop_app
+  if [[ -n "$app_pid" ]] && kill -0 "$app_pid" 2>/dev/null; then
+    # The original process may own calibrated input bridges, private display
+    # resources and save tracking. Ask it to close only its UI. It stays as a
+    # background session host until the game ends; the new UI adopts the record.
+    # Never fall back to TERM/KILL if the handoff fails.
+    if ! target/debug/lunchpail --prepare-dev-restart "$app_pid"; then
+      echo "[dev] restart deferred; current UI and game were left running" >&2
+      return 1
+    fi
+    app_pid=""
+  fi
   start_app
 }
 
@@ -78,7 +83,8 @@ watchexec --restart --shell=none \
   | while IFS= read -r line; do
       printf '[dev] %s\n' "$line"
       if [[ "$line" == LUNCHPAIL_DEV_BUILT ]]; then
-        swap
-        echo "[dev] restarted (pid $app_pid)"
+        if swap; then
+          echo "[dev] restarted (pid $app_pid)"
+        fi
       fi
     done

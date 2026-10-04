@@ -4,6 +4,7 @@
 
 use std::fs::{self, OpenOptions};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, ensure};
@@ -27,6 +28,8 @@ pub struct Session {
     pub title: String,
     pub emulator: String,
     owner: ProcessIdentity,
+    #[serde(default)]
+    ui_detached: bool,
     pub process: Option<ProcessIdentity>,
     #[serde(default)]
     pub save_observation: Option<crate::retroarch_saves::AutoSaveObservation>,
@@ -165,6 +168,7 @@ fn owned_retroarch_orphan() -> Option<Session> {
         game_id: String::new(),
         title,
         emulator: "RetroArch".to_owned(),
+        ui_detached: false,
         owner: ProcessIdentity {
             pid,
             started: process.start_time(),
@@ -215,6 +219,7 @@ pub fn reserve(game_id: &str, title: &str) -> Result<Session> {
             title: title.to_owned(),
             emulator: String::new(),
             owner,
+            ui_detached: false,
             process: None,
             save_observation: None,
             sync_target: None,
@@ -272,7 +277,10 @@ fn retire_session(path: &Path, session: &Session) -> Result<()> {
     // Preserve exit work after the original launch worker died with Lunchpail,
     // including a game that closed while Lunchpail was not running. A live
     // owner's worker still handles its own exit.
-    if session.version == 1 && session.process.is_some() && !alive(&session.owner) {
+    if session.version == 1
+        && session.process.is_some()
+        && (session.ui_detached || !alive(&session.owner))
+    {
         queue_recovered_exit(path, session)?;
     }
     fs::remove_file(path).context("removing expired emulator session")
@@ -296,8 +304,57 @@ fn acknowledge_exit_at(path: &Path, token: &str) -> Result<()> {
 
 pub fn clear(token: &str) -> Result<()> {
     with_lock(|path| {
-        if read(path)?.is_some_and(|session| session.token == token) {
+        if let Some(session) = read(path)?.filter(|session| session.token == token) {
+            // The old UI is gone, but its worker kept controllers, compositor,
+            // cleanup and activity tracking alive. Let the replacement UI
+            // deliver the save notice and perform the cloud-backup handoff.
+            if crate::single_instance::restarting() && session.process.is_some() {
+                queue_recovered_exit(path, &session)?;
+            }
             fs::remove_file(path).context("clearing emulator session")?;
+        }
+        Ok(())
+    })
+}
+
+/// Keep only the original process's launch worker alive after a UI handoff.
+/// Never wait on a different game subsequently started by the replacement UI.
+pub(crate) fn finish_owned_session_after_ui_restart() {
+    let announced = LAUNCH_WORKERS.load(Ordering::SeqCst) > 0;
+    if announced {
+        eprintln!("LUNCHPAIL_SESSION_HOST pid={}", std::process::id());
+    }
+    // Registry retirement can precede the worker's final save/activity flush.
+    // Wait for the worker itself, not for its registry entry to disappear.
+    while LAUNCH_WORKERS.load(Ordering::SeqCst) > 0 {
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    if announced {
+        eprintln!("LUNCHPAIL_SESSION_HOST_FINISHED pid={}", std::process::id());
+    }
+}
+
+static LAUNCH_WORKERS: AtomicUsize = AtomicUsize::new(0);
+
+pub(crate) struct LaunchWorker;
+impl LaunchWorker {
+    pub(crate) fn new() -> Self {
+        LAUNCH_WORKERS.fetch_add(1, Ordering::SeqCst);
+        Self
+    }
+}
+impl Drop for LaunchWorker {
+    fn drop(&mut self) {
+        LAUNCH_WORKERS.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+pub(crate) fn detach_owned_ui() -> Result<()> {
+    let owner = identity(std::process::id()).context("Lunchpail process is unavailable")?;
+    with_lock(|path| {
+        if let Some(mut session) = read(path)?.filter(|session| session.owner == owner) {
+            session.ui_detached = true;
+            write(path, &session)?;
         }
         Ok(())
     })
@@ -438,6 +495,7 @@ mod tests {
             title: "test".into(),
             emulator: String::new(),
             owner: current,
+            ui_detached: false,
             process: None,
             save_observation: None,
             sync_target: None,
@@ -457,6 +515,7 @@ mod tests {
             title: "Test Game".into(),
             emulator: "RetroArch".into(),
             owner: owner.clone(),
+            ui_detached: false,
             process: Some(owner),
             save_observation: None,
             sync_target: None,
@@ -478,6 +537,7 @@ mod tests {
             title: "Donkey Kong Country 2".into(),
             emulator: "RetroArch".into(),
             owner: expired.clone(),
+            ui_detached: false,
             process: Some(expired),
             save_observation: crate::retroarch_saves::AutoSaveObservation::for_content(
                 "mesen-s",
@@ -517,6 +577,78 @@ mod tests {
         let session: Session = serde_json::from_value(json).unwrap();
         assert!(session.save_observation.is_none());
         assert!(session.sync_target.is_none());
+        assert!(!session.ui_detached);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn replacement_ui_adopts_the_same_live_process_after_owner_exit() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("session.json");
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let mut owner = identity(std::process::id()).unwrap();
+        owner.started += 1;
+        let session = Session {
+            version: 1,
+            token: "handoff".into(),
+            game_id: "game".into(),
+            title: "Test game".into(),
+            emulator: "test".into(),
+            owner,
+            ui_detached: true,
+            process: identity(child.id()),
+            save_observation: None,
+            sync_target: None,
+        };
+        write(&path, &session).unwrap();
+        // Multiple UI replacements must keep the exact PID/birth identity.
+        let first = active_locked(&path).unwrap();
+        let second = active_locked(&path).unwrap();
+        let still_running = child.try_wait().unwrap().is_none();
+        let _ = child.kill();
+        let _ = child.wait();
+        assert_eq!(first, Some(session.clone()));
+        assert_eq!(second, Some(session));
+        assert!(still_running);
+    }
+
+    #[test]
+    fn detached_live_owner_still_queues_exit_for_replacement_ui() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("session.json");
+        let owner = identity(std::process::id()).unwrap();
+        let session = Session {
+            version: 1,
+            token: "detached".into(),
+            game_id: "game".into(),
+            title: "Test game".into(),
+            emulator: "test".into(),
+            owner: owner.clone(),
+            ui_detached: true,
+            process: Some(owner),
+            save_observation: None,
+            sync_target: Some(serde_json::json!({"available": true})),
+        };
+        write(&path, &session).unwrap();
+        retire_session(&path, &session).unwrap();
+        assert_eq!(read_pending(&path).unwrap(), vec![session]);
+    }
+
+    #[test]
+    fn session_host_waits_for_worker_cleanup_without_a_registry_entry() {
+        let worker = LaunchWorker::new();
+        let (finished, receiver) = std::sync::mpsc::channel();
+        let host = std::thread::spawn(move || {
+            finish_owned_session_after_ui_restart();
+            finished.send(()).unwrap();
+        });
+        assert!(receiver.recv_timeout(Duration::from_millis(250)).is_err());
+        drop(worker);
+        receiver.recv_timeout(Duration::from_secs(2)).unwrap();
+        host.join().unwrap();
     }
 
     #[test]
@@ -533,6 +665,7 @@ mod tests {
             title: "test".into(),
             emulator: String::new(),
             owner: current,
+            ui_detached: false,
             process: Some(invalid),
             save_observation: None,
             sync_target: None,
@@ -556,6 +689,7 @@ mod tests {
             emulator: "sleep".into(),
             owner: identity(std::process::id()).unwrap(),
             process: Some(process),
+            ui_detached: false,
             save_observation: None,
             sync_target: None,
         };
