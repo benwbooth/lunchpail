@@ -617,6 +617,9 @@ LbDialog {
                 ControllerMappingView {
                     Layout.fillWidth: true
                     settingsModel: wizard.settingsModel
+                    gamepad: wizard.gamepad
+                    sourceDeviceId: wizard.deviceId
+                    sourceBindings: wizard.bindings
                     sourceLayout: wizard.layout
                     destinationLayout: wizard.catalog.emulator_profiles[wizard.profileIndex]
                         ? wizard.catalog.layouts.find(layout => layout.id === wizard.catalog.emulator_profiles[wizard.profileIndex].target_layout) || null : null

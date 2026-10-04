@@ -38,7 +38,9 @@ TestCase {
                 emulator_profiles:[{id:"nes-target",name:"NES controller",core:"fceumm",transport:"retropad",target_layout:"nes",
                     retroarch_launch:{platforms:["Nintendo Entertainment System"],max_players:4}}]})
             }
-            function complete() { return {layout:"nes",os:"linux",bindings:{b:{code:1},a:{code:2}}} }
+            function complete() { return {layout:"nes",os:"linux",bindings:{
+                b:{code:1,kind:"button",direction:0},a:{code:2,kind:"button",direction:0}
+            }} }
             function controller_calibration_json(id) { return JSON.stringify(calibrations[id] || {}) }
             function controller_player_order_json(platform) { return JSON.stringify(systemOrders[platform] || order) }
             function save_controller_player_order(json, platform) {
@@ -435,6 +437,34 @@ TestCase {
         workflow.loadMapping()
         compare(workflow.choices.a,"a")
         verify(workflow.choices.b === undefined)
+    }
+    function test_mapping_review_highlights_only_its_source_controller_without_editing() {
+        workflow.startForGame("Metroid", "Nintendo Entertainment System", "RetroArch (fceumm)")
+        workflow.assignPlayer(0,"brawler")
+        workflow.stage=1
+        verify(workflow.saveTarget("nes-target"))
+        workflow.stage=2
+        const mapping=findChild(workflow,"guidedMappingView")
+        verify(mapping !== null)
+        const saved=JSON.stringify(settings.calibrations)
+        const choices=JSON.stringify(workflow.choices)
+        mapping.chooseControl(1,"a")
+        pad.last_binding=JSON.stringify({code:1,kind:"button",direction:0})
+        pad.last_device_key="sc2"
+        pad.input_revision++
+        compare(mapping.liveSourceIds.length,0)
+        pad.last_device_key="brawler"
+        pad.input_revision++
+        compare(mapping.highlightedSourceId(),"b")
+        compare(mapping.highlightedDestId(),"b")
+        compare(mapping.selected.target_id,"a")
+        verify(!workflow.dirty)
+        compare(JSON.stringify(settings.calibrations),saved)
+        compare(JSON.stringify(workflow.choices),choices)
+        workflow.stage=1
+        compare(mapping.liveSourceIds.length,0)
+        pad.input_revision++
+        compare(mapping.liveSourceIds.length,0)
     }
     function test_duplicate_assignment_and_save_failure_do_not_change_players() {
         workflow.assignPlayer(0,"brawler"); workflow.addPlayer()

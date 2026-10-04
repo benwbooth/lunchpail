@@ -5,6 +5,7 @@ import QtQuick.Layouts
 LbDialog {
     id: dialog
     required property var settingsModel
+    property var gamepad: null
     property var setups: []
     property string selectedKey: ""
     property string loadedText: ""
@@ -1058,6 +1059,8 @@ LbDialog {
                 Layout.fillWidth: true
                 visible: !!mappingPreview.part && !!mappingPreview.part.destination_control
                 settingsModel: dialog.settingsModel
+                gamepad: dialog.gamepad
+                sourceDeviceId: mappingPreview.row ? mappingPreview.row.controller_id || "" : ""
                 sourceLayout: mappingPreview.layout
                 destinationLayout: mappingPreview.part ? mappingPreview.catalog.layouts.find(layout => layout.id === mappingPreview.part.destination_layout) || null : null
                 rows: !mappingPreview.part || !mappingPreview.part.destination_control ? [] : [{

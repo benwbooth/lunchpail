@@ -6,6 +6,26 @@ ColumnLayout {
     id: view
     Brawler64Geometry { id: brawlerGeometry }
     required property var settingsModel
+    property var gamepad: null
+    property string sourceDeviceId: ""
+    property bool inputFeedbackEnabled: true
+    // Callers with an unsaved calibration can supply its bindings explicitly.
+    property var sourceBindings: {
+        if (!sourceDeviceId || !sourceLayout) return ({})
+        settingsModel.controller_revision
+        try {
+            const saved = JSON.parse(settingsModel.controller_calibration_json(sourceDeviceId))
+            return saved.layout === sourceLayout.id ? saved.bindings || ({}) : ({})
+        } catch (error) { return ({}) }
+    }
+    property var liveSourceIds: []
+    readonly property var liveRows: rows.concat(secondaryRows).filter(row => liveMatchesRow(row))
+    onLiveSourceIdsChanged: connections.requestPaint()
+    onSourceDeviceIdChanged: clearLiveInput()
+    onSourceBindingsChanged: clearLiveInput()
+    onGamepadChanged: clearLiveInput()
+    onInputFeedbackEnabledChanged: if (!inputFeedbackEnabled) clearLiveInput()
+    onVisibleChanged: if (!visible) clearLiveInput()
     property var sourceLayout: null
     property var destinationLayout: null
     property var rows: []
@@ -31,12 +51,65 @@ ColumnLayout {
     onTwinRoutesChanged: { hoveredTwinIndex = -1; connections.requestPaint() }
     property string focusedSourceControl: ""
     readonly property var selected: rows.length && selectedIndex >= 0 ? rows[Math.min(selectedIndex, rows.length - 1)] : null
-    onRowsChanged: { focusedSourceControl = ""; selectedIndex = -1; hoveredIndex = -1; hoveredTwinIndex = -1; connections.requestPaint() }
+    onRowsChanged: { clearLiveInput(); focusedSourceControl = ""; selectedIndex = -1; hoveredIndex = -1; hoveredTwinIndex = -1; connections.requestPaint() }
     onSelectedChanged: { focusedSourceControl = ""; connections.requestPaint() }
     onPhysicalGapsChanged: connections.requestPaint()
-    onSourceLayoutChanged: { focusedSourceControl = ""; Qt.callLater(() => { if (connections) connections.requestPaint() }) }
+    onSourceLayoutChanged: { clearLiveInput(); focusedSourceControl = ""; Qt.callLater(() => { if (connections) connections.requestPaint() }) }
     onDestinationLayoutChanged: Qt.callLater(() => { if (connections) connections.requestPaint() })
     Component.onCompleted: Qt.callLater(() => { if (connections) connections.requestPaint() })
+
+    function clearLiveInput() {
+        liveFlash.stop()
+        if (liveSourceIds.length) liveSourceIds = []
+    }
+    function inputMatches(saved, input, control) {
+        if (!saved || !input) return false
+        // Prefer measured physical identity. Logical labels can differ between
+        // layouts, and must never make another button look like this one.
+        if (saved.native && input.native) {
+            return typeof saved.native.code === "number"
+                && saved.native.code === input.native.code
+                && (control.analog || saved.native.direction === input.native.direction)
+        }
+        return typeof saved.code === "number" && saved.code === input.code
+            && (saved.kind === "button" || saved.kind === "axis") && saved.kind === input.kind
+            && (control.analog || saved.direction === input.direction)
+    }
+    function receiveInput() {
+        if (!visible || !inputFeedbackEnabled || !gamepad || !sourceDeviceId || !sourceLayout) return
+        if (settingsModel.controller_key_for_input(gamepad.last_device_key) !== sourceDeviceId) return
+        let input
+        try { input = JSON.parse(gamepad.last_binding) } catch (error) { return }
+        const ids = []
+        for (const control of sourceLayout.controls) {
+            if (control.repeat_of || !inputMatches(sourceBindings[control.id], input, control)) continue
+            const owner = sourceOwner(control.id)
+            if (ids.indexOf(owner) < 0) ids.push(owner)
+        }
+        liveSourceIds = ids
+        if (ids.length) liveFlash.restart()
+        else liveFlash.stop()
+    }
+    function liveMatchesRow(row) {
+        return !!row.physical_id && liveSourceIds.indexOf(sourceOwner(row.physical_id)) >= 0
+    }
+    function wireHighlighted(twin, index) {
+        if (liveSourceIds.length) return liveMatchesRow((twin ? secondaryRows : rows)[index])
+        if (twin) return index === hoveredTwinIndex
+        if (hoveredIndex >= 0 && hoveredIndex < rows.length) return index === hoveredIndex
+        return index === selectedIndex
+    }
+    function controlHighlighted(side, id) {
+        if (liveSourceIds.length) return side === 0
+            ? liveSourceIds.indexOf(sourceOwner(id)) >= 0
+            : liveRows.some(row => row.target_id === id)
+        return id === (side === 0 ? highlightedSourceId() : highlightedDestId())
+    }
+    Connections {
+        target: view.gamepad
+        function onInput_revisionChanged() { view.receiveInput() }
+    }
+    Timer { id: liveFlash; interval: 1200; onTriggered: view.liveSourceIds = [] }
 
     function sourceOwner(id) {
         const controls = sourceLayout ? sourceLayout.controls : []
@@ -79,15 +152,17 @@ ColumnLayout {
             return secondaryRows[hoveredTwinIndex]
         return null
     }
-    // Artwork highlight follows the pointer first, then keyboard-chosen or
-    // pinned state: exactly one control ever looks active.
+    // A recent source press takes precedence temporarily. Otherwise restore
+    // the pointer, then keyboard-chosen or pinned state without editing it.
     function highlightedSourceId() {
+        if (liveSourceIds.length) return liveSourceIds[0]
         const row = hoveredRow()
         if (row && row.physical_id) return sourceOwner(row.physical_id)
         if (focusedSourceControl) return focusedSourceControl
         return selected ? sourceOwner(selected.physical_id || "") : ""
     }
     function highlightedDestId() {
+        if (liveSourceIds.length) return liveRows.length ? liveRows[0].target_id : ""
         const row = hoveredRow()
         if (row && row.target_id) return row.target_id
         return selected ? selected.target_id : ""
@@ -274,6 +349,8 @@ ColumnLayout {
                         y: stage.titleHeight + 8
                         width: parent.width; height: stage.diagramHeight
                         activeControl: panel.index === 0 ? view.highlightedSourceId() : view.highlightedDestId()
+                        activeControls: view.liveSourceIds.length ? (panel.modelData ? panel.modelData.controls : [])
+                            .filter(control => view.controlHighlighted(panel.index, control.id)).map(control => control.id) : []
                     }
                     Repeater {
                         model: panel.modelData ? panel.modelData.controls : []
@@ -281,8 +358,7 @@ ColumnLayout {
                             id: controlHotspot
                             required property var modelData
                             objectName: "controllerControl" + panel.index + "_" + modelData.id
-                            readonly property bool highlighted: modelData.id === (panel.index === 0
-                                ? view.highlightedSourceId() : view.highlightedDestId())
+                            readonly property bool highlighted: view.controlHighlighted(panel.index, modelData.id)
                             readonly property var position: panel.modelData.id === "brawler64" ? brawlerGeometry.point(modelData.id) : {x: modelData.x * 8 + 50, y: modelData.y * 4 + 35}
                             x: position.x * panel.width / 900 - width / 2
                             y: stage.titleHeight + 8 + position.y * stage.diagramHeight / 500 - height / 2
@@ -432,11 +508,7 @@ ColumnLayout {
                     return {entry: entry, lane: lane}
                 })
                 function isFocus(entry) {
-                    if (entry.twin)
-                        return entry.index === view.hoveredTwinIndex
-                    if (view.hoveredIndex >= 0 && view.hoveredIndex < view.rows.length)
-                        return entry.index === view.hoveredIndex
-                    return entry.index === view.selectedIndex
+                    return view.wireHighlighted(entry.twin, entry.index)
                 }
                 function focusColor(entry) {
                     if (!entry.twin && view.gapReason(entry.row)) return "#e57474"
@@ -464,6 +536,19 @@ ColumnLayout {
                 ctx.setLineDash([])
             }
         }
+    }
+    Label {
+        objectName: "controllerLiveMappingFeedback"
+        Layout.fillWidth: true
+        visible: !!view.gamepad && !!view.sourceDeviceId && view.inputFeedbackEnabled
+        wrapMode: Text.WordWrap
+        textFormat: Text.PlainText
+        color: view.liveSourceIds.length ? "#ffb454" : palette.text
+        text: view.liveSourceIds.length
+            ? "Pressed: " + view.liveSourceIds.map(id => view.layoutLabel(view.sourceLayout, id)).join(" / ")
+                + (view.liveRows.length ? " → " + view.liveRows.map(row => view.targetLabel(row)
+                    + (row.output ? " [" + row.output + "]" : "")).join("; ") : " — no assignment in this view")
+            : "Press a button or move a stick on the source controller to highlight its mappings."
     }
     Label {
         Layout.fillWidth: true

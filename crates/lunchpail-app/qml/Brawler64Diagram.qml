@@ -5,6 +5,7 @@ Item {
     id: diagram
     Brawler64Geometry { id: geometry }
     property string activeControl: ""
+    property var activeControls: []
     readonly property real sx: width / 900
     readonly property real sy: height / 500
     implicitWidth: 900
@@ -92,7 +93,7 @@ Item {
         delegate: Item {
             id: controlBody
             required property var modelData
-            readonly property bool lit: diagram.activeControl === modelData.id
+            readonly property bool lit: diagram.activeControl === modelData.id || diagram.activeControls.indexOf(modelData.id) >= 0
             readonly property bool direction: modelData.kind === "direction"
             readonly property bool round: modelData.kind === "face" || modelData.kind === "c" || direction
             // Steel cap with a top-light sheen; amber C cluster; lit wins.

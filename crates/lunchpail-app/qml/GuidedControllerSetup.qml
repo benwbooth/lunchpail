@@ -472,7 +472,21 @@ ColumnLayout {
             currentIndex: setup.selectedPlayer; enabled: !setup.dirty
             onActivated: { setup.selectedPlayer = currentIndex; setup.selectDevice(setup.playerDevices[currentIndex]) }
         }
-        ControllerMappingView { id: mapping; objectName: "guidedMappingView"; Layout.fillWidth: true; settingsModel: setup.settingsModel; sourceLayout: setup.sourceLayout; destinationLayout: setup.targetLayout; rows: setup.preview.rows || []; twinRoutes: (setup.preview.twins || []).concat(setup.preview.extra_faces || []); simple: true }
+        ControllerMappingView {
+            id: mapping
+            objectName: "guidedMappingView"
+            Layout.fillWidth: true
+            settingsModel: setup.settingsModel
+            gamepad: setup.gamepad
+            sourceDeviceId: setup.selectedDevice
+            sourceBindings: setup.calibration.bindings || ({})
+            inputFeedbackEnabled: !setup.calibrationActive
+            sourceLayout: setup.sourceLayout
+            destinationLayout: setup.targetLayout
+            rows: setup.preview.rows || []
+            twinRoutes: (setup.preview.twins || []).concat(setup.preview.extra_faces || [])
+            simple: true
+        }
         Label {
             objectName: "extraFaceMappings"
             visible: (setup.preview.extra_faces || []).length > 0

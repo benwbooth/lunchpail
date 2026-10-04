@@ -39,6 +39,15 @@ its assignment again.
 
 ## Save a mapping at the right level
 
+In the mapping review, press a button or move a stick on the selected source
+controller to briefly highlight its source control, destination, and connecting
+wire. Shared and turbo assignments highlight together. This uses the recorded
+physical inputs, not the controller's generic button names; another player's
+controller does not trigger the highlight. Unassigned recorded controls are
+identified without inventing a mapping. Testing does not edit or save bindings,
+and the previous mouse-pinned connection returns after the highlight fades.
+This confirms the displayed mapping, not the emulator's in-game behavior.
+
 In **Apply this button mapping to**, choose where you want the mapping to apply:
 
 | Scope | Use it when |

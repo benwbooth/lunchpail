@@ -5,6 +5,7 @@ import QtQuick.Layouts
 LbDialog {
     id: runtime
     required property var settingsModel
+    property var gamepad: null
     property var players: []
     property string errorText: ""
     property var emulatorChoices: []
@@ -250,6 +251,7 @@ LbDialog {
             if (!source || !target) throw new Error("A controller layout is missing from the catalog.")
             nativeLayouts.panels = [{role: "Source controller", layout: source}, {role: "Emulated controller", layout: target}]
             nativeLayouts.rows = result.rows || []
+            nativeLayouts.sourceDeviceId = player.controller_id || ""
             nativeLayouts.logicalRows = result.logical_rows || []
             nativeLayouts.logicalError = result.logical_error || ""
             nativeLayouts.exclusions = result.exclusions || []
@@ -260,6 +262,7 @@ LbDialog {
     LbDialog {
         id: nativeLayouts
         property var panels: []
+        property string sourceDeviceId: ""
         property var rows: []
         property var logicalRows: []
         property string logicalError: ""
@@ -290,6 +293,8 @@ LbDialog {
             ControllerMappingView {
                 Layout.fillWidth: true
                 settingsModel: runtime.settingsModel
+                gamepad: runtime.gamepad
+                sourceDeviceId: nativeLayouts.sourceDeviceId
                 sourceLayout: nativeLayouts.panels.length ? nativeLayouts.panels[0].layout : null
                 destinationLayout: nativeLayouts.panels.length > 1 ? nativeLayouts.panels[1].layout : null
                 rows: savedSdlPreview.checked ? nativeLayouts.logicalRows : nativeLayouts.rows

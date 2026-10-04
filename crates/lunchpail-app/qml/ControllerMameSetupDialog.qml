@@ -5,6 +5,7 @@ import QtQuick.Layouts
 LbDialog {
     id: dialog
     required property var settingsModel
+    property var gamepad: null
     signal calibrationRequested(string controllerId, string sourceLayout, string physicalControl)
     property var setups: []
     property string loadedText: ""
@@ -876,6 +877,8 @@ LbDialog {
                         Layout.fillWidth: true
                         visible: presetComparison.previewPlayer !== null && !!presetComparison.previewPlayer.target_layout
                         settingsModel: dialog.settingsModel
+                        gamepad: dialog.gamepad
+                        sourceDeviceId: presetComparison.previewPlayer ? presetComparison.previewPlayer.controller || "" : ""
                         sourceLayout: presetComparison.previewPlayer
                             ? review.catalog.layouts.find(layout => layout.id === presetComparison.previewPlayer.source_layout) || null : null
                         destinationLayout: presetComparison.previewPlayer
@@ -1371,6 +1374,8 @@ LbDialog {
                         Layout.fillWidth: true
                         visible: switchEditor.displayedPlayer !== null && !!switchEditor.displayedPlayer.target_layout
                         settingsModel: dialog.settingsModel
+                        gamepad: dialog.gamepad
+                        sourceDeviceId: switchEditor.displayedPlayer ? switchEditor.displayedPlayer.controller || "" : ""
                         sourceLayout: switchEditor.displayedPlayer
                             ? review.catalog.layouts.find(layout => layout.id === switchEditor.displayedPlayer.source_layout) || null : null
                         destinationLayout: switchEditor.displayedPlayer
@@ -2259,6 +2264,8 @@ LbDialog {
                     Layout.fillWidth: true
                     visible: review.player !== null && !!review.player.target_layout
                     settingsModel: dialog.settingsModel
+                    gamepad: dialog.gamepad
+                    sourceDeviceId: review.player ? review.player.controller || "" : ""
                     sourceLayout: review.player ? review.catalog.layouts.find(layout => layout.id === review.player.source_layout) || null : null
                     destinationLayout: review.player ? review.catalog.layouts.find(layout => layout.id === review.player.target_layout) || null : null
                     rows: review.player ? review.player.rows : []

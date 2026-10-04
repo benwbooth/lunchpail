@@ -64,6 +64,8 @@ ColumnLayout {
                             ControllerMappingView {
                                 Layout.fillWidth: true
                                 settingsModel: setup.settingsModel
+                                gamepad: setup.gamepad
+                                sourceDeviceId: mamePanelReview.modelData.controller_id || ""
                                 destinationLayout: mameNativeEditor.catalog.layouts.find(layout => layout.id === mamePanelReview.modelData.target_layout) || null
                                 sourceLayout: mameNativeEditor.catalog.layouts.find(layout => layout.id === mamePanelReview.modelData.source_layout) || null
                                 rows: Object.keys(mamePanelReview.modelData.bindings).map(control => ({
@@ -129,6 +131,7 @@ ColumnLayout {
     ControllerNativeRuntimeDialog {
         id: nativeRuntime
         settingsModel: setup.settingsModel
+        gamepad: setup.gamepad
     }
     LbButton {
         text: "jgenesis Genesis setups…"
@@ -973,6 +976,8 @@ ColumnLayout {
                             ControllerMappingView {
                                 Layout.fillWidth: true
                                 settingsModel: setup.settingsModel
+                                gamepad: setup.gamepad
+                                sourceDeviceId: nativeReviewPlayer.modelData.controller_id || ""
                                 sourceLayout: duckstationSetups.catalog.layouts.find(layout => layout.id === nativeReviewPlayer.modelData.source_layout) || null
                                 destinationLayout: duckstationSetups.catalog.layouts.find(layout => layout.id === nativeReviewPlayer.modelData.target_layout) || null
                                 rows: nativeReviewPlayer.modelData.mapping.rows
@@ -1572,10 +1577,12 @@ ColumnLayout {
         // only the presentation, never their saved records or input protocols.
         id: fbneoSetups
         settingsModel: setup.settingsModel
+        gamepad: setup.gamepad
     }
     ControllerMameSetupDialog {
         id: mameSetups
         settingsModel: setup.settingsModel
+        gamepad: setup.gamepad
         onCalibrationRequested: function(controllerId, sourceLayout, physicalControl) {
             const matches = []
             for (let index = 0; index < setup.settingsModel.controller_count(); ++index) {
