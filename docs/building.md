@@ -49,6 +49,17 @@ The repository's [package workflow](../.github/workflows/native-packages.yml)
 contains the current Windows, macOS, AppImage, and Flatpak build steps.
 The [flake](../flake.nix) defines the Nix environment.
 
+For Windows source builds, Qt uses the dynamic MSVC C runtime (`/MD`). Before
+running Cargo, extract the pinned `win-x64-static-MD-Release-lib` Sherpa archive
+listed in the package workflow and set `SHERPA_ONNX_LIB_DIR` to its `lib` folder.
+The Rust crate's automatic `/MT` archive does not link compatibly with Qt. This
+is a build-time requirement only; the packaged app needs no Sherpa installation.
+
+Build the bundled assistant/Whisper workers with
+`python3 packaging/build-inference.py` (`python` on Windows). The script builds
+independent CPU and GPU runtimes; native packages and `dev.sh` run it automatically.
+See [local AI setup](couch-mode.md#local-assistant-setup) for device support.
+
 An app that builds successfully may still need platform-specific packaging,
 multimedia plugins, and GPU support. In particular, do not assume a custom
 build includes live-translation acceleration just because the main UI opens.

@@ -123,6 +123,17 @@ TestCase {
         verify(!pane.assistant.busy)
         compare(pane.assistant.cancels, 1)
     }
+    function test_microphone_action_cancels_decoding_after_recording_has_stopped() {
+        const pane = panel()
+        pane.toggleMode(); pane.microphone()
+        pane.speech.listening = false
+        compare(pane.speech.busy, true)
+        pane.microphone()
+        verify(!pane.speech.busy)
+        verify(!pane.acceptingVoice)
+        pane.speech.completed("late transcription")
+        compare(pane.assistant.calls, 0)
+    }
     function test_controller_opens_catalog_card_not_game_launch() {
         const pane = panel()
         pane.toggleMode()
@@ -139,15 +150,21 @@ TestCase {
         pane.controllerIndex = 2; pane.handleNavigation("accept")
         compare(settings.count, 1); compare(pane.assistant.calls, 0)
     }
-    function test_new_answer_reveals_evidence_header_instead_of_skipping_it() {
+    function test_evidence_stays_visible_while_scrolling_and_new_answer_resets_cards() {
         const pane = panel()
         pane.toggleMode()
         const rows = Array.from({length: 8}, (_, index) => ({id: "real-" + index, title: "Game " + index, platform: "SNES", genre: "RPG", year: "1995", rating: "4"}))
         pane.assistant.result_json = JSON.stringify({message: "Provider language is unknown. This is not a verified English translation.", games: rows})
         const results = findChild(pane, "assistantResults")
         tryCompare(results, "count", 8)
+        wait(0) // Deliver the new-answer reset before simulating user scrolling.
+        results.forceLayout()
         results.positionViewAtEnd()
         tryCompare(results, "atYBeginning", false)
+        const summary = findChild(pane, "assistantEvidenceSummary")
+        verify(summary.visible)
+        verify(summary.mapToItem(pane, 0, 0).y >= 0)
+        verify(summary.height >= summary.implicitHeight)
         pane.assistant.result_json = JSON.stringify({message: "New lookup; compatibility remains unknown.", games: rows.slice(0, 4)})
         tryCompare(results, "atYBeginning", true)
     }

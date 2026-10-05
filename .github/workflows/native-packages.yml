@@ -63,7 +63,20 @@ jobs:
           Invoke-WebRequest $url -OutFile $archive
           if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne '52bab595cf1efa4d218f11b9cffa5961c56cfb1b5813071b194b2f46f3ffedb9') { throw 'MAME CHD archive checksum mismatch' }
           "LIBCHDMAN_PREBUILT_LOCAL_ARCHIVE=$archive" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: Build release executable
+      # Qt/MSVC uses /MD; Sherpa's automatic /MT archive causes LNK2038.
+      # Keep Sherpa static while matching Qt's dynamic C runtime.
+      - name: Fetch pinned Qt-compatible Sherpa libraries
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'sherpa-onnx-md.tar.bz2'
+          $stage = Join-Path $env:RUNNER_TEMP 'sherpa-onnx-md'
+          Invoke-WebRequest 'https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-v1.13.8-win-x64-static-MD-Release-lib.tar.bz2' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() -ne 'a0f44cd91486e448c2be1f1d3662edb4f473ca3cb38a803cee158760cc588428') { throw 'Sherpa archive checksum mismatch' }
+          New-Item -ItemType Directory -Force $stage | Out-Null
+          tar -xjf $archive -C $stage --strip-components=1
+          if ($LASTEXITCODE -ne 0) { throw 'Sherpa archive extraction failed' }
+          "SHERPA_ONNX_LIB_DIR=$stage\lib" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Build release executable with Qt-compatible CRT
         run: cargo build --locked --release --package lunchpail-app --package lunchpail-controller-probe --bin lunchpail --bin lunchpail-controller-probe
       - name: Build bundled CPU and Vulkan inference
         run: python packaging/build-inference.py

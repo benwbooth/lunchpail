@@ -28,8 +28,7 @@ FocusScope {
     readonly property int actionCount: baseActionCount + (askMode ? resultRows.length : 0)
     readonly property bool microphoneBusy: acceptingVoice && speech.busy
     onAnswerChanged: Qt.callLater(function() {
-        // ListView otherwise retains row-zero at the top and clips its
-        // preceding evidence/uncertainty header when results arrive.
+        // A new answer starts at its first card, not the previous scroll offset.
         results.positionViewAtBeginning()
     })
 
@@ -55,8 +54,8 @@ FocusScope {
     }
     function microphone() {
         if (speech.busy) {
-            if (acceptingVoice) speech.stop()
-            else speech.cancel()
+            if (acceptingVoice && speech.listening) speech.stop()
+            else { acceptingVoice = false; speech.cancel() }
         } else if (!speech.ready) {
             // Explicit enable action downloads only the model, never opens the mic.
             speech.prepare()
@@ -187,7 +186,7 @@ FocusScope {
             Layout.fillWidth: true
             spacing: 12
             Repeater {
-                model: [search.speech.busy ? (search.acceptingVoice ? "Stop microphone" : "Cancel download")
+                model: [search.speech.busy ? (search.acceptingVoice ? (search.speech.listening ? "Stop microphone" : "Cancel transcription") : "Cancel download")
                         : search.speech.ready ? "Speak · F2" : "Download speech model", search.askMode ? "New question" : "Clear search",
                         search.askMode ? (!search.assistant || !search.assistant.ready ? "AI settings" : search.assistant.busy ? "Cancel answer" : "Ask") : "Browse results"]
                         .concat(search.assistant ? [search.askMode ? "Search titles" : "Ask AI"] : [])
@@ -243,6 +242,22 @@ FocusScope {
             color: search.accentColor; font.pixelSize: 13; wrapMode: Text.WordWrap
             maximumLineCount: 3; elide: Text.ElideRight
         }
+        ColumnLayout {
+            Layout.fillWidth: true
+            visible: search.askMode && (search.answer.message || "").length > 0
+            spacing: 8
+            Text {
+                objectName: "assistantEvidenceSummary"
+                Layout.fillWidth: true
+                text: search.answer.message || ""; textFormat: Text.PlainText
+                color: search.inkColor; font.pixelSize: 15; wrapMode: Text.WordWrap
+            }
+            Text {
+                Layout.fillWidth: true
+                text: search.answer.notice || ""; textFormat: Text.PlainText
+                color: search.mutedColor; font.pixelSize: 12; wrapMode: Text.WordWrap
+            }
+        }
         ListView {
             id: results
             objectName: "assistantResults"
@@ -250,18 +265,6 @@ FocusScope {
             visible: search.askMode
             clip: true; spacing: 10
             model: search.resultRows
-            header: Column {
-                width: results.width; spacing: 10
-                Text {
-                    width: parent.width; text: search.answer.message || ""; textFormat: Text.PlainText
-                    color: search.inkColor; font.pixelSize: 16; wrapMode: Text.WordWrap
-                }
-                Text {
-                    width: parent.width; text: search.answer.notice || ""; textFormat: Text.PlainText
-                    color: search.mutedColor; font.pixelSize: 12; wrapMode: Text.WordWrap
-                    bottomPadding: 10
-                }
-            }
             delegate: Button {
                 id: resultButton
                 required property var modelData
