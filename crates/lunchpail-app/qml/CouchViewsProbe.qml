@@ -9,6 +9,7 @@ Item {
     property int step: -1
     property bool capturing: false
     property string gameId: "9697a5eb-e0b4-4f24-8d43-672701414ee7"
+    readonly property string platformName: app.argumentValue("--couch-views-platform") || "Nintendo Entertainment System"
     readonly property var styles: ["wheel", "shelf", "wall", "album"]
     function fail(message) { console.error("LUNCHPAIL_COUCH_VIEWS_FAILED " + message); Qt.exit(2) }
     function advance() {
@@ -23,7 +24,10 @@ Item {
         const platforms = step % 8 >= 4
         app.width = step >= 8 ? 1280 : 1920
         app.height = step >= 8 ? 720 : 1080
-        if (platforms) { view.openPlatformWheel(); view.focusPlatform("Nintendo Entertainment System") }
+        if (platforms) {
+            if (!view.platformWheelOpen) view.openPlatformWheel()
+            view.focusPlatform(platformName)
+        }
         else view.closePlatformWheel()
         if (step % 4 === 0) library.save_couch_view_style(styles[0])
         else if (platforms) view.handleNavigation("menu")
@@ -66,7 +70,7 @@ Item {
             const video = platforms ? probe.view.systemVideoPreview : probe.view.gameVideoPreview
             if (!browser.currentItem) return
             if (!platforms && probe.view.selectedGameId !== probe.gameId) { probe.fail("game changed with layout"); return }
-            if (platforms && browser.currentItem.platformName !== "Nintendo Entertainment System") { probe.fail("platform changed with layout"); return }
+            if (platforms && browser.currentItem.platformName !== probe.platformName) { probe.fail("platform changed with layout"); return }
             if (!video.visible || !video.playing || video.position < 8000) return
             if (!video.backgroundMode || video.width !== probe.view.width || video.height !== probe.view.height) { probe.fail("video is not a full background"); return }
             const position = video.mapToItem(probe.view, 0, 0)

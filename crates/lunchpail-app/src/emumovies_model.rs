@@ -477,14 +477,35 @@ pub(crate) fn download_saved_theme_video(
     progress: Option<crate::emumovies::ProgressCallback>,
 ) -> Result<PathBuf> {
     let directory = crate::media::game_media_directory(game_id, database_id)?;
-    let cached = directory.join("emumovies/theme-video.mp4");
-    if cached.metadata().is_ok_and(|metadata| metadata.len() > 0) {
+    if let Some(cached) = cached_theme_video(&directory) {
         return Ok(cached);
     }
     let (username, password) = effective_credentials(String::new(), String::new())?;
     let client = client(username, password);
     let lookup = crate::emumovies::resolve_video_lookup_name(platform, title, Some(database_id));
     client.get_theme_video(platform, &lookup, &directory, progress.as_ref())
+}
+
+fn cached_theme_video(directory: &std::path::Path) -> Option<PathBuf> {
+    ["local", "emumovies"]
+        .into_iter()
+        .map(|provider| directory.join(provider).join("theme-video.mp4"))
+        .find(|path| {
+            path.metadata()
+                .is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
+        })
+}
+
+pub(crate) fn download_saved_platform_video(
+    platform: &str,
+    progress: Option<crate::emumovies::ProgressCallback>,
+) -> Result<PathBuf> {
+    let directory = crate::media::platform_media_directory(platform);
+    if let Some(cached) = cached_theme_video(&directory) {
+        return Ok(cached);
+    }
+    let (username, password) = effective_credentials(String::new(), String::new())?;
+    client(username, password).get_platform_video(platform, &directory, progress.as_ref())
 }
 
 impl qobject::EmuMoviesModel {
@@ -1019,6 +1040,24 @@ impl qobject::EmuMoviesModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cached_themes_prefer_local_files_and_reject_empty_files_or_directories() {
+        let root = tempfile::tempdir().unwrap();
+        let local = root.path().join("local/theme-video.mp4");
+        let remote = root.path().join("emumovies/theme-video.mp4");
+        std::fs::create_dir_all(local.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(remote.parent().unwrap()).unwrap();
+        std::fs::write(&local, b"").unwrap();
+        assert_eq!(cached_theme_video(root.path()), None);
+        std::fs::write(&remote, b"remote video").unwrap();
+        assert_eq!(cached_theme_video(root.path()), Some(remote.clone()));
+        std::fs::write(&local, b"custom video").unwrap();
+        assert_eq!(cached_theme_video(root.path()), Some(local.clone()));
+        std::fs::remove_file(&local).unwrap();
+        std::fs::create_dir(&local).unwrap();
+        assert_eq!(cached_theme_video(root.path()), Some(remote));
+    }
 
     #[test]
     fn every_native_artwork_choice_maps_to_legacy_emumovies_media() {

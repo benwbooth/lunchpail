@@ -190,6 +190,7 @@ fn main() {
                 "qml/CouchFeedback.qml",
                 "qml/CouchSearchOverlay.qml",
                 "qml/CouchHandsFreeController.qml",
+                "qml/CouchThemeRequest.qml",
                 "qml/CouchSearchProbe.qml",
                 "qml/CouchBackgroundMusic.qml",
                 "qml/CouchDownloadScreen.qml",

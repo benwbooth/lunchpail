@@ -213,9 +213,13 @@ explains missing account/access/coverage. Backgrounds preserve aspect ratio, can
 opened full-screen, and share the global video mute preference. Background music
 stops while an audible preview is playing. Opening another page suspends previews.
 
-The platform picker displays cached system logos and full-window platform video
-backgrounds. These use
-a separate system-media cache, never a game's box art or logo slot.
+The platform picker displays cached system logos and automatically finds a missing
+individual system video after selection settles. All four platform views use the
+video as a full-window background and show lookup/availability status. Game and
+system lookups share one transfer queue; rapid scrolling cancels the old selection
+and keeps only the latest request. Local custom videos take priority and do not
+require an account. These use a separate system-media cache, never a game's box
+art or logo slot. Missing system videos leave the normal artwork background intact.
 
 ![Platform wheel artwork and video presentation](images/couch-platform-media.png)
 

@@ -94,6 +94,13 @@ Item {
     signal videoMuteRequested()
     signal videoRequested(url source)
     signal systemMediaRequested(string platform)
+    CouchThemeRequest {
+        id: themeRequest
+        library: view.library
+        active: view.active && !view.details.game_running
+        gameId: view.selectedGameId
+        platform: view.platformWheelOpen ? platformPresentation.platform : ""
+    }
     readonly property var previewRecord: JSON.parse(library.couch_preview_json || "{}")
     readonly property var browsing: Object.assign({
         game_id: "", description: "", release_date: "", genre: "", players: "",
@@ -1259,7 +1266,6 @@ Item {
             selectionDelay.restart()
         } else {
             closeSearch()
-            library.cancel_couch_theme()
             overlayOpen = false
             platformWheelOpen = false
             collectionWheelOpen = false
@@ -1957,7 +1963,7 @@ Item {
         x: 70; y: categoryRow.y + categoryRow.height + 6
         width: parent.width - 140
         text: view.browsing.theme_video_url ? "HYPERSPIN BACKGROUND"
-              : (view.browsing.theme_status || "") + (view.browsing.video_url ? " · Showing gameplay instead"
+              : themeRequest.status + (view.browsing.video_url ? " · Showing gameplay instead"
                   : view.platformFallbackVideo.toString() ? " · Showing platform theme" : "")
         color: view.muted; font.pixelSize: 11; elide: Text.ElideRight
     }
@@ -2675,6 +2681,14 @@ Item {
                     LbButton { text: platformVideo.paused ? "Play" : "Pause"; onClicked: platformVideo.paused = !platformVideo.paused }
                     LbButton { text: view.videoMuted ? "Unmute" : "Mute"; onClicked: view.videoMuteRequested() }
                     LbButton { text: "Fullscreen"; onClicked: view.videoRequested(platformVideo.source) }
+                }
+                Text {
+                    width: parent.width
+                    text: platformPresentation.videoUrl.toString() ? "System video theme ready"
+                          : themeRequest.status || "Select a system to find its video theme."
+                    color: view.muted; font.pixelSize: 14
+                    wrapMode: Text.WordWrap; horizontalAlignment: Text.AlignHCenter
+                    maximumLineCount: 3; elide: Text.ElideRight
                 }
                 Text {
                     width: parent.width

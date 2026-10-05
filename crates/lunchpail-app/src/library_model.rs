@@ -53,6 +53,7 @@ pub mod qobject {
         #[qproperty(i32, alphabet_revision)]
         #[qproperty(QString, hover_preview_game_id)]
         #[qproperty(QString, couch_preview_json)]
+        #[qproperty(QString, couch_theme_status_json)]
         #[qproperty(QUrl, hover_preview_url)]
         #[qproperty(QString, hover_preview_source)]
         #[qproperty(QString, hover_preview_message)]
@@ -472,6 +473,8 @@ pub mod qobject {
 
         #[qinvokable]
         fn request_couch_preview(self: Pin<&mut LibraryModel>, game_uid: QString);
+        #[qinvokable]
+        fn request_couch_theme(self: Pin<&mut LibraryModel>, game_uid: QString, platform: QString);
         #[qinvokable]
         fn cancel_couch_theme(self: Pin<&mut LibraryModel>);
 
@@ -1012,6 +1015,28 @@ const ROLES: [(i32, &str); 26] = [
     (GAME_MEDIA_ID_ROLE, "gameMediaId"),
 ];
 
+#[derive(Clone)]
+enum CouchVideoRequest {
+    Game(catalog::Game),
+    Platform(String),
+}
+
+impl CouchVideoRequest {
+    fn key(&self) -> String {
+        match self {
+            Self::Game(game) => format!("game:{}", game.id),
+            Self::Platform(platform) => format!("platform:{platform}"),
+        }
+    }
+
+    fn label(&self) -> &'static str {
+        match self {
+            Self::Game(_) => "HyperSpin video theme",
+            Self::Platform(_) => "System video theme",
+        }
+    }
+}
+
 pub struct LibraryModelRust {
     database_path: QString,
     status_message: QString,
@@ -1163,10 +1188,12 @@ pub struct LibraryModelRust {
     filter_started: Option<std::time::Instant>,
     media_generation: u64,
     couch_preview_json: QString,
+    couch_theme_status_json: QString,
     couch_preview_generation: u64,
     couch_preview_cache: HashMap<String, (i32, i32, String)>,
     couch_theme_active: Option<String>,
-    couch_theme_pending: Option<catalog::Game>,
+    couch_theme_pending: Option<CouchVideoRequest>,
+    couch_theme_selected: Option<String>,
     couch_theme_cancel: Option<Arc<AtomicBool>>,
     couch_theme_results: HashMap<String, String>,
     media_started: Option<std::time::Instant>,
@@ -1330,10 +1357,12 @@ impl Default for LibraryModelRust {
             couch_platform: QString::default(),
             couch_view_style: qstring(&couch_preferences.view_style),
             couch_preview_json: qstring("{}"),
+            couch_theme_status_json: qstring("{}"),
             couch_preview_generation: 0,
             couch_preview_cache: HashMap::new(),
             couch_theme_active: None,
             couch_theme_pending: None,
+            couch_theme_selected: None,
             couch_theme_cancel: None,
             couch_theme_results: HashMap::new(),
             couch_theme_id: qstring(&couch_theme.id),
@@ -3938,13 +3967,6 @@ impl qobject::LibraryModel {
             self.as_mut().set_couch_preview_json(qstring("{}"));
             return;
         };
-        self.as_mut().request_couch_theme(game.clone());
-        let theme_status = self
-            .rust()
-            .couch_theme_results
-            .get(&game.id)
-            .cloned()
-            .unwrap_or_else(|| "Finding a HyperSpin video theme…".into());
         let metadata_revision = *self.metadata_revision();
         let media_revision = *self.media_revision();
         let cached = self
@@ -3968,7 +3990,6 @@ impl qobject::LibraryModel {
                     let track = details.supplemental_media.soundtrack.first();
                     serde_json::json!({
                         "game_id": game.id, "description": details.description,
-                        "theme_status": theme_status,
                         "release_date": details.release_date, "genre": details.genre,
                         "players": details.players, "cooperative": details.cooperative,
                         "rating": details.rating,
@@ -3998,8 +4019,43 @@ impl qobject::LibraryModel {
         });
     }
 
-    fn request_couch_theme(mut self: Pin<&mut Self>, game: catalog::Game) {
-        if self.rust().couch_theme_active.as_deref() == Some(&game.id)
+    pub fn request_couch_theme(mut self: Pin<&mut Self>, game_uid: QString, platform: QString) {
+        let platform = platform.to_string();
+        let request = if !platform.is_empty() {
+            // Only actual catalog systems may cause an automatic network request.
+            if !self
+                .rust()
+                .catalog
+                .platforms
+                .iter()
+                .any(|entry| entry.name == platform)
+            {
+                return;
+            }
+            CouchVideoRequest::Platform(platform)
+        } else if let Some(game) = game_for_uid(&self, &game_uid.to_string()).cloned() {
+            CouchVideoRequest::Game(game)
+        } else {
+            self.as_mut().cancel_couch_theme();
+            return;
+        };
+        let key = request.key();
+        let status = self
+            .rust()
+            .couch_theme_results
+            .get(&key)
+            .cloned()
+            .unwrap_or_else(|| format!("Finding a {}…", request.label()));
+        self.as_mut().rust_mut().couch_theme_selected = Some(key.clone());
+        self.as_mut().set_couch_theme_status_json(qstring(
+            serde_json::json!({"key": key, "status": status}).to_string(),
+        ));
+        self.as_mut().start_couch_theme(request);
+    }
+
+    fn start_couch_theme(mut self: Pin<&mut Self>, request: CouchVideoRequest) {
+        let key = request.key();
+        if self.rust().couch_theme_active.as_deref() == Some(&key)
             && !self
                 .rust()
                 .couch_theme_cancel
@@ -4014,61 +4070,77 @@ impl qobject::LibraryModel {
             if let Some(cancel) = &self.rust().couch_theme_cancel {
                 cancel.store(true, Ordering::Release);
             }
-            self.as_mut().rust_mut().couch_theme_pending = Some(game);
+            self.as_mut().rust_mut().couch_theme_pending = Some(request);
             return;
         }
-        if self.rust().couch_theme_results.contains_key(&game.id) {
+        if self.rust().couch_theme_results.contains_key(&key) {
             return;
         }
         let cancel = Arc::new(AtomicBool::new(false));
-        self.as_mut().rust_mut().couch_theme_active = Some(game.id.clone());
+        self.as_mut().rust_mut().couch_theme_active = Some(key.clone());
         self.as_mut().rust_mut().couch_theme_cancel = Some(cancel.clone());
         let qt_thread = self.as_ref().qt_thread();
         std::thread::spawn(move || {
             let callback_cancel = cancel.clone();
             let progress: crate::emumovies::ProgressCallback =
                 Box::new(move |_| !callback_cancel.load(Ordering::Acquire));
-            let result = crate::emumovies_model::download_saved_theme_video(
-                &game.id,
-                game.media_id,
-                &game.title,
-                &game.platform,
-                Some(progress),
-            );
+            let result = match &request {
+                CouchVideoRequest::Game(game) => {
+                    crate::emumovies_model::download_saved_theme_video(
+                        &game.id,
+                        game.media_id,
+                        &game.title,
+                        &game.platform,
+                        Some(progress),
+                    )
+                }
+                CouchVideoRequest::Platform(platform) => {
+                    crate::emumovies_model::download_saved_platform_video(platform, Some(progress))
+                }
+            };
             let _ = qt_thread.queue(move |mut model| {
                 let cancelled = cancel.load(Ordering::Acquire);
                 model.as_mut().rust_mut().couch_theme_active = None;
                 model.as_mut().rust_mut().couch_theme_cancel = None;
                 if !cancelled {
                     let status = match &result {
-                        Ok(_) => "HyperSpin video theme ready".to_owned(),
-                        Err(error) => format!("HyperSpin theme unavailable: {error:#}"),
+                        Ok(_) => format!("{} ready", request.label()),
+                        Err(error) => format!("{} unavailable: {error:#}", request.label()),
                     };
                     // Session cache avoids repeatedly requesting absent themes.
                     model
                         .as_mut()
                         .rust_mut()
                         .couch_theme_results
-                        .insert(game.id.clone(), status);
-                    model
-                        .as_mut()
-                        .rust_mut()
-                        .couch_preview_cache
-                        .remove(&game.id);
+                        .insert(key.clone(), status.clone());
+                    if model.rust().couch_theme_selected.as_deref() == Some(&key) {
+                        model.as_mut().set_couch_theme_status_json(qstring(
+                            serde_json::json!({"key": key, "status": status}).to_string(),
+                        ));
+                    }
+                    if let CouchVideoRequest::Game(game) = &request {
+                        model
+                            .as_mut()
+                            .rust_mut()
+                            .couch_preview_cache
+                            .remove(&game.id);
+                    }
                     if result.is_ok() {
                         let revision = model.media_revision().wrapping_add(1);
                         model.as_mut().set_media_revision(revision);
                     }
-                    let selected: serde_json::Value =
-                        serde_json::from_str(&model.couch_preview_json().to_string())
-                            .unwrap_or_default();
-                    if selected["game_id"].as_str() == Some(game.id.as_str()) {
-                        model.as_mut().request_couch_preview(qstring(&game.id));
+                    if let CouchVideoRequest::Game(game) = &request {
+                        let selected: serde_json::Value =
+                            serde_json::from_str(&model.couch_preview_json().to_string())
+                                .unwrap_or_default();
+                        if selected["game_id"].as_str() == Some(game.id.as_str()) {
+                            model.as_mut().request_couch_preview(qstring(&game.id));
+                        }
                     }
                 }
                 let pending = model.as_mut().rust_mut().couch_theme_pending.take();
                 if let Some(pending) = pending {
-                    model.as_mut().request_couch_theme(pending);
+                    model.as_mut().start_couch_theme(pending);
                 }
             });
         });
@@ -4079,6 +4151,8 @@ impl qobject::LibraryModel {
             cancel.store(true, Ordering::Release);
         }
         self.as_mut().rust_mut().couch_theme_pending = None;
+        self.as_mut().rust_mut().couch_theme_selected = None;
+        self.as_mut().set_couch_theme_status_json(qstring("{}"));
     }
 
     pub fn exact_artwork_url(&self, media_id: i64, artwork_type: QString) -> QUrl {
