@@ -38,12 +38,24 @@ Item {
         }
     }
     HoverHandler {
-        onPointChanged: if (hovered) pointerSelection.observe(point.scenePosition)
+        onPointChanged: if (hovered) {
+            pointerSelection.observe(point.scenePosition)
+            browser.movePathPointer(point.scenePosition)
+        }
         onHoveredChanged: if (!hovered) pointerSelection.forget()
     }
     function cancelPointerSelection() { pointerSelection.cancel() }
+    function pathIndexAt(position) {
+        return pointerSelection.nearestPathIndex(browser, presentation.item, position, viewStyle === "wheel")
+    }
+    function movePathPointer(position) {
+        if (viewStyle !== "wheel" && viewStyle !== "album") return
+        const index = pathIndexAt(position)
+        if (index >= 0) pointerSelection.move(index, position)
+    }
 
     function reportSelection() {
+        if (library.filtering === true) return
         const item = currentItem
         if (!item || item.index !== currentIndex || item.gameId === reportedGameId) return
         reportedGameId = item.gameId
@@ -66,9 +78,14 @@ Item {
 
     function positionViewAtIndex(index, mode) {
         if (presentation.item && index >= 0) {
-            if (viewStyle === "wheel" || viewStyle === "album")
+            if (viewStyle === "wheel" || viewStyle === "album") {
                 applySelection()
-            else
+                // Entry/filter restoration is an identity handoff, not a
+                // navigation gesture. Cancel any old offset animation before
+                // the matching delegate is reported as settled.
+                if (mode === ListView.Center)
+                    presentation.item.positionViewAtIndex(index, PathView.SnapPosition)
+            } else
                 presentation.item.positionViewAtIndex(index, mode)
         }
     }
@@ -88,6 +105,15 @@ Item {
     }
     onViewStyleChanged: pointerSelection.cancel()
     onCurrentItemChanged: Qt.callLater(reportSelection)
+
+    Connections {
+        target: browser.library
+        ignoreUnknownSignals: true
+        function onFilteringChanged() {
+            if (browser.library.filtering) browser.reportedGameId = ""
+            else Qt.callLater(browser.reportSelection)
+        }
+    }
 
     Loader {
         id: presentation
@@ -158,6 +184,10 @@ Item {
                 width: grid.cellWidth - 12
                 height: grid.cellHeight - 10
                 selected: GridView.isCurrentItem
+                animateEntrance: true
+                entranceDelay: (index % grid.columnCount) * 24
+                focusDistance: Math.abs(index % grid.columnCount - grid.currentIndex % grid.columnCount)
+                    + Math.abs(Math.floor(index / grid.columnCount) - Math.floor(grid.currentIndex / grid.columnCount))
                 ink: browser.ink
                 muted: browser.muted
                 accent: browser.accent
@@ -172,6 +202,7 @@ Item {
         id: animatedPath
         PathView {
             id: carousel
+            objectName: "couchGameCarousel"
             VisibleArtworkPriority {
                 libraryModel: browser.library
                 view: carousel
@@ -181,22 +212,30 @@ Item {
             readonly property bool wheel: browser.viewStyle === "wheel"
             model: browser.library
             clip: true
-            pathItemCount: wheel ? 7 : 9
+            pathItemCount: 11
             cacheItemCount: 2
             preferredHighlightBegin: 0.5
             preferredHighlightEnd: 0.5
             highlightRangeMode: PathView.StrictlyEnforceRange
-            highlightMoveDuration: 210
+            highlightMoveDuration: wheel ? 280 : 340
             snapMode: PathView.SnapToItem
             dragMargin: width
             flickDeceleration: 450
             path: wheel ? wheelPath : albumPath
+            TapHandler {
+                onTapped: eventPoint => {
+                    const index = browser.pathIndexAt(eventPoint.scenePosition)
+                    if (index >= 0) browser.cardActivated(index)
+                }
+            }
             delegate: CouchGameCard {
                 id: pathCard
                 library: browser.library
-                width: carousel.wheel ? carousel.width * 0.80 : Math.min(carousel.height * 0.68, carousel.width * 0.23)
-                height: carousel.wheel ? Math.min(154, carousel.height * 0.205) : carousel.height * 0.93
+                width: carousel.wheel ? carousel.width * 0.76 : Math.min(carousel.height * 0.60, carousel.width * 0.25)
+                height: carousel.wheel ? Math.min(174, carousel.height * 0.25) : carousel.height * 0.74
                 wheel: carousel.wheel
+                coverFlow: !carousel.wheel
+                pointerActivationEnabled: false
                 selected: PathView.isCurrentItem
                 ink: browser.ink
                 muted: browser.muted
@@ -213,60 +252,15 @@ Item {
                     angle: carousel.wheel ? 0 : (pathCard.PathView.itemAngle ?? 0)
                 }
                 onActivated: index => browser.cardActivated(index)
-                onHoverMoved: (index, position) => pointerSelection.move(index, position)
-                onHoverLeft: index => pointerSelection.leave(index)
+                onHoverMoved: (index, position) => browser.movePathPointer(position)
             }
-            Path {
+            CouchWheelPath {
                 id: wheelPath
-                startX: carousel.width * 0.85; startY: -80
-                PathAttribute { name: "itemScale"; value: 0.48 }
-                PathAttribute { name: "itemOpacity"; value: 0.15 }
-                PathAttribute { name: "itemAngle"; value: -16 }
-                PathAttribute { name: "itemDepth"; value: 0 }
-                PathQuad { x: carousel.width * 0.43; y: carousel.height / 2
-                    controlX: carousel.width * 0.4; controlY: carousel.height * 0.15 }
-                PathPercent { value: 0.5 }
-                PathAttribute { name: "itemScale"; value: 1 }
-                PathAttribute { name: "itemOpacity"; value: 1 }
-                PathAttribute { name: "itemAngle"; value: 0 }
-                PathAttribute { name: "itemDepth"; value: 10 }
-                PathQuad { x: carousel.width * 0.85; y: carousel.height + 80
-                    controlX: carousel.width * 0.4; controlY: carousel.height * 0.85 }
-                PathAttribute { name: "itemScale"; value: 0.48 }
-                PathAttribute { name: "itemOpacity"; value: 0.15 }
-                PathAttribute { name: "itemAngle"; value: 16 }
-                PathAttribute { name: "itemDepth"; value: 0 }
+                viewportWidth: carousel.width; viewportHeight: carousel.height
             }
-            Path {
+            CouchCoverFlowPath {
                 id: albumPath
-                startX: -carousel.width * 0.08; startY: carousel.height * 0.53
-                PathAttribute { name: "itemScale"; value: 0.64 }
-                PathAttribute { name: "itemOpacity"; value: 0.22 }
-                PathAttribute { name: "itemAngle"; value: 60 }
-                PathAttribute { name: "itemDepth"; value: 0 }
-                PathLine { x: carousel.width * 0.33; y: carousel.height * 0.53 }
-                PathPercent { value: 0.38 }
-                PathAttribute { name: "itemScale"; value: 0.78 }
-                PathAttribute { name: "itemOpacity"; value: 0.8 }
-                PathAttribute { name: "itemAngle"; value: 55 }
-                PathAttribute { name: "itemDepth"; value: 4 }
-                PathLine { x: carousel.width * 0.5; y: carousel.height * 0.47 }
-                PathPercent { value: 0.5 }
-                PathAttribute { name: "itemScale"; value: 1 }
-                PathAttribute { name: "itemOpacity"; value: 1 }
-                PathAttribute { name: "itemAngle"; value: 0 }
-                PathAttribute { name: "itemDepth"; value: 10 }
-                PathLine { x: carousel.width * 0.67; y: carousel.height * 0.53 }
-                PathPercent { value: 0.62 }
-                PathAttribute { name: "itemScale"; value: 0.78 }
-                PathAttribute { name: "itemOpacity"; value: 0.8 }
-                PathAttribute { name: "itemAngle"; value: -55 }
-                PathAttribute { name: "itemDepth"; value: 4 }
-                PathLine { x: carousel.width * 1.08; y: carousel.height * 0.53 }
-                PathAttribute { name: "itemScale"; value: 0.64 }
-                PathAttribute { name: "itemOpacity"; value: 0.22 }
-                PathAttribute { name: "itemAngle"; value: -60 }
-                PathAttribute { name: "itemDepth"; value: 0 }
+                viewportWidth: carousel.width; viewportHeight: carousel.height
             }
         }
     }

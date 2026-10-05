@@ -12,6 +12,26 @@ QtObject {
     property double movementTime: 0
     property int pendingIndex: -1
     signal selected(int index)
+    function nearestPathIndex(view, pathView, scenePosition, vertical) {
+        if (!pathView || !pathView.currentItem) return -1
+        const point = view.mapFromItem(null, scenePosition.x, scenePosition.y)
+        let nearest = -1, distance = Infinity
+        // In a magnifying/overlapping carousel the focused card's rectangle
+        // covers its neighbors. Pick the closest visual center, not that box.
+        for (const item of pathView.currentItem.parent.children) {
+            if (typeof item.index !== "number" || item.index < 0
+                    || !item.visible || item.opacity < 0.15) continue
+            const center = item.mapToItem(view, item.width / 2, item.height / 2)
+            const along = Math.abs(vertical ? point.y - center.y : point.x - center.x)
+            const across = Math.abs(vertical ? point.x - center.x : point.y - center.y)
+            const reach = (vertical ? item.height : item.width) * item.scale * 0.70
+            const breadth = (vertical ? item.width : item.height) * item.scale * 0.55
+            if (along <= reach && across <= breadth && along < distance) {
+                nearest = item.index; distance = along
+            }
+        }
+        return nearest
+    }
     function observe(position) {
         if (!enabled) return
         if (pointerKnown && (position.x !== observedPosition.x || position.y !== observedPosition.y)) {

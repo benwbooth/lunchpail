@@ -16,6 +16,7 @@ TestCase {
             ink: "#ffffff"; muted: "#8899aa"; accent: "#ffb454"; accentCool: "#62d9d0"
             cardRadius: 12
             library: ListModel {
+                property bool filtering: false
                 property int media_revision: 0
                 property int favorite_revision: 0
                 property int favorite_pending_count: 0
@@ -44,6 +45,21 @@ TestCase {
                 }
             }
         }
+    }
+    SignalSpy { id: selectionReport; signalName: "currentGameChanged" }
+    function test_selection_is_republished_only_after_filter_finishes() {
+        const browser = createTemporaryObject(browserComponent, this)
+        browser.currentIndex = 17
+        tryVerify(() => browser.currentItem && browser.currentItem.index === 17)
+        wait(350)
+        selectionReport.target = browser; selectionReport.clear()
+        browser.library.filtering = true
+        browser.reportSelection()
+        compare(selectionReport.count, 0)
+        browser.library.filtering = false
+        tryCompare(selectionReport, "count", 1)
+        compare(browser.currentItem.gameId, "game-17")
+        selectionReport.target = null
     }
     function test_all_views_preserve_identity() {
         const browser = createTemporaryObject(browserComponent, this)
@@ -103,6 +119,45 @@ TestCase {
         }
     }
     SignalSpy { id: activation; signalName: "cardActivated" }
+    function test_carousel_focus_depth_and_tilt_data() {
+        return ["wheel", "album"].map(style => ({tag: style, style: style}))
+    }
+    function test_carousel_focus_depth_and_tilt(data) {
+        const browser = createTemporaryObject(browserComponent, this, {viewStyle: data.style})
+        tryCompare(browser, "count", 36)
+        browser.currentIndex = 17
+        tryVerify(() => browser.currentItem && browser.currentItem.index === 17)
+        wait(450)
+        const carousel = findChild(browser, "couchGameCarousel")
+        compare(carousel.pathItemCount, 11)
+        const focused = browser.currentItem
+        const neighbor = focused.parent.children.find(item => item.index === 18)
+        verify(neighbor)
+        verify(focused.scale > neighbor.scale * 1.3, "The focused entry must visibly magnify")
+        verify(focused.z > neighbor.z, "The focused entry must draw in front")
+        if (data.style === "wheel") {
+            verify(Math.abs(neighbor.rotation) > 8, "Neighboring logos must rotate along the arc")
+            compare(findChild(focused, "couchGameCardFrame").color.a, 0)
+        } else verify(focused.coverFlow)
+    }
+    function test_overlapping_neighbor_can_be_clicked_data() {
+        return ["wheel", "album"].map(style => ({tag: style, style: style}))
+    }
+    function test_overlapping_neighbor_can_be_clicked(data) {
+        const browser = createTemporaryObject(browserComponent, this, {viewStyle: data.style})
+        tryCompare(browser, "count", 36)
+        browser.currentIndex = 17
+        tryVerify(() => browser.currentItem && browser.currentItem.index === 17)
+        wait(450)
+        const neighbor = browser.currentItem.parent.children.find(item => item.index === 18)
+        verify(neighbor)
+        activation.target = browser; activation.clear()
+        mouseClick(neighbor, neighbor.width / 2, neighbor.height / 2)
+        compare(activation.count, 1)
+        compare(activation.signalArguments[0][0], 18)
+        activation.target = null
+        mouseMove(this, 1200, 690)
+    }
     function test_expanding_layout_under_parked_pointer_keeps_game() {
         const browser = createTemporaryObject(browserComponent, this, {width: 700})
         mouseMove(browser, 300, 200)
@@ -117,6 +172,25 @@ TestCase {
         wait(500)
         compare(browser.currentIndex, 17)
         mouseMove(this, 1200, 690)
+    }
+    function test_restored_path_selection_cancels_previous_motion_data() {
+        return ["wheel", "album"].map(style => ({tag: style, style: style}))
+    }
+    function test_restored_path_selection_cancels_previous_motion(data) {
+        const browser = createTemporaryObject(browserComponent, this, {viewStyle: data.style})
+        tryCompare(browser, "count", 36)
+        browser.currentIndex = 17
+        wait(70)
+        browser.currentIndex = 4
+        browser.positionViewAtIndex(4, ListView.Center)
+        tryVerify(() => browser.currentItem && browser.currentItem.index === 4)
+        wait(450)
+        compare(browser.currentIndex, 4)
+        compare(browser.currentItem.index, 4)
+        const center = browser.currentItem.mapToItem(browser,
+            browser.currentItem.width / 2, browser.currentItem.height / 2)
+        const target = data.style === "wheel" ? browser.height * 0.5 : browser.width * 0.5
+        verify(Math.abs((data.style === "wheel" ? center.y : center.x) - target) < 1)
     }
     function test_controller_cancels_hover_dwell_at_navigation_boundary() {
         const browser = createTemporaryObject(browserComponent, this, {viewStyle: "wall"})
@@ -169,6 +243,9 @@ TestCase {
         verify(momentum && momentum.enabled)
         verify(grid.verticalScrollBarGutter <= 14)
         verify(grid.cellWidth * grid.columnCount <= grid.width - grid.verticalScrollBarGutter + 0.01)
+        // Wheel input is delivered to a displayed view. Wait for its initial
+        // layout/selection polish before measuring a user's scrolling gesture.
+        verify(waitForRendering(grid))
         mouseWheel(grid, grid.width / 2, grid.height / 2, 0, -120)
         const immediate = grid.contentY
         verify(immediate > 0, "Wheel input should move immediately")

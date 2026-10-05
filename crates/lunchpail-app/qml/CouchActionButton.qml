@@ -7,6 +7,10 @@ Button {
     property color panelColor: "#101823"
     property color accentColor: "#ffab52"
     property bool emphasized: false
+    property var soundFeedback: null
+    property string soundCue: "confirm"
+    onPressed: if (soundFeedback && soundCue) soundFeedback.play(soundCue)
+    onHoveredChanged: if (hovered && soundFeedback) soundFeedback.play("focus")
     property string iconName: ""
     readonly property bool iconOnly: iconName.length > 0
     implicitWidth: iconOnly ? 44 : Math.max(44, label.implicitWidth + 44)

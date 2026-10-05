@@ -27,4 +27,20 @@ TestCase {
         verify(!item.accept("move", 1100)); verify(item.accept("back", 1101))
         verify(item.accept("switch", 1500))
     }
+    function test_layout_and_pointer_cues_obey_the_same_mute_and_rate_limits() {
+        const item = policy(); item.active = true
+        let time = 1000
+        for (const kind of ["wheel", "wall", "flow", "focus"]) {
+            verify(item.isNavigation(kind))
+            verify(item.accept(kind, time))
+            verify(!item.accept(kind, time + 10))
+            item.muted = true
+            verify(!item.accept(kind, time + 500))
+            item.muted = false
+            verify(item.accept(kind, time + 600))
+            time += 1000
+        }
+        item.active = false
+        verify(!item.accept("wheel", time))
+    }
 }

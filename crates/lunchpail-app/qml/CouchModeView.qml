@@ -19,6 +19,7 @@ Item {
     property bool searchOpen: false
     property bool sfxEnabled: true
     property real sfxVolume: 0.22
+    readonly property string movementCue: cinematicWheel ? "wheel" : wallView ? "wall" : albumView ? "flow" : "move"
     signal searchRequested(string text)
     readonly property bool audioSuppressedForVoice: handsFreeController.capturingCommand
         || searchOverlay.microphoneBusy
@@ -402,7 +403,7 @@ Item {
         const previous = shelf.currentIndex
         shelf.currentIndex = Math.max(0, Math.min(shelf.count - 1,
                                                  shelf.currentIndex + delta))
-        if (previous !== shelf.currentIndex) feedback.play("move")
+        if (previous !== shelf.currentIndex) feedback.play(view.movementCue)
         shelf.positionViewAtIndex(shelf.currentIndex, ListView.Contain)
     }
 
@@ -536,6 +537,7 @@ Item {
     }
 
     function closePlatformWheel() {
+        if (platformWheelOpen) feedback.play("back")
         platformWheelOpen = false
         if (active)
             forceActiveFocus()
@@ -547,7 +549,7 @@ Item {
         platformWheelIndex = Math.max(0, Math.min(library.platform_count - 1,
                                                   platformWheelIndex + delta))
         platformWheel.currentIndex = platformWheelIndex
-        platformWheel.positionViewAtIndex(platformWheelIndex, ListView.Center)
+        platformWheel.positionViewAtIndex(platformWheelIndex, ListView.Contain)
     }
 
     function choosePlatform(index) {
@@ -602,6 +604,7 @@ Item {
     }
 
     function closeCollectionWheel() {
+        if (collectionWheelOpen) feedback.play("back")
         collectionWheelOpen = false
         if (active)
             forceActiveFocus()
@@ -631,6 +634,7 @@ Item {
     }
 
     function closeVariantWheel() {
+        if (variantWheelOpen) feedback.play("back")
         variantWheelOpen = false
         if (active) {
             overlayMode = "menu"
@@ -1022,7 +1026,8 @@ Item {
         if (searchOpen) return searchOverlay.handleNavigation(action)
         const handled = navigate(action)
         if (handled) feedback.play(action === "back" ? "back"
-            : ["accept", "favorite", "details", "menu"].indexOf(action) >= 0 ? "confirm" : "move")
+            : ["accept", "favorite", "details", "menu"].indexOf(action) >= 0 ? "confirm"
+            : platformWheelOpen || navigationZone === 2 ? movementCue : "move")
         return handled
     }
 
@@ -1621,7 +1626,7 @@ Item {
                     font.weight: Font.Bold
                     font.letterSpacing: 0.8
                 }
-                HoverHandler { id: categoryHover }
+                HoverHandler { id: categoryHover; onHoveredChanged: if (hovered) feedback.play("focus") }
                 TapHandler {
                     onTapped: {
                         view.navigationZone = 0
@@ -1642,6 +1647,7 @@ Item {
 
         CouchActionButton {
             id: searchButton
+            soundFeedback: feedback; soundCue: ""
             width: view.width < 1500 ? 132 : 174
             text: view.searchText ? "Search: " + view.searchText : "Search · F3"
             inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
@@ -1650,6 +1656,7 @@ Item {
         }
         CouchActionButton {
             id: micButton
+            soundFeedback: feedback
             text: "Voice · F2"
             inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
             onClicked: view.openSearch(view.searchText, true)
@@ -1657,6 +1664,7 @@ Item {
         }
         CouchActionButton {
             id: handsFreeButton
+            soundFeedback: feedback
             objectName: "couchHandsFreeToggle"
             width: 144
             text: view.speech.faulted && view.ai && view.ai.hands_free ? "Mic error · Off"
@@ -1670,6 +1678,7 @@ Item {
         }
         CouchActionButton {
             text: view.viewLabel + "  ▾"
+            soundFeedback: feedback; soundCue: ""
             inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
             onClicked: { view.noteActivity(); view.toggleViewStyle() }
             ToolTip.visible: hovered
@@ -1678,13 +1687,15 @@ Item {
         }
         CouchActionButton {
             text: "Library & settings"
+            soundFeedback: feedback
             inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
-            onClicked: { feedback.play("confirm"); view.toolsRequested() }
+            onClicked: view.toolsRequested()
         }
         CouchActionButton {
             width: 44; text: "×"
+            soundFeedback: feedback; soundCue: "back"
             inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
-            onClicked: { feedback.play("back"); view.exitRequested() }
+            onClicked: view.exitRequested()
             Accessible.name: "Return to desktop mode"
         }
     }
@@ -1863,7 +1874,7 @@ Item {
                         font.weight: Font.Bold
                         font.letterSpacing: actionButton.index === 2 ? 0 : 0.7
                     }
-                    HoverHandler { id: actionHover }
+                    HoverHandler { id: actionHover; onHoveredChanged: if (hovered) feedback.play("focus") }
                     TapHandler {
                         enabled: actionButton.index !== 2 || !view.favoriteBusy
                         onTapped: {
@@ -1941,16 +1952,17 @@ Item {
         x: 70; y: footer.y - height - 12
         spacing: 8; z: 20
         visible: view.hasPreviewVideo && !view.overlayOpen && !view.platformWheelOpen
-        CouchActionButton { text: couchVideo.paused ? "Play video" : "Pause video"; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: couchVideo.paused = !couchVideo.paused }
+        CouchActionButton { text: couchVideo.paused ? "Play video" : "Pause video"; soundFeedback: feedback; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: couchVideo.paused = !couchVideo.paused }
         CouchActionButton {
             text: view.videoMuted ? "Unmute all game videos" : "Mute all game videos"
+            soundFeedback: feedback
             iconName: view.videoMuted ? "mute" : "volume"
             inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
             onClicked: view.videoMuteRequested()
             ToolTip.visible: hovered
             ToolTip.text: text
         }
-        CouchActionButton { text: "Fullscreen"; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: view.videoRequested(couchVideo.source) }
+        CouchActionButton { text: "Fullscreen"; soundFeedback: feedback; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: view.videoRequested(couchVideo.source) }
     }
     Text {
         x: 70; y: categoryRow.y + categoryRow.height + 6
@@ -2005,6 +2017,8 @@ Item {
             anchors.top: parent.top
             anchors.topMargin: 25
             anchors.bottom: parent.bottom
+            anchors.bottomMargin: view.wallView && backgroundVideoControls.visible
+                                  ? backgroundVideoControls.height + 20 : 0
             library: view.library
             background: view.background
             panel: view.panel
@@ -2028,14 +2042,14 @@ Item {
                 view.captureCurrentGame()
                 if (previousGame.length > 0 && previousGame !== view.selectedGameId
                         && !view.searchOpen && !view.attractOpen)
-                    feedback.play("move")
+                    feedback.play(view.movementCue)
                 selectionDelay.restart()
             }
             onCardActivated: index => {
                 view.noteActivity()
                 view.navigationZone = 2
                 const selectedAgain = shelf.currentIndex === index
-                feedback.play(selectedAgain ? "confirm" : "move")
+                feedback.play(selectedAgain ? "confirm" : view.movementCue)
                 shelf.currentIndex = index
                 view.forceActiveFocus()
                 if (selectedAgain) view.requestDetails()
@@ -2614,12 +2628,14 @@ Item {
                     }
                 }
 
-                LbButton {
+                CouchActionButton {
                     anchors.right: parent.right
                     anchors.rightMargin: 94
                     anchors.verticalCenter: parent.verticalCenter
                     width: 190; height: 44
                     text: view.viewLabel + "  ·  Ctrl+V"
+                    soundFeedback: feedback; soundCue: ""
+                    inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
                     Accessible.name: "Change platform and game view"
                     onClicked: view.toggleViewStyle()
                 }
@@ -2642,7 +2658,7 @@ Item {
                         color: view.ink
                         font.pixelSize: 23
                     }
-                    HoverHandler { id: platformCloseHover }
+                    HoverHandler { id: platformCloseHover; onHoveredChanged: if (hovered) feedback.play("focus") }
                     TapHandler { onTapped: view.closePlatformWheel() }
                 }
             }
@@ -2660,7 +2676,13 @@ Item {
                 viewStyle: view.library.couch_view_style
                 panel: view.panel; ink: view.ink; muted: view.muted; accent: view.accent
                 hoverSelectionEnabled: view.active && view.inputEnabled && view.platformWheelOpen
-                onCurrentIndexChanged: if (currentIndex >= 0) view.platformWheelIndex = currentIndex
+                onCurrentIndexChanged: {
+                    if (currentIndex < 0) return
+                    const changed = view.platformWheelIndex !== currentIndex
+                    view.platformWheelIndex = currentIndex
+                    if (changed && view.active && view.platformWheelOpen)
+                        feedback.play(view.movementCue)
+                }
                 onActivated: index => view.choosePlatform(index)
             }
 
@@ -2698,16 +2720,17 @@ Item {
                 }
                 Row {
                     spacing: 8; visible: platformVideo.visible
-                    CouchActionButton { text: platformVideo.paused ? "Play" : "Pause"; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: platformVideo.paused = !platformVideo.paused }
+                    CouchActionButton { text: platformVideo.paused ? "Play" : "Pause"; soundFeedback: feedback; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: platformVideo.paused = !platformVideo.paused }
                     CouchActionButton {
                         text: view.videoMuted ? "Unmute all game videos" : "Mute all game videos"
+                        soundFeedback: feedback
                         iconName: view.videoMuted ? "mute" : "volume"
                         inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
                         onClicked: view.videoMuteRequested()
                         ToolTip.visible: hovered
                         ToolTip.text: text
                     }
-                    CouchActionButton { text: "Fullscreen"; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: view.videoRequested(platformVideo.source) }
+                    CouchActionButton { text: "Fullscreen"; soundFeedback: feedback; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: view.videoRequested(platformVideo.source) }
                 }
                 Text {
                     width: parent.width
@@ -2723,9 +2746,11 @@ Item {
                     color: view.muted; font.pixelSize: 16; lineHeight: 1.3
                     wrapMode: Text.WordWrap; horizontalAlignment: Text.AlignHCenter
                 }
-                LbButton {
+                CouchActionButton {
                     width: parent.width; height: 52
                     text: (view.gamepad.connected_count > 0 ? view.gamepad.button_label("details") : "D") + "  ·  System media"
+                    soundFeedback: feedback
+                    inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
                     contentItem: LbButtonLabel { control: parent; pixelSize: 18 }
                     onClicked: view.systemMediaRequested(platformPresentation.platform)
                 }
@@ -4127,6 +4152,14 @@ Item {
 
     Connections {
         target: view.library
+        function onLoadingChanged() {
+            // The fast startup catalog may already be browsing while the full
+            // catalog arrives. Its model reset changes row numbers, not the
+            // user's chosen game. Pin the identity before that reset begins.
+            if (!view.library.loading && view.active && !entrySelection.pending
+                    && view.selectedGameId.length > 0)
+                entrySelection.begin(view.selectedGameId, view.library.current_platform)
+        }
         function onFiltered_countChanged() {
             if (entrySelection.pending) { entrySelection.reconcile(); return }
             if (shelf.count <= 0) {

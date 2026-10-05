@@ -13,7 +13,7 @@ Item {
     property bool capturing: false
     readonly property string gameId: "2d6cb4b2-a219-4c40-9b31-ac466a77e88c"
     readonly property string platform: "Nintendo Entertainment System"
-    readonly property var cues: ["move", "confirm", "back", "switch", "enter", "launch"]
+    readonly property var cues: ["move", "wheel", "wall", "flow", "focus", "confirm", "back", "switch", "enter", "launch"]
     function fail(message) { console.error("LUNCHPAIL_COUCH_ENTRY_FAILED " + message); Qt.exit(2) }
     function checkSelection() {
         if (!view.active || view.entryPending || !view.gameBrowser.currentItem) return false
@@ -81,9 +81,10 @@ Item {
                 probe.app.enterCouchMode(); probe.step = 7; probe.stableTicks = 0
             } else if (probe.step === 7) {
                 if (!probe.checkSelection() || ++probe.stableTicks < 3) return
+                if (probe.library.loading) return
                 probe.app.exitCouchMode()
                 if (probe.view.soundFeedback.play("confirm")) { probe.fail("inactive sound played"); return }
-                console.log("LUNCHPAIL_COUCH_ENTRY_READY game=Faxanadu platform=NES details_priority=pass grid_entry=pass cues=6 muted=pass emulator=off microphone=off")
+                console.log("LUNCHPAIL_COUCH_ENTRY_READY game=Faxanadu platform=NES details_priority=pass grid_entry=pass cues=" + probe.cues.length + " muted=pass emulator=off microphone=off")
                 Qt.quit()
             }
         }

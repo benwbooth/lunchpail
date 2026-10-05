@@ -52,6 +52,10 @@ fn generate_couch_sounds() -> PathBuf {
     let mut qrc = String::from("<RCC><qresource prefix=\"/couch-sounds\">\n");
     for (name, frequencies, duration, gain) in [
         ("move", [1200.0f64, 960.0, 760.0], 0.035, 0.22),
+        ("wheel", [2600.0, 700.0, 420.0], 0.047, 0.54),
+        ("wall", [310.0, 180.0, 110.0], 0.075, 0.54),
+        ("flow", [920.0, 460.0, 230.0], 0.11, 0.44),
+        ("focus", [1450.0, 1250.0, 1050.0], 0.03, 0.27),
         ("confirm", [440.0, 660.0, 880.0], 0.135, 0.42),
         ("back", [660.0, 494.0, 330.0], 0.11, 0.36),
         ("switch", [330.0, 494.0, 740.0], 0.16, 0.34),
@@ -74,14 +78,41 @@ fn generate_couch_sounds() -> PathBuf {
         bytes.extend_from_slice(b"data");
         bytes.extend_from_slice(&size.to_le_bytes());
         let mut phase = 0.0;
+        let mut noise_seed = 0x5a17_9c3du32;
+        let mut filtered_noise = 0.0;
+        let motion = matches!(name, "wheel" | "wall" | "flow" | "focus");
         for index in 0..count {
             let fraction = f64::from(index) / f64::from(count);
             let note = fraction * 3.0;
-            let frequency = frequencies[(note as usize).min(2)];
+            let frequency = if motion {
+                frequencies[2] + (frequencies[0] - frequencies[2]) * (-fraction * 6.0).exp()
+            } else {
+                frequencies[(note as usize).min(2)]
+            };
             phase += std::f64::consts::TAU * frequency / 48000.0;
-            let articulation = (std::f64::consts::PI * note.fract()).sin().sqrt();
+            // Deterministic, filtered noise adds a mechanical tick / soft air
+            // to navigation without shipping anyone else's arcade samples.
+            noise_seed ^= noise_seed << 13;
+            noise_seed ^= noise_seed >> 17;
+            noise_seed ^= noise_seed << 5;
+            let noise = f64::from(noise_seed) / f64::from(u32::MAX) * 2.0 - 1.0;
+            filtered_noise += 0.18 * (noise - filtered_noise);
+            let articulation = if motion {
+                1.0
+            } else {
+                (std::f64::consts::PI * note.fract()).sin().sqrt()
+            };
             let envelope = (fraction * 24.0).min(1.0) * (1.0 - fraction).powi(2);
-            let wave = phase.sin() + 0.18 * (phase * 2.0).sin() + 0.06 * (phase * 3.0).sin();
+            let wave = match name {
+                "wheel" => 0.62 * phase.sin() + 0.65 * noise * (-fraction * 18.0).exp(),
+                "wall" => 0.9 * phase.sin() + 0.15 * filtered_noise,
+                "flow" => {
+                    0.35 * phase.sin()
+                        + 1.2 * filtered_noise * (std::f64::consts::PI * fraction).sin()
+                }
+                "focus" => 0.7 * phase.sin(),
+                _ => phase.sin() + 0.18 * (phase * 2.0).sin() + 0.06 * (phase * 3.0).sin(),
+            };
             let sample = (wave * articulation * envelope * gain * 24000.0) as i16;
             bytes.extend_from_slice(&sample.to_le_bytes());
         }
@@ -208,6 +239,9 @@ fn main() {
                 "qml/CouchDownloadScreen.qml",
                 "qml/CouchGameShelf.qml",
                 "qml/CouchGameBrowser.qml",
+                "qml/CouchWheelPath.qml",
+                "qml/CouchCoverFlowPath.qml",
+                "qml/CouchCoverReflection.qml",
                 "qml/CouchPointerSelection.qml",
                 "qml/CouchPlatformBrowser.qml",
                 "qml/CouchPlatformCard.qml",

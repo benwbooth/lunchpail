@@ -38,10 +38,18 @@ same game through asynchronous filtering; an older saved Couch shelf does not
 replace it. A game hidden by an additional library filter is identified explicitly
 instead of silently selecting another title.
 
-Game and system cards share animated focus outlines, readable missing-artwork
-wordmarks, and consistent controls. Navigation, confirmation, back, view changes,
-entry, and launch each have a short original sound cue. Rapid browsing is
-rate-limited, and the existing sound-volume and mute controls apply to every cue.
+The logo wheel packs eleven entries onto a curved path: neighbors tilt and shrink,
+while the selected logo glides forward and enlarges. Cover flow stacks angled
+covers around a larger front-facing selection with fading floor reflections. The
+wall brings cards in with a staggered zoom and gently lifts the selection and its
+neighbors. These effects apply to games and platforms, with readable wordmarks
+when artwork is missing.
+
+Wheel ticks, wall steps, cover-flow swishes, button focus, confirmation, back, view
+changes, entry, and launch use short original sound cues. Mouse buttons and
+controller/keyboard actions share the same feedback. Rapid browsing is
+rate-limited; movement does not cut off a confirmation or launch sound. The saved
+sound-volume and mute controls apply to every cue.
 
 Choose a shelf such as My Collection, Favorites, or Recent. The platform and
 collection pickers narrow the same library used by normal mode.
@@ -87,8 +95,9 @@ literal matches too. Unusual game titles may need a keyboard correction.
 
 Navigation uses quiet movement, confirm, and back sounds. Their saved toggle and
 volume are in **Settings → Couch Mode**, separately from video and music settings.
-While the microphone is active, navigation sounds and preview audio are silenced
+While recording a command, navigation sounds and preview audio are silenced
 without changing the shared video mute preference or the music's paused state.
+Passive hands-free wake listening does not mute playback.
 
 The recognizer is [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), Apache-2.0,
 with the Apache-2.0 [English streaming Zipformer model](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-21).

@@ -58,6 +58,27 @@ TestCase {
         mouseMove(this, 1200, 690)
     }
     SignalSpy { id: activation; signalName: "activated" }
+    function test_wheel_uses_the_same_dense_magnifying_path_as_games() {
+        const browser = createTemporaryObject(browserComponent, this)
+        browser.currentIndex = 17
+        tryVerify(() => browser.currentItem && browser.currentItem.index === 17)
+        wait(450)
+        const carousel = findChild(browser, "couchPlatformCarousel")
+        compare(carousel.pathItemCount, 11)
+        const focused = browser.currentItem
+        const neighbor = focused.parent.children.find(item => item.index === 18)
+        verify(neighbor)
+        verify(focused.scale > neighbor.scale * 1.3)
+        verify(focused.z > neighbor.z)
+        verify(Math.abs(neighbor.rotation) > 8)
+        compare(findChild(focused, "couchPlatformCardFrame").color.a, 0)
+        activation.target = browser; activation.clear()
+        mouseClick(neighbor, neighbor.width / 2, neighbor.height / 2)
+        compare(activation.count, 1)
+        compare(activation.signalArguments[0][0], 18)
+        activation.target = null
+        mouseMove(this, 1200, 690)
+    }
     function test_hover_selects_without_entering_platform_data() {
         return ["wall", "wheel", "album", "shelf"].map(style => ({tag: style, style: style}))
     }

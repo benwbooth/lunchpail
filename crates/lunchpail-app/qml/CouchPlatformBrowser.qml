@@ -28,7 +28,11 @@ Item {
     function positionViewAtIndex(index, mode) {
         if (!presentation.item || index < 0) return
         if (viewStyle === "wall" || viewStyle === "shelf") presentation.item.positionViewAtIndex(index, mode)
-        else applySelection()
+        else {
+            applySelection()
+            if (mode === ListView.Center)
+                presentation.item.positionViewAtIndex(index, PathView.SnapPosition)
+        }
     }
     function positionViewAtBeginning() { positionViewAtIndex(0, ListView.Beginning) }
     function positionViewAtEnd() { positionViewAtIndex(count - 1, ListView.End) }
@@ -51,10 +55,21 @@ Item {
         onSelected: index => { if (index < browser.count) browser.currentIndex = index }
     }
     HoverHandler {
-        onPointChanged: if (hovered) pointerSelection.observe(point.scenePosition)
+        onPointChanged: if (hovered) {
+            pointerSelection.observe(point.scenePosition)
+            browser.movePathPointer(point.scenePosition)
+        }
         onHoveredChanged: if (!hovered) pointerSelection.forget()
     }
     function cancelPointerSelection() { pointerSelection.cancel() }
+    function pathIndexAt(position) {
+        return pointerSelection.nearestPathIndex(browser, presentation.item, position, viewStyle === "wheel")
+    }
+    function movePathPointer(position) {
+        if (viewStyle !== "wheel" && viewStyle !== "album") return
+        const index = pathIndexAt(position)
+        if (index >= 0) pointerSelection.move(index, position)
+    }
     Loader {
         id: presentation
         anchors.fill: parent
@@ -90,6 +105,10 @@ Item {
                 library: browser.library
                 width: grid.cellWidth - 8; height: grid.cellHeight - 8
                 selected: GridView.isCurrentItem
+                animateEntrance: true
+                entranceDelay: (index % grid.columnCount) * 24
+                focusDistance: Math.abs(index % grid.columnCount - grid.currentIndex % grid.columnCount)
+                    + Math.abs(Math.floor(index / grid.columnCount) - Math.floor(grid.currentIndex / grid.columnCount))
                 panel: browser.panel; ink: browser.ink; muted: browser.muted; accent: browser.accent
                 onActivated: index => browser.activated(index)
                 onHoverMoved: (index, position) => pointerSelection.move(index, position)
@@ -121,22 +140,31 @@ Item {
         id: carouselComponent
         PathView {
             id: carousel
+            objectName: "couchPlatformCarousel"
             readonly property bool wheel: browser.viewStyle === "wheel"
             model: browser.count; clip: true
-            pathItemCount: wheel ? 5 : 7
+            pathItemCount: 11
             cacheItemCount: 2
             preferredHighlightBegin: 0.5; preferredHighlightEnd: 0.5
             highlightRangeMode: PathView.StrictlyEnforceRange
-            highlightMoveDuration: 210
+            highlightMoveDuration: wheel ? 280 : 340
             snapMode: PathView.SnapToItem
             dragMargin: width; flickDeceleration: 450
             path: wheel ? wheelPath : flowPath
+            TapHandler {
+                onTapped: eventPoint => {
+                    const index = browser.pathIndexAt(eventPoint.scenePosition)
+                    if (index >= 0) browser.activated(index)
+                }
+            }
             delegate: CouchPlatformCard {
                 id: card
                 library: browser.library
-                width: carousel.wheel ? carousel.width * 0.75 : carousel.width * 0.35
-                height: carousel.wheel ? Math.min(200, carousel.height * 0.38) : Math.min(carousel.height * 0.88, width * 1.25)
+                width: carousel.wheel ? carousel.width * 0.76 : Math.min(carousel.height * 0.68, carousel.width * 0.30)
+                height: carousel.wheel ? Math.min(174, carousel.height * 0.25) : carousel.height * 0.74
                 wheel: carousel.wheel; selected: PathView.isCurrentItem
+                coverFlow: !carousel.wheel
+                pointerActivationEnabled: false
                 panel: browser.panel; ink: browser.ink; muted: browser.muted; accent: browser.accent
                 scale: PathView.itemScale ?? 1; opacity: PathView.itemOpacity ?? 1; z: PathView.itemDepth ?? 0
                 rotation: carousel.wheel ? (PathView.itemAngle ?? 0) : 0
@@ -146,58 +174,15 @@ Item {
                     angle: carousel.wheel ? 0 : (card.PathView.itemAngle ?? 0)
                 }
                 onActivated: index => browser.activated(index)
-                onHoverMoved: (index, position) => pointerSelection.move(index, position)
-                onHoverLeft: index => pointerSelection.leave(index)
+                onHoverMoved: (index, position) => browser.movePathPointer(position)
             }
-            Path {
+            CouchWheelPath {
                 id: wheelPath
-                startX: carousel.width * 0.8; startY: -90
-                PathAttribute { name: "itemScale"; value: 0.55 }
-                PathAttribute { name: "itemOpacity"; value: 0.25 }
-                PathAttribute { name: "itemDepth"; value: 0 }
-                PathAttribute { name: "itemAngle"; value: -14 }
-                PathQuad { x: carousel.width * 0.45; y: carousel.height / 2; controlX: carousel.width * 0.38; controlY: carousel.height * 0.15 }
-                PathPercent { value: 0.5 }
-                PathAttribute { name: "itemScale"; value: 1 }
-                PathAttribute { name: "itemOpacity"; value: 1 }
-                PathAttribute { name: "itemDepth"; value: 10 }
-                PathAttribute { name: "itemAngle"; value: 0 }
-                PathQuad { x: carousel.width * 0.8; y: carousel.height + 90; controlX: carousel.width * 0.38; controlY: carousel.height * 0.85 }
-                PathAttribute { name: "itemScale"; value: 0.55 }
-                PathAttribute { name: "itemOpacity"; value: 0.25 }
-                PathAttribute { name: "itemDepth"; value: 0 }
-                PathAttribute { name: "itemAngle"; value: 14 }
+                viewportWidth: carousel.width; viewportHeight: carousel.height
             }
-            Path {
+            CouchCoverFlowPath {
                 id: flowPath
-                startX: -carousel.width * 0.1; startY: carousel.height * 0.55
-                PathAttribute { name: "itemScale"; value: 0.65 }
-                PathAttribute { name: "itemOpacity"; value: 0.25 }
-                PathAttribute { name: "itemDepth"; value: 0 }
-                PathAttribute { name: "itemAngle"; value: 60 }
-                PathLine { x: carousel.width * 0.28; y: carousel.height * 0.55 }
-                PathPercent { value: 0.35 }
-                PathAttribute { name: "itemScale"; value: 0.78 }
-                PathAttribute { name: "itemOpacity"; value: 0.8 }
-                PathAttribute { name: "itemDepth"; value: 4 }
-                PathAttribute { name: "itemAngle"; value: 50 }
-                PathLine { x: carousel.width / 2; y: carousel.height / 2 }
-                PathPercent { value: 0.5 }
-                PathAttribute { name: "itemScale"; value: 1 }
-                PathAttribute { name: "itemOpacity"; value: 1 }
-                PathAttribute { name: "itemDepth"; value: 10 }
-                PathAttribute { name: "itemAngle"; value: 0 }
-                PathLine { x: carousel.width * 0.72; y: carousel.height * 0.55 }
-                PathPercent { value: 0.65 }
-                PathAttribute { name: "itemScale"; value: 0.78 }
-                PathAttribute { name: "itemOpacity"; value: 0.8 }
-                PathAttribute { name: "itemDepth"; value: 4 }
-                PathAttribute { name: "itemAngle"; value: -50 }
-                PathLine { x: carousel.width * 1.1; y: carousel.height * 0.55 }
-                PathAttribute { name: "itemScale"; value: 0.65 }
-                PathAttribute { name: "itemOpacity"; value: 0.25 }
-                PathAttribute { name: "itemDepth"; value: 0 }
-                PathAttribute { name: "itemAngle"; value: -60 }
+                viewportWidth: carousel.width; viewportHeight: carousel.height
             }
         }
     }

@@ -18,6 +18,22 @@ Item {
     required property double gameMediaId
     property bool selected: false
     property bool wheel: false
+    property bool coverFlow: false
+    property bool pointerActivationEnabled: true
+    property bool animateEntrance: false
+    property int entranceDelay: 0
+    property real entranceProgress: animateEntrance ? 0 : 1
+    SequentialAnimation {
+        running: card.animateEntrance
+        PauseAnimation { duration: Math.max(0, Math.min(180, card.entranceDelay)) }
+        NumberAnimation {
+            target: card; property: "entranceProgress"; from: 0; to: 1
+            duration: 300; easing.type: Easing.OutBack; easing.overshoot: 0.65
+        }
+    }
+    property real focusDistance: 8
+    property real focusAmount: selected ? 1 : Math.max(0, 1 - focusDistance / 3) * 0.35
+    Behavior on focusAmount { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
     property color ink: "#f4f7fb"
     property color muted: "#8d99aa"
     property color accent: "#ffb454"
@@ -45,18 +61,44 @@ Item {
     // The viewport owns fetching. Delegate creation and role changes must not
     // enqueue the same image repeatedly while the wheel is moving.
 
-    CouchFocusFrame { anchors.fill: frame; radius: frame.radius; selected: card.selected; accent: card.accent }
+    CouchFocusFrame {
+        anchors.fill: frame; radius: frame.radius; selected: card.selected; accent: card.accent
+        visible: !card.wheel
+        opacity: card.entranceProgress
+        scale: frame.scale
+        transform: Translate { y: card.coverFlow ? 0 : -4 * card.focusAmount }
+    }
+    CouchCoverReflection {
+        sourceItem: frame
+        x: frame.x; y: frame.y + frame.height + 6
+        width: frame.width; height: card.height * 0.23
+        visible: card.coverFlow
+    }
     Rectangle {
         id: frame
+        objectName: "couchGameCardFrame"
         anchors.fill: parent
         anchors.margins: 9
         radius: 14
-        color: card.wheel ? (card.selected ? Qt.rgba(0.03, 0.06, 0.1, 0.72) : "transparent") : card.panel
-        border.color: card.wheel ? (card.selected ? Qt.rgba(card.accent.r, card.accent.g, card.accent.b, 0.6) : "transparent") : card.selected ? card.accent : Qt.rgba(1, 1, 1, 0.14)
+        color: card.wheel ? "transparent" : card.panel
+        border.color: card.wheel ? "transparent" : card.selected ? card.accent : Qt.rgba(1, 1, 1, 0.14)
         border.width: card.selected ? 2 : 1
-        scale: card.wheel || card.selected ? 1 : hover.hovered ? 1.025 : 0.97
-        Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+        opacity: card.entranceProgress
+        scale: (card.wheel || card.coverFlow ? 1 : 0.95 + card.focusAmount * 0.075)
+               * (0.86 + 0.14 * card.entranceProgress)
+        transform: Translate { y: card.coverFlow || card.wheel ? 0 : -4 * card.focusAmount }
         Behavior on color { ColorAnimation { duration: 180 } }
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.width * 0.92; height: parent.height * 0.72
+            radius: height / 2
+            visible: card.wheel
+            color: Qt.rgba(card.accent.r, card.accent.g, card.accent.b, 0.10)
+            opacity: card.selected ? 1 : 0
+            scale: card.selected ? 1 : 0.75
+            Behavior on opacity { NumberAnimation { duration: 220 } }
+            Behavior on scale { NumberAnimation { duration: 280; easing.type: Easing.OutBack; easing.overshoot: 0.7 } }
+        }
         Rectangle {
             anchors { fill: cover; margins: 0 }
             visible: !card.wheel && cover.status !== Image.Ready
@@ -83,7 +125,7 @@ Item {
             sourceSize.height: card.wheel ? 240 : 640
             asynchronous: true
             cache: true
-            mipmap: !card.wheel
+            mipmap: true
             retainWhileLoading: true
             fillMode: Image.PreserveAspectFit
             opacity: status === Image.Ready ? 1 : 0
@@ -95,6 +137,8 @@ Item {
             visible: cover.status !== Image.Ready
             text: card.gameTitle
             color: card.ink
+            style: card.wheel ? Text.Outline : Text.Normal
+            styleColor: "#101722"
             font.pixelSize: card.wheel ? 28 : 25
             font.weight: Font.Bold
             minimumPixelSize: 14
@@ -135,10 +179,10 @@ Item {
             visible: card.gameLocal && !card.wheel
             color: "#5ee391"
         }
-        Rectangle {
+        SemanticIcon {
             visible: card.wheel && card.selected
-            anchors { left: parent.left; verticalCenter: parent.verticalCenter; leftMargin: 7 }
-            width: 4; height: parent.height * 0.42; radius: 2; color: card.accent
+            anchors { left: parent.left; verticalCenter: parent.verticalCenter; leftMargin: -4 }
+            width: 16; height: 22; name: "play"; filled: true; color: card.accent
         }
         FavoriteButton {
             anchors.left: parent.left
@@ -156,7 +200,10 @@ Item {
         onPointChanged: if (hovered) card.hoverMoved(card.index, point.scenePosition)
         onHoveredChanged: if (!hovered) card.hoverLeft(card.index)
     }
-    TapHandler { onTapped: card.activated(card.index) }
+    TapHandler {
+        enabled: card.pointerActivationEnabled
+        onTapped: card.activated(card.index)
+    }
     Accessible.role: Accessible.ListItem
     Accessible.name: gameTitle + ", " + gamePlatform
     Accessible.selected: selected

@@ -18,6 +18,27 @@ TestCase {
             onClicked: muted = !muted
         }
     }
+    QtObject {
+        id: sounds
+        property var heard: []
+        function play(kind) { heard = heard.concat(kind); return true }
+    }
+    function test_pointer_and_keyboard_actions_emit_the_button_cue() {
+        const button = createTemporaryObject(buttonComponent, test,
+                                             {x: 20, y: 20, soundFeedback: sounds})
+        sounds.heard = []
+        mouseClick(button)
+        compare(sounds.heard.filter(kind => kind === "confirm").length, 1)
+        button.soundCue = "back"
+        button.forceActiveFocus()
+        keyClick(Qt.Key_Space)
+        compare(sounds.heard.filter(kind => kind === "back").length, 1)
+        button.soundCue = ""
+        sounds.heard = []
+        keyClick(Qt.Key_Space)
+        compare(sounds.heard.length, 0, "Actions with their own feedback must not double-play")
+        mouseMove(test, 300, 90)
+    }
 
     function test_icon_click_and_keyboard_keep_accessible_action() {
         const button = createTemporaryObject(buttonComponent, test, {x: 20, y: 20})
