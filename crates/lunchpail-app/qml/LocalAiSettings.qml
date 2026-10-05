@@ -9,6 +9,8 @@ ColumnLayout {
     required property color inkColor
     required property color mutedColor
     required property color accentColor
+    property bool advanced: false
+    property bool enableVoiceAfterInstall: false
     spacing: 12
     readonly property var catalog: JSON.parse(ai.models_json || "[]")
     readonly property var assistants: [{id: "", name: "Disabled"}].concat(catalog.filter(m => m.assistant))
@@ -18,9 +20,35 @@ ColumnLayout {
     Text { text: "LOCAL AI & VOICE"; color: pane.inkColor; font.bold: true; font.pixelSize: 16 }
     Text {
         Layout.fillWidth: true
-        text: "Select models below and Lunchpail downloads them automatically from Hugging Face. No Ollama, Python, account, or separate server is needed. Downloads use the internet; prompts and microphone audio stay on this device. Catalog/patch lookups may contact their providers."
+        text: "Choose Yes when Lunchpail asks to install a model. Download, setup and CPU/GPU selection are automatic. No account or separate server is needed. Prompts and microphone audio stay on this device."
         color: pane.mutedColor; wrapMode: Text.WordWrap; font.pixelSize: 12
     }
+    RowLayout {
+        Button { text: pane.ai.assistant_ready ? "Assistant installed" : "Install assistant…"; enabled: !pane.ai.busy; onClicked: { pane.enableVoiceAfterInstall = false; installer.request(true, false) } }
+        Button { text: pane.ai.speech_ready ? "Voice model installed" : "Install voice…"; enabled: !pane.ai.busy; onClicked: { pane.enableVoiceAfterInstall = false; installer.request(false, false) } }
+    }
+    CheckBox {
+        id: handsFreeToggle
+        objectName: "handsFreePreference"
+        text: "Hands-free Couch search · Say ‘Lunchpail’ or ‘OK Lunchpail’"
+        checked: !!pane.ai.hands_free
+        onClicked: {
+            if (!checked) pane.ai.enable_hands_free(false)
+            else { pane.enableVoiceAfterInstall = true; installer.request(false, true) }
+        }
+    }
+    Text {
+        Layout.fillWidth: true; wrapMode: Text.WordWrap; color: pane.mutedColor; font.pixelSize: 11
+        text: "When enabled, the microphone listens locally while Couch mode is focused, pauses for games and dialogs, and shows a Mic on indicator. Audio is never saved or uploaded. Other speech is ignored until the wake phrase. F2 still works for push-to-talk."
+    }
+    LocalModelInstall {
+        id: installer; ai: pane.ai
+        onReady: { if (pane.enableVoiceAfterInstall) pane.ai.enable_hands_free(true); pane.enableVoiceAfterInstall = false }
+        onDeclined: { pane.enableVoiceAfterInstall = false; handsFreeToggle.checked = Qt.binding(() => !!pane.ai.hands_free) }
+    }
+    Button { objectName: "advancedAiOptions"; text: pane.advanced ? "Hide advanced options" : "Advanced options"; onClicked: pane.advanced = !pane.advanced }
+    ColumnLayout {
+      Layout.fillWidth: true; visible: pane.advanced; spacing: 12
     Text { text: "Assistant model"; color: pane.inkColor; font.bold: true }
     ComboBox {
         objectName: "assistantModelChoice"
@@ -58,12 +86,13 @@ ColumnLayout {
         Button { text: pane.ai.busy ? "Cancel" : "Download / repair selected models"; onClicked: pane.ai.busy ? pane.ai.cancel() : pane.ai.download_selected() }
         Button { text: "Check hardware"; enabled: !pane.ai.busy; onClicked: pane.ai.detect_hardware() }
     }
+    }
     ProgressBar { Layout.fillWidth: true; visible: pane.ai.busy; value: pane.ai.progress }
     Text { Layout.fillWidth: true; text: pane.ai.status; color: pane.accentColor; wrapMode: Text.WordWrap; font.pixelSize: 12 }
     Text { Layout.fillWidth: true; text: pane.ai.hardware; color: pane.mutedColor; wrapMode: Text.WordWrap; font.pixelSize: 11 }
     Text {
         Layout.fillWidth: true
-        text: "Microphone access is always push-to-talk, with a 15-second limit. Recordings are never saved. Models stay downloaded when disabled."
+        text: "Models stay downloaded when disabled. Advanced model selections download immediately; Automatic compute falls back to CPU if needed. Catalog and patch lookups may contact their providers."
         color: pane.mutedColor; wrapMode: Text.WordWrap; font.pixelSize: 11
     }
 }

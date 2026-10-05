@@ -2444,8 +2444,10 @@ ApplicationWindow {
             if (!popupScope && root.couchModeActive && root.couchWorkspace.length === 0)
                 Qt.callLater(function() {
                     if (!desktopNavigation.popupScope && root.couchModeActive
-                            && root.couchWorkspace.length === 0 && !fullscreenMedia.opened)
-                        couchModeView.forceActiveFocus()
+                            && root.couchWorkspace.length === 0 && !fullscreenMedia.opened) {
+                        if (couchModeView.searchOpen) couchModeView.searchPanel.focusInput()
+                        else couchModeView.forceActiveFocus()
+                    }
                 })
         }
         onNavigationStarted: {
@@ -11718,6 +11720,8 @@ ApplicationWindow {
         videoMuted: root.videoAudioMuted
         speech: couchSpeech
         assistant: localAssistant
+        ai: localAi
+        windowActive: root.active
         searchText: searchField.text
         sfxEnabled: couchFeedbackSettings.soundsEnabled
         sfxVolume: couchFeedbackSettings.soundVolume

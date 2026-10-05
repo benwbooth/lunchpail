@@ -9,6 +9,7 @@ pub struct Settings {
     pub assistant: String,
     pub speech: String,
     pub compute: String,
+    pub hands_free: bool,
 }
 
 impl Default for Settings {
@@ -17,6 +18,7 @@ impl Default for Settings {
             assistant: String::new(),
             speech: "sherpa-zipformer-en".into(),
             compute: "auto".into(),
+            hands_free: false,
         }
     }
 }
@@ -72,8 +74,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut settings = Settings::load(dir.path()).unwrap();
         assert!(settings.assistant.is_empty());
+        assert!(!settings.hands_free);
         settings.assistant = "qwen3-4b".into();
         settings.speech = "whisper-base-en".into();
+        settings.hands_free = true;
         settings.save(dir.path()).unwrap();
         assert_eq!(Settings::load(dir.path()).unwrap(), settings);
         settings.assistant = "whisper-base-en".into();
@@ -81,5 +85,13 @@ mod tests {
         settings.assistant = "../../model".into();
         assert!(settings.save(dir.path()).is_err());
         assert_eq!(Settings::load(dir.path()).unwrap().assistant, "qwen3-4b");
+    }
+    #[test]
+    fn existing_settings_never_enable_microphone_implicitly() {
+        let settings: Settings = serde_json::from_str(
+            r#"{"assistant":"","speech":"sherpa-zipformer-en","compute":"auto"}"#,
+        )
+        .unwrap();
+        assert!(!settings.hands_free);
     }
 }

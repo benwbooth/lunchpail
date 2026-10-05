@@ -9,20 +9,21 @@ Rectangle {
     property bool muted: true
     property string label: "Gameplay preview"
     property bool paused: false
+    property bool backgroundMode: false
     property string errorMessage: ""
     readonly property bool playing: player.playbackState === MediaPlayer.PlayingState
     readonly property int position: player.position
     readonly property int duration: player.duration
     signal muteRequested()
     signal fullscreenRequested(url source)
-    color: "#060a10"; radius: 14; border.color: "#3b5063"; clip: true
+    color: backgroundMode ? "transparent" : "#060a10"; radius: backgroundMode ? 0 : 14; border.color: backgroundMode ? "transparent" : "#3b5063"; clip: true
     onSourceChanged: { paused = false; errorMessage = "" }
     onActiveChanged: { if (!active) player.pause(); else if (!paused) player.play() }
     onPausedChanged: { if (paused) player.pause(); else if (active) player.play() }
 
     VideoOutput {
         id: output
-        anchors { fill: parent; margins: 2; bottomMargin: 46 }
+        anchors { fill: parent; margins: preview.backgroundMode ? 0 : 2; bottomMargin: preview.backgroundMode ? 0 : 46 }
         fillMode: VideoOutput.PreserveAspectFit
     }
     RetryingMediaPlayer {
@@ -49,6 +50,7 @@ Rectangle {
     }
     Row {
         id: controls
+        visible: !preview.backgroundMode
         anchors { left: parent.left; right: parent.right; bottom: parent.bottom; margins: 8 }
         spacing: 8; height: 32
         Text {

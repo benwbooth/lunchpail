@@ -66,7 +66,7 @@ TestCase {
     }
     SignalSpy { id: edits; signalName: "queryEdited" }
     SignalSpy { id: chosen; signalName: "gameChosen" }
-    SignalSpy { id: settings; signalName: "settingsRequested" }
+    SignalSpy { id: settings; signalName: "installationRequested" }
     function panel() {
         const pane = createTemporaryObject(searchComponent, test)
         verify(pane)
@@ -144,11 +144,12 @@ TestCase {
         compare(chosen.count, 1)
         compare(chosen.signalArguments[0][0].id, "real-id")
     }
-    function test_missing_model_opens_settings() {
+    function test_missing_model_requests_yes_no_installation() {
         const pane = panel()
         pane.toggleMode(); pane.assistant.ready = false
         pane.controllerIndex = 2; pane.handleNavigation("accept")
         compare(settings.count, 1); compare(pane.assistant.calls, 0)
+        compare(settings.signalArguments[0][0], true)
     }
     function test_evidence_stays_visible_while_scrolling_and_new_answer_resets_cards() {
         const pane = panel()

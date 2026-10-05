@@ -23,10 +23,12 @@ also cycles views. The saved presentation choice applies to platforms and games.
 Lunchpail remembers the view and keeps the selected game and platform when you
 switch. Pausing the pointer over a card selects it without opening or launching
 anything; controller navigation works even with the pointer parked over a card.
-In every game view, selection plays the cached HyperSpin video theme when one is
-available, falling back to the cached gameplay video. Changing views keeps the
-same preview and the shared mute preference. Games without either video keep
-their artwork presentation.
+In every game view, selection plays the HyperSpin video theme as a full-window
+background. Missing themes are looked up individually using the saved EmuMovies
+account, with one transfer at a time and the latest selection taking priority.
+Cached gameplay and then the selected platform's theme are fallbacks, labeled
+on screen. Changing views keeps playback and the shared mute preference. Games
+without any available video keep their artwork presentation.
 
 ## Browse and play
 
@@ -41,18 +43,28 @@ The Game Menu includes favorite, release, view, and attract-mode choices.
 
 ## Search with a keyboard or microphone
 
-Start typing while browsing to open the large search panel. **F3** or the Search
+Start typing letters or numbers while browsing games or platforms to open the
+large search panel in literal-search mode. **F3** or the Search
 button opens the current query. Results update in the current shelf/platform;
 Enter or Escape returns to those results. Back once more clears the query before
 leaving Couch Mode. The Game Menu's **Search games · voice or keyboard** action
 opens the same panel with a controller. In the panel, the D-pad selects the mic,
 clear, browse, or Ask AI button, and the south face button activates it.
 
-Choose a speech model in **Settings → Local AI & voice**. Selecting it starts a
-revision-pinned, SHA-256 verified download from Hugging Face. Interrupted downloads
-resume when retried. **F2** or the Mic button can also download the currently
-selected model. This setup step does not open the microphone.
-After setup, activate **Speak** to capture from the system's default microphone.
+Select **Hands-free · Enable** once. If a model is missing, answer **Yes** to
+**Install a model?** Lunchpail downloads and verifies the recommended 191 MB
+English streaming model, then enables listening automatically. **No** does
+nothing. Say “Lunchpail, Super Mario Brothers” or “OK Lunchpail”, then a title
+within eight seconds. Only wake-prefixed speech reaches search; ambient
+transcripts are not shown or sent to the assistant. Commands run after a pause.
+The visible **Mic on** button turns listening off. Hands-free is off by default;
+its opt-in is saved. It suspends when Couch mode is hidden, the window loses
+focus, another dialog takes input, or a game is running. A microphone failure
+stops listening until you explicitly retry. The selected speech model is used;
+no additional wake model is silently downloaded.
+
+**F2** or **Speak** remains available for one-shot capture. On first use, the
+same Yes/No installation prompt continues into capture when ready.
 Sherpa's English recognizer updates the editable query while you speak; Whisper
 returns the completed utterance after capture. Capture
 stops at a speech pause, after 15 seconds, when you press Stop, or when you leave
@@ -80,19 +92,19 @@ voice search.
 This feature is in the development build; older release packages do not include
 the bundled inference workers.
 
-1. Open **Settings → Local AI & voice**.
-2. Select an assistant model. **Qwen3 4B (2.50 GB)** is the balanced starting point;
-   the 0.8B model saves memory but can be less reliable with tools. The 8B model
-   needs more memory and can be slow on a CPU.
-3. Select speech recognition: **Whisper Base English (148 MB)** is a balanced
-   CPU/GPU option, Tiny English uses 78 MB, and Small Multilingual uses 488 MB.
-   Existing **Sherpa streaming English (191 MB)** remains a CPU-only option.
-4. Leave compute on **Automatic**, or require CPU/GPU explicitly. Selecting models
-   downloads them automatically; no Ollama, Python, account, or separate server
-   needs to be installed.
-5. Open Couch Mode search and choose **Ask AI**. Type a question and press Enter,
-   or press **Speak / F2**. Voice questions are submitted only when recognition
-   finishes, not on every partial transcript.
+Open Couch Mode search, choose **Ask AI**, type a question and press Enter. If
+needed, answer **Yes** to install **Qwen3 4B (2.50 GB)**. Installation, resumable
+downloads, SHA-256 verification, and CPU/GPU selection are automatic; the question
+continues after installation. Voice and assistant models are installed separately
+only when requested. No Ollama, Python, account, or separate server is needed.
+
+**Settings → Local AI & voice → Advanced options** retains the other model and
+compute choices. Whisper Base English (148 MB), Tiny English (78 MB), and Small
+Multilingual (488 MB) support CPU/GPU; Sherpa (191 MB) uses CPU. Qwen 0.8B uses less
+memory but can be less reliable with tools; 8B needs more memory. Selecting an
+advanced model downloads it immediately. **Speak / F2** submits voice questions
+only when recognition finishes, not on partial transcripts. Hands-free wake
+search is literal game search, not an implicit AI/tool request.
 
 For example: “Find me a good SNES JRPG with an English translation patch.”
 Follow up with “Only ones I have installed.” **New question** clears the prior
@@ -195,12 +207,14 @@ through your connected EmuMovies account. Theme videos require FTP access from a
 supporting EmuMovies account. Availability varies by system and game.
 
 Game themes are stored separately from gameplay videos. All four game views
-prefer a cached theme and otherwise play the cached gameplay clip; browsing
-does not download video packs. Previews preserve aspect ratio, can be paused or
+automatically request a missing individual theme; browsing never downloads whole
+video packs. Unavailable themes are remembered for the session and the status
+explains missing account/access/coverage. Backgrounds preserve aspect ratio, can be paused or
 opened full-screen, and share the global video mute preference. Background music
 stops while an audible preview is playing. Opening another page suspends previews.
 
-The platform picker displays cached system logos and platform videos. These use
+The platform picker displays cached system logos and full-window platform video
+backgrounds. These use
 a separate system-media cache, never a game's box art or logo slot.
 
 ![Platform wheel artwork and video presentation](images/couch-platform-media.png)

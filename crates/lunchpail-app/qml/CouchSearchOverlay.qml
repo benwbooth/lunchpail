@@ -20,6 +20,7 @@ FocusScope {
     signal closeRequested()
     signal feedbackRequested(string kind)
     signal settingsRequested()
+    signal installationRequested(bool assistantModel)
     signal gameChosen(var game)
     readonly property var answer: assistant ? JSON.parse(assistant.result_json || "{}") : ({})
     readonly property var resultRows: (answer.games || []).map(g => ({kind: "game", data: g}))
@@ -27,6 +28,7 @@ FocusScope {
     readonly property int baseActionCount: assistant ? 4 : 3
     readonly property int actionCount: baseActionCount + (askMode ? resultRows.length : 0)
     readonly property bool microphoneBusy: acceptingVoice && speech.busy
+    readonly property bool inputFocused: field.activeFocus
     onAnswerChanged: Qt.callLater(function() {
         // A new answer starts at its first card, not the previous scroll offset.
         results.positionViewAtBeginning()
@@ -53,12 +55,12 @@ FocusScope {
         closeRequested()
     }
     function microphone() {
+        if (speech.hands_free) speech.cancel()
         if (speech.busy) {
             if (acceptingVoice && speech.listening) speech.stop()
             else { acceptingVoice = false; speech.cancel() }
         } else if (!speech.ready) {
-            // Explicit enable action downloads only the model, never opens the mic.
-            speech.prepare()
+            installationRequested(false)
         } else {
             acceptingVoice = true
             speech.start()
@@ -81,7 +83,7 @@ FocusScope {
     }
     function submit() {
         if (!askMode) { close(); return }
-        if (!assistant || !assistant.ready) { settingsRequested(); return }
+        if (!assistant || !assistant.ready) { installationRequested(true); return }
         if (assistant.busy) assistant.cancel()
         else { cancelVoice(); assistant.ask(field.text) }
     }
@@ -144,7 +146,7 @@ FocusScope {
         function onCompleted(text) {
             if (!search.visible || !search.acceptingVoice) return
             search.acceptingVoice = false
-            if (search.askMode && search.assistant && text.trim().length) search.assistant.ask(text)
+            if (search.askMode && search.assistant && text.trim().length) search.submit()
         }
     }
     Timer { interval: 50; repeat: true; running: search.speech.busy; onTriggered: search.speech.poll() }
@@ -186,9 +188,9 @@ FocusScope {
             Layout.fillWidth: true
             spacing: 12
             Repeater {
-                model: [search.speech.busy ? (search.acceptingVoice ? (search.speech.listening ? "Stop microphone" : "Cancel transcription") : "Cancel download")
+                model: [search.speech.hands_free ? "Speak · F2" : search.speech.busy ? (search.acceptingVoice ? (search.speech.listening ? "Stop microphone" : "Cancel transcription") : "Cancel download")
                         : search.speech.ready ? "Speak · F2" : "Download speech model", search.askMode ? "New question" : "Clear search",
-                        search.askMode ? (!search.assistant || !search.assistant.ready ? "AI settings" : search.assistant.busy ? "Cancel answer" : "Ask") : "Browse results"]
+                        search.askMode ? (!search.assistant || !search.assistant.ready ? "Install & ask" : search.assistant.busy ? "Cancel answer" : "Ask") : "Browse results"]
                         .concat(search.assistant ? [search.askMode ? "Search titles" : "Ask AI"] : [])
                 delegate: Button {
                     id: action

@@ -13,8 +13,12 @@ Item {
     function fail(message) { console.error("LUNCHPAIL_COUCH_VIEWS_FAILED " + message); Qt.exit(2) }
     function advance() {
         if (step === 16) {
-            console.log("LUNCHPAIL_COUCH_VIEWS_READY games=4 platforms=4 sizes=1080p,720p video=playing")
-            Qt.quit(); return
+            view.closePlatformWheel()
+            view.openSearch("Find a Mario game", false)
+            view.searchPanel.askMode = true
+            view.searchPanel.submit()
+            if (!view.installDialog.visible || view.ai.busy || view.speech.listening) { fail("first-use model confirmation did not gate installation"); return }
+            return
         }
         const platforms = step % 8 >= 4
         app.width = step >= 8 ? 1280 : 1920
@@ -36,6 +40,27 @@ Item {
                 if (preview.game_id !== probe.gameId || !preview.theme_video_url) return
                 probe.step = 0; probe.advance(); return
             }
+            if (probe.step === 16) {
+                probe.capturing = true
+                probe.view.installDialog.contentItem.grabToImage(function(result) {
+                    result.saveToFile(probe.app.argumentValue("--screenshot-output") + "-install.png")
+                    probe.view.installDialog.decline()
+                    if (probe.view.ai.busy || probe.view.speech.listening) { probe.fail("No started model or microphone"); return }
+                    if (!probe.view.searchOpen) { probe.fail("installation dialog discarded the original search"); return }
+                    probe.step = 17; probe.capturing = false
+                })
+                return
+            }
+            if (probe.step === 17) {
+                if (!probe.view.inputEnabled || probe.view.installDialog.visible) return
+                if (!probe.view.searchPanel.inputFocused) { probe.fail("installation dialog did not restore query focus"); return }
+                probe.view.closeSearch()
+                probe.view.openPlatformWheel()
+                probe.view.handleKey({key: Qt.Key_M, modifiers: Qt.NoModifier, text: "m", accepted: false})
+                if (!probe.view.searchOpen || probe.view.platformWheelOpen || probe.view.searchPanel.askMode) { probe.fail("typing did not open literal search from platforms"); return }
+                console.log("LUNCHPAIL_COUCH_VIEWS_READY games=4 platforms=4 sizes=1080p,720p video=background typing=literal model_confirmation=no microphone=off")
+                Qt.quit(); return
+            }
             const platforms = probe.step % 8 >= 4
             const browser = platforms ? probe.view.platformBrowser : probe.view.gameBrowser
             const video = platforms ? probe.view.systemVideoPreview : probe.view.gameVideoPreview
@@ -43,7 +68,7 @@ Item {
             if (!platforms && probe.view.selectedGameId !== probe.gameId) { probe.fail("game changed with layout"); return }
             if (platforms && browser.currentItem.platformName !== "Nintendo Entertainment System") { probe.fail("platform changed with layout"); return }
             if (!video.visible || !video.playing || video.position < 8000) return
-            if (video.width < 150 || video.height < 140) { probe.fail("preview collapsed"); return }
+            if (!video.backgroundMode || video.width !== probe.view.width || video.height !== probe.view.height) { probe.fail("video is not a full background"); return }
             const position = video.mapToItem(probe.view, 0, 0)
             if (position.x < 0 || position.y < 0 || position.x + video.width > probe.view.width + 1
                     || position.y + video.height > probe.view.height + 1) { probe.fail("preview outside viewport"); return }

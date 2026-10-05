@@ -12,14 +12,52 @@ Item {
     required property var downloadQueue
     required property var speech
     property var assistant: null
+    property var ai: null
+    property bool windowActive: true
+    property string installAction: ""
     property string searchText: ""
     property bool searchOpen: false
     property bool sfxEnabled: true
     property real sfxVolume: 0.22
     signal searchRequested(string text)
-    readonly property bool microphoneActive: searchOverlay.microphoneBusy
+    readonly property bool microphoneActive: speech.listening || searchOverlay.microphoneBusy
+    readonly property bool handsFreeAllowed: !!ai && ai.hands_free && active && visible && windowActive && inputEnabled
+        && !details.game_running && !launchStatusOverlayOpen && !downloadOverlayOpen
+        && !overlayOpen && (!searchOpen || !searchOverlay.askMode) && !modelInstall.visible
+    CouchHandsFreeController {
+        id: handsFreeController
+        speech: view.speech
+        allowed: view.handsFreeAllowed
+        onSearchRequested: text => {
+            searchOverlay.askMode = false
+            view.openSearch(text, false)
+        }
+    }
+    function toggleHandsFree() {
+        if (!ai) return
+        if (ai.hands_free) { ai.enable_hands_free(false); speech.cancel(); return }
+        installAction = "hands-free"
+        modelInstall.request(false, true)
+    }
+    LocalModelInstall {
+        id: modelInstall
+        ai: view.ai
+        onReady: {
+            view.speech.refresh()
+            if (view.assistant) view.assistant.refresh()
+            if (view.installAction === "hands-free") {
+                view.speech.faulted = false
+                view.ai.enable_hands_free(true)
+                handsFreeController.reconcile()
+            } else if (view.installAction === "assistant") searchOverlay.submit()
+            else searchOverlay.microphone()
+            view.installAction = ""
+        }
+        onDeclined: view.installAction = ""
+    }
     readonly property bool feedbackReady: feedback.ready
     readonly property var searchPanel: searchOverlay
+    readonly property var installDialog: modelInstall
     property bool active: false
     property bool inputEnabled: true
     property var pendingSc2Actions: []
@@ -83,7 +121,8 @@ Item {
     readonly property bool cinematicWheel: library.couch_view_style === "wheel"
     readonly property bool wallView: library.couch_view_style === "wall"
     readonly property bool albumView: library.couch_view_style === "album"
-    readonly property url previewVideoUrl: browsing.theme_video_url || browsing.video_url || ""
+    readonly property url platformFallbackVideo: { mediaRevision; return selectedPlatform ? library.platform_media_url(selectedPlatform, "video") : "" }
+    readonly property url previewVideoUrl: browsing.theme_video_url || browsing.video_url || platformFallbackVideo
     readonly property bool hasPreviewVideo: previewVideoUrl.toString().length > 0
     readonly property var gameVideoPreview: couchVideo
     readonly property var systemVideoPreview: platformVideo
@@ -223,7 +262,7 @@ Item {
         searchOpen = true
         searchOverlay.open(initialText)
         if (initialText !== searchText) searchRequested(initialText)
-        if (microphone && speech.ready) searchOverlay.microphone()
+        if (microphone) searchOverlay.microphone()
         else feedback.play("confirm")
         noteActivity()
     }
@@ -264,6 +303,10 @@ Item {
         onCloseRequested: view.closeSearch()
         onFeedbackRequested: kind => feedback.play(kind)
         onSettingsRequested: { view.closeSearch(); view.settingsRequested("local-ai") }
+        onInstallationRequested: assistantModel => {
+            view.installAction = assistantModel ? "assistant" : "microphone"
+            modelInstall.request(assistantModel, false)
+        }
         onGameChosen: game => {
             view.selectedGameId = game.id
             view.selectedDatabaseId = game.database_id
@@ -276,7 +319,9 @@ Item {
         }
     }
 
-    onInputEnabledChanged: if (!inputEnabled && searchOpen) closeSearch()
+    onInputEnabledChanged: {
+        if (!inputEnabled && searchOpen && !modelInstall.visible) closeSearch()
+    }
 
     function accentFor(value) {
         const colors = [view.accent, view.accentCool,
@@ -1214,6 +1259,7 @@ Item {
             selectionDelay.restart()
         } else {
             closeSearch()
+            library.cancel_couch_theme()
             overlayOpen = false
             platformWheelOpen = false
             collectionWheelOpen = false
@@ -1283,10 +1329,11 @@ Item {
             return
         }
         if (!(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
-                && event.text.length > 0 && event.text.charCodeAt(0) >= 32
-                && event.key !== Qt.Key_Space && !overlayOpen && !platformWheelOpen
-                && !collectionWheelOpen && !variantWheelOpen && !downloadOverlayOpen
+                // Qt's JS engine does not implement Unicode property escapes.
+                && /^[a-z0-9]/i.test(event.text)
+                && !overlayOpen && !downloadOverlayOpen
                 && !launchStatusOverlayOpen) {
+            searchOverlay.askMode = false
             openSearch(event.text, false)
             event.accepted = true
             return
@@ -1405,8 +1452,24 @@ Item {
         Behavior on opacity { NumberAnimation { duration: 220 } }
     }
 
+    CouchVideoPreview {
+        id: couchVideo
+        objectName: "couchBackgroundVideo"
+        anchors.fill: parent
+        backgroundMode: true
+        visible: view.hasPreviewVideo
+        source: view.previewVideoUrl
+        active: view.active && visible && view.inputEnabled && !view.overlayOpen
+                && !view.platformWheelOpen && !view.collectionWheelOpen && !view.variantWheelOpen
+                && !view.attractOpen && !view.launchStatusOverlayOpen && !view.downloadOverlayOpen
+                && !view.details.game_running
+        muted: view.videoMuted || view.microphoneActive
+        label: view.browsing.theme_video_url ? "HYPERSPIN VIDEO THEME" : "GAMEPLAY PREVIEW"
+    }
+
     Rectangle {
         anchors.fill: parent
+        opacity: couchVideo.playing ? 0.42 : 1
         gradient: Gradient {
             orientation: Gradient.Horizontal
             GradientStop { position: 0.0; color: view.withAlpha(view.background, Math.min(0.98, view.heroScrimOpacity + 0.28)) }
@@ -1540,6 +1603,18 @@ Item {
                 horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
             }
             Accessible.name: "Local voice search"
+        }
+        Button {
+            id: handsFreeButton
+            objectName: "couchHandsFreeToggle"
+            text: view.speech.faulted && view.ai && view.ai.hands_free ? "Mic error · Off"
+                  : view.speech.hands_free && view.speech.listening ? (view.speech.awake ? "Listening… · Off" : "Mic on · Say Lunchpail")
+                  : view.ai && view.ai.hands_free ? "Mic suspended · Off" : "Hands-free · Enable"
+            height: 40
+            onClicked: view.toggleHandsFree()
+            ToolTip.visible: hovered
+            ToolTip.text: view.speech.status + " Video and music are muted while listening. Click to turn hands-free " + (view.ai && view.ai.hands_free ? "off." : "on.")
+            Accessible.name: text
         }
 
         Rectangle {
@@ -1869,26 +1944,22 @@ Item {
         }
     }
 
-    CouchVideoPreview {
-        id: couchVideo
-        visible: view.hasPreviewVideo
-        x: view.cinematicWheel ? 70 : view.wallView || view.albumView ? view.width * 0.64 : view.width * 0.55
-        y: view.cinematicWheel ? gameCopy.y + gameCopy.height + 18 : categoryRow.y + categoryRow.height + 22
-        width: view.cinematicWheel ? Math.min(view.width * 0.49, Math.max(200, footer.y - y - 66) * 1.6)
-                                  : view.width * (view.wallView || view.albumView ? 0.31 : 0.4)
-        height: view.cinematicWheel ? Math.max(160, footer.y - y - 20)
-                : view.wallView || view.albumView ? Math.min(width * 0.5625 + 46, view.height * 0.31)
-                                   : Math.min(width * 0.62 + 46,
-                                              footer.y - Math.max(250, view.height * 0.30) - y - 18)
-        source: view.previewVideoUrl
-        active: view.active && visible && view.inputEnabled && !view.overlayOpen
-                && !view.platformWheelOpen && !view.collectionWheelOpen && !view.variantWheelOpen
-                && !view.attractOpen && !view.launchStatusOverlayOpen && !view.downloadOverlayOpen
-                && !view.details.game_running
-        muted: view.videoMuted || view.microphoneActive
-        label: view.browsing.theme_video_url ? "HYPERSPIN VIDEO THEME" : "GAMEPLAY PREVIEW"
-        onMuteRequested: view.videoMuteRequested()
-        onFullscreenRequested: source => view.videoRequested(source)
+    Row {
+        id: backgroundVideoControls
+        x: 70; y: footer.y - height - 12
+        spacing: 8; z: 20
+        visible: view.hasPreviewVideo && !view.overlayOpen && !view.platformWheelOpen
+        LbButton { text: couchVideo.paused ? "Play theme" : "Pause theme"; onClicked: couchVideo.paused = !couchVideo.paused }
+        LbButton { text: view.videoMuted ? "Unmute" : "Mute"; onClicked: view.videoMuteRequested() }
+        LbButton { text: "Fullscreen"; onClicked: view.videoRequested(couchVideo.source) }
+    }
+    Text {
+        x: 70; y: categoryRow.y + categoryRow.height + 6
+        width: parent.width - 140
+        text: view.browsing.theme_video_url ? "HYPERSPIN BACKGROUND"
+              : (view.browsing.theme_status || "") + (view.browsing.video_url ? " · Showing gameplay instead"
+                  : view.platformFallbackVideo.toString() ? " · Showing platform theme" : "")
+        color: view.muted; font.pixelSize: 11; elide: Text.ElideRight
     }
 
     Item {
@@ -1900,8 +1971,7 @@ Item {
                                    : view.wallView ? parent.width - 120 : parent.width
         height: view.cinematicWheel
                 ? Math.max(320, footer.y - categoryRow.y - categoryRow.height - 46)
-                : view.wallView || view.albumView ? Math.max(180, footer.y - Math.max(gameCopy.y + gameCopy.height,
-                          view.hasPreviewVideo ? couchVideo.y + couchVideo.height : 0) - 28)
+                : view.wallView || view.albumView ? Math.max(180, footer.y - gameCopy.y - gameCopy.height - 28)
                 : Math.max(250, parent.height * 0.30)
 
         Text {
@@ -2466,8 +2536,20 @@ Item {
         visible: view.platformWheelOpen
         color: view.withAlpha(view.background, 0.93)
 
+        CouchVideoPreview {
+            id: platformVideo
+            objectName: "platformBackgroundVideo"
+            anchors.fill: parent
+            backgroundMode: true
+            source: platformPresentation.videoUrl
+            visible: source.toString().length > 0
+            active: view.active && view.platformWheelOpen && view.inputEnabled && visible && !view.details.game_running
+            muted: view.videoMuted || view.microphoneActive
+            label: "PLATFORM VIDEO THEME"
+        }
         Rectangle {
             anchors.fill: parent
+            opacity: platformVideo.playing ? 0.32 : 1
             gradient: Gradient {
                 orientation: Gradient.Horizontal
                 GradientStop { position: 0; color: view.withAlpha(view.background, 0.96) }
@@ -2482,7 +2564,7 @@ Item {
             width: parent.width - 100
             height: parent.height - 90
             radius: Math.min(32, view.cardRadius + 10)
-            color: view.withAlpha(view.panel, 0.97)
+            color: view.withAlpha(view.panel, platformVideo.playing ? 0.22 : 0.97)
             border.color: view.withAlpha(view.muted, 0.58)
             border.width: 1
             clip: true
@@ -2588,16 +2670,11 @@ Item {
                     wrapMode: Text.WordWrap; horizontalAlignment: Text.AlignHCenter
                     maximumLineCount: 2; elide: Text.ElideRight
                 }
-                CouchVideoPreview {
-                    id: platformVideo
-                    width: parent.width
-                    height: Math.min(width * 0.5625 + 46, platformWheelPanel.height * 0.43)
-                    visible: platformPresentation.videoUrl.toString().length > 0
-                    source: platformPresentation.videoUrl
-                    active: view.active && view.platformWheelOpen && view.inputEnabled && visible
-                    muted: view.videoMuted || view.microphoneActive; label: "PLATFORM VIDEO THEME"
-                    onMuteRequested: view.videoMuteRequested()
-                    onFullscreenRequested: source => view.videoRequested(source)
+                Row {
+                    spacing: 8; visible: platformVideo.visible
+                    LbButton { text: platformVideo.paused ? "Play" : "Pause"; onClicked: platformVideo.paused = !platformVideo.paused }
+                    LbButton { text: view.videoMuted ? "Unmute" : "Mute"; onClicked: view.videoMuteRequested() }
+                    LbButton { text: "Fullscreen"; onClicked: view.videoRequested(platformVideo.source) }
                 }
                 Text {
                     width: parent.width

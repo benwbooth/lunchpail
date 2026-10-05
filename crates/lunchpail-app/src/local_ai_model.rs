@@ -34,6 +34,7 @@ pub mod qobject {
         #[qproperty(bool, busy)]
         #[qproperty(bool, assistant_ready)]
         #[qproperty(bool, speech_ready)]
+        #[qproperty(bool, hands_free)]
         type LocalAiModel = super::LocalAiModelRust;
         #[qinvokable]
         fn select_assistant(self: Pin<&mut LocalAiModel>, id: QString);
@@ -44,11 +45,17 @@ pub mod qobject {
         #[qinvokable]
         fn download_selected(self: Pin<&mut LocalAiModel>);
         #[qinvokable]
+        fn install_for(self: Pin<&mut LocalAiModel>, assistant: bool);
+        #[qinvokable]
+        fn enable_hands_free(self: Pin<&mut LocalAiModel>, enabled: bool);
+        #[qinvokable]
         fn detect_hardware(self: Pin<&mut LocalAiModel>);
         #[qinvokable]
         fn cancel(self: Pin<&mut LocalAiModel>);
         #[qinvokable]
         fn poll(self: Pin<&mut LocalAiModel>);
+        #[qsignal]
+        fn operation_finished(self: Pin<&mut LocalAiModel>, success: bool);
     }
 }
 
@@ -68,13 +75,14 @@ pub struct LocalAiModelRust {
     busy: bool,
     assistant_ready: bool,
     speech_ready: bool,
+    hands_free: bool,
     cancel: Arc<AtomicBool>,
     receiver: Option<mpsc::Receiver<Event>>,
 }
 impl Default for LocalAiModelRust {
     fn default() -> Self {
         let result = local_ai::settings();
-        let status = result.as_ref().err().map(|e| format!("{e:#}")).unwrap_or_else(|| "Choose a model to download it. Everything runs locally; no account or separate server needed.".into());
+        let status = result.as_ref().err().map(|e| format!("{e:#}")).unwrap_or_else(|| "Choose Yes to install the model automatically. No account or separate server needed.".into());
         let settings = result.unwrap_or_default();
         let ready = |id: &str| {
             local_ai::data_dir()
@@ -85,6 +93,7 @@ impl Default for LocalAiModelRust {
             models_json: QString::from(serde_json::to_string(&catalog).unwrap_or_default()),
             assistant_ready: ready(&settings.assistant),
             speech_ready: ready(&settings.speech),
+            hands_free: settings.hands_free,
             assistant_model: QString::from(settings.assistant),
             speech_model: QString::from(settings.speech),
             compute: QString::from(settings.compute),
@@ -111,6 +120,7 @@ impl qobject::LocalAiModel {
             match field {
                 "assistant" => settings.assistant = value.to_string(),
                 "speech" => settings.speech = value.to_string(),
+                "hands_free" => settings.hands_free = value.to_string() == "true",
                 _ => settings.compute = value.to_string(),
             }
             settings.save(&data)?;
@@ -123,9 +133,10 @@ impl qobject::LocalAiModel {
                 self.as_mut()
                     .set_speech_model(QString::from(settings.speech));
                 self.as_mut().set_compute(QString::from(settings.compute));
+                self.as_mut().set_hands_free(settings.hands_free);
                 self.as_mut().refresh_ready();
-                if field != "compute" {
-                    self.download_selected();
+                if matches!(field, "assistant" | "speech") {
+                    self.download_models(Some(field == "assistant"));
                 }
             }
             Err(e) => self.set_status(QString::from(format!("{e:#}"))),
@@ -150,6 +161,32 @@ impl qobject::LocalAiModel {
     pub fn select_compute(self: Pin<&mut Self>, mode: QString) {
         self.persist("compute", mode);
     }
+    pub fn enable_hands_free(self: Pin<&mut Self>, enabled: bool) {
+        self.persist(
+            "hands_free",
+            QString::from(if enabled { "true" } else { "false" }),
+        );
+    }
+    pub fn install_for(mut self: Pin<&mut Self>, assistant: bool) {
+        let current = if assistant {
+            self.assistant_model()
+        } else {
+            self.speech_model()
+        }
+        .to_string();
+        if current.is_empty() {
+            self.persist(
+                if assistant { "assistant" } else { "speech" },
+                QString::from(if assistant {
+                    "qwen3-4b"
+                } else {
+                    "sherpa-zipformer-en"
+                }),
+            );
+        } else {
+            self.as_mut().download_models(Some(assistant));
+        }
+    }
     pub fn cancel(mut self: Pin<&mut Self>) {
         self.cancel.store(true, Ordering::Relaxed);
         self.as_mut().rust_mut().receiver = None;
@@ -168,14 +205,20 @@ impl qobject::LocalAiModel {
         self.set_progress(0.0);
         (cancel, tx)
     }
-    pub fn download_selected(mut self: Pin<&mut Self>) {
+    pub fn download_selected(self: Pin<&mut Self>) {
+        self.download_models(None);
+    }
+    fn download_models(mut self: Pin<&mut Self>, only_assistant: Option<bool>) {
         let (cancel, tx) = self.as_mut().begin();
         self.set_status(QString::from("Preparing selected models…"));
         std::thread::spawn(move || {
             let result = (|| -> anyhow::Result<()> {
                 let data = local_ai::data_dir()?;
                 let settings = Settings::load(&data)?;
-                for id in [&settings.assistant, &settings.speech] {
+                for (assistant, id) in [(true, &settings.assistant), (false, &settings.speech)] {
+                    if only_assistant.is_some_and(|only| only != assistant) {
+                        continue;
+                    }
                     if id.is_empty() {
                         continue;
                     }
@@ -245,13 +288,15 @@ impl qobject::LocalAiModel {
                 }
                 Event::Hardware(text) => self.as_mut().set_hardware(QString::from(text)),
                 Event::Finished(result) => {
-                    self.as_mut().set_busy(false);
+                    let success = result.is_ok();
                     self.as_mut().refresh_ready();
                     self.as_mut()
                         .set_status(QString::from(result.err().unwrap_or_else(|| {
                             "Ready. Your selections are saved automatically.".into()
                         })));
+                    self.as_mut().set_busy(false);
                     self.as_mut().rust_mut().receiver = None;
+                    self.as_mut().operation_finished(success);
                 }
             }
         }

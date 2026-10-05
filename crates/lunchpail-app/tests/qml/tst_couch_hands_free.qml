@@ -1,0 +1,59 @@
+import QtQuick
+import QtTest
+import "../../qml" as Lunchpail
+
+TestCase {
+    id: test
+    name: "CouchHandsFree"
+    when: windowShown
+    Component {
+        id: component
+        Lunchpail.CouchHandsFreeController {
+            speech: QtObject {
+                property bool ready: true
+                property bool busy: false
+                property bool hands_free: false
+                property bool faulted: false
+                property int starts: 0
+                property int cancels: 0
+                signal search_requested(string text)
+                function start_hands_free() { starts++; busy = true; hands_free = true }
+                function cancel() { cancels++; busy = false; hands_free = false }
+                function poll() {}
+            }
+        }
+    }
+    SignalSpy { id: searches; signalName: "searchRequested" }
+    function controller() {
+        const item = createTemporaryObject(component, test)
+        verify(item); searches.target = item; searches.clear()
+        return item
+    }
+    function test_disabled_never_opens_microphone() {
+        const item = controller(); item.reconcile(); compare(item.speech.starts, 0)
+    }
+    function test_allowed_starts_once_and_suspends_immediately() {
+        const item = controller(); item.allowed = true
+        compare(item.speech.starts, 1)
+        item.reconcile(); compare(item.speech.starts, 1)
+        item.allowed = false; compare(item.speech.cancels, 1)
+        item.allowed = true; compare(item.speech.starts, 2)
+    }
+    function test_suspended_discards_late_commands() {
+        const item = controller(); item.allowed = true
+        item.speech.search_requested("Mario"); compare(searches.count, 1)
+        item.allowed = false; item.speech.search_requested("late"); compare(searches.count, 1)
+    }
+    function test_missing_model_and_device_error_do_not_loop() {
+        const item = controller(); item.speech.ready = false; item.allowed = true
+        compare(item.speech.starts, 0)
+        item.speech.ready = true; item.speech.faulted = true; item.reconcile()
+        compare(item.speech.starts, 0)
+        item.speech.search_requested("late"); compare(searches.count, 0)
+    }
+    function test_manual_capture_is_not_interrupted_or_duplicated() {
+        const item = controller(); item.speech.busy = true; item.allowed = true
+        compare(item.speech.starts, 0)
+        item.allowed = false; compare(item.speech.cancels, 0)
+    }
+}

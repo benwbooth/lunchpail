@@ -16,6 +16,8 @@ use std::{
 
 pub const STOP: u8 = 1;
 pub const CANCEL: u8 = 2;
+mod hands_free;
+pub use hands_free::listen_hands_free;
 const FILES: [(&str, &str, u64); 4] = [
     (
         "encoder-epoch-99-avg-1.int8.onnx",
@@ -48,6 +50,8 @@ pub enum Event {
     Text(String),
     Finished(String),
     Error(String, bool),
+    Wake(bool),
+    Command(String),
 }
 
 pub fn model_dir() -> Result<PathBuf> {

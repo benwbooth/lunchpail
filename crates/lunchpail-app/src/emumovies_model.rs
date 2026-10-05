@@ -469,6 +469,24 @@ pub(crate) fn download_saved_video(
     client.get_video(platform, title, &game_directory, progress.as_ref())
 }
 
+pub(crate) fn download_saved_theme_video(
+    game_id: &str,
+    database_id: i64,
+    title: &str,
+    platform: &str,
+    progress: Option<crate::emumovies::ProgressCallback>,
+) -> Result<PathBuf> {
+    let directory = crate::media::game_media_directory(game_id, database_id)?;
+    let cached = directory.join("emumovies/theme-video.mp4");
+    if cached.metadata().is_ok_and(|metadata| metadata.len() > 0) {
+        return Ok(cached);
+    }
+    let (username, password) = effective_credentials(String::new(), String::new())?;
+    let client = client(username, password);
+    let lookup = crate::emumovies::resolve_video_lookup_name(platform, title, Some(database_id));
+    client.get_theme_video(platform, &lookup, &directory, progress.as_ref())
+}
+
 impl qobject::EmuMoviesModel {
     pub fn initialize(mut self: Pin<&mut Self>) {
         if *self.as_ref().initialized() || *self.as_ref().busy() {

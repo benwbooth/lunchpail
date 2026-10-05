@@ -33,18 +33,22 @@ TestCase {
     }
     SignalSpy { id: edits; signalName: "queryEdited" }
     SignalSpy { id: closes; signalName: "closeRequested" }
+    SignalSpy { id: installs; signalName: "installationRequested" }
     function panel() {
         const search = createTemporaryObject(searchComponent, test)
         verify(search)
         edits.target = search; edits.clear()
         closes.target = search; closes.clear()
+        installs.target = search; installs.clear()
         search.open("")
         return search
     }
-    function test_enable_downloads_without_opening_microphone() {
+    function test_first_use_requests_confirmation_without_download_or_microphone() {
         const search = panel()
         search.microphone()
-        compare(search.speech.preparations, 1)
+        compare(installs.count, 1)
+        compare(installs.signalArguments[0][0], false)
+        compare(search.speech.preparations, 0)
         compare(search.speech.starts, 0)
         compare(search.microphoneBusy, false)
         search.speech.ready = true; search.speech.busy = false
