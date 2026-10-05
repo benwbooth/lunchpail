@@ -10963,7 +10963,7 @@ ApplicationWindow {
                     // Reserve the controls before decoding begins, so the
                     // picture never jumps when its first frame arrives.
                     height: Math.max(1, parent.height - 79 * card.expansion
-                                     - (tile.previewRequested ? cardChrome.height : 0))
+                                     - (tile.previewRequested ? 64 * card.expansion : 0))
                     radius: 9 * card.expansion
                     artworkPresent: tile.previewActive
                                     || coverImage.status === Image.Ready
