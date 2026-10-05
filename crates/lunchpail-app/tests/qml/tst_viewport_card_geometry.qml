@@ -93,6 +93,7 @@ TestCase {
         geometry.viewportHeight = 800
         geometry.trailingInset = 20
         geometry.margin = 8
+        geometry.expandedExtraHeight = 0
     }
 
     function test_centered_card_keeps_its_natural_position() {
@@ -215,5 +216,26 @@ TestCase {
         verify(geometry.viewportY >= geometry.margin)
         verify(geometry.viewportY + geometry.cardHeight
                <= geometry.viewportHeight - geometry.margin)
+    }
+
+    function test_hover_footer_adds_room_without_reducing_the_picture() {
+        geometry.expandedExtraHeight = 64
+        fuzzyCompare(geometry.cardHeight, (280 + 64) * 2, "card includes footer")
+        fuzzyCompare(geometry.cardHeight - 64 * geometry.expansion,
+                     280 * 2, "original picture and title area is preserved")
+        geometry.expanded = false
+        fuzzyCompare(geometry.cardHeight, 280, "resting card has no extra footer")
+        fuzzyCompare(geometry.localY, 8, "resting card returns to its delegate")
+    }
+
+    function test_footer_stays_in_view_at_the_bottom_edge() {
+        geometry.expandedExtraHeight = 64
+        geometry.viewportHeight = 500
+        geometry.tileViewportY = 440
+        fuzzyCompare(geometry.cardHeight, 484, "footer participates in the height limit")
+        fuzzyCompare(geometry.viewportY, 8, "whole card fits inside the viewport")
+        verify(geometry.hoverContainsViewportPoint(
+                   geometry.viewportX + 20, geometry.viewportY + geometry.cardHeight - 10),
+               "moving onto footer controls retains hover")
     }
 }

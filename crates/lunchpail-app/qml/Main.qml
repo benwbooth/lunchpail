@@ -1738,6 +1738,9 @@ ApplicationWindow {
                 || !library.ready || library.loading)
             return
         root.hoverPreviewProbeStage = 1
+        const probeZoom = Number(root.argumentValue("--preview-grid-zoom"))
+        if (probeZoom >= 50 && probeZoom <= 200)
+            library.set_presentation_preferences(library.artwork_type, probeZoom)
         library.choose_view_mode("grid")
         searchField.text = "Super Mario Bros."
         library.apply_filter(searchField.text,
@@ -2709,13 +2712,21 @@ ApplicationWindow {
             const tile = root.hoverPreviewTile
             if (!tile
                     || tile.previewStatusLayer <= tile.previewArtworkLayer
-                    || tile.previewFavoriteLayer <= tile.previewArtworkLayer) {
+                    || tile.previewFavoriteLayer <= tile.previewArtworkLayer
+                    || !tile.previewChromeBelowVideo
+                    || !tile.previewChromeInsideCard
+                    || !tile.previewActionsSeparated) {
                 const detail = "card controls are below warmup artwork artwork="
                                + (tile ? tile.previewArtworkLayer : -1)
                                + " status="
                                + (tile ? tile.previewStatusLayer : -1)
                                + " favorite="
                                + (tile ? tile.previewFavoriteLayer : -1)
+                               + " footerBelowVideo=" + (tile && tile.previewChromeBelowVideo)
+                               + " footerInsideCard=" + (tile && tile.previewChromeInsideCard)
+                               + " actionsSeparated=" + (tile && tile.previewActionsSeparated)
+                               + " previewRequested=" + (tile && tile.previewRequested)
+                               + " controllerFocusElsewhere=" + (tile && tile.controllerFocusElsewhere)
                 console.error("LUNCHPAIL_HOVER_PREVIEW_UI_FAILED " + detail)
                 library.report_hover_preview_ui_failure(detail)
                 Qt.exit(2)
@@ -2916,6 +2927,9 @@ ApplicationWindow {
                     hoverPreviewArmProbeTimer.restart()
                     return
                 }
+                // Match real keyboard navigation before focusing the tile;
+                // otherwise a restored currentIndex suppresses its preview.
+                grid.currentIndex = row
                 tile.forceActiveFocus()
                 root.hoverPreviewArtworkTile = tile
                 root.hoverPreviewArtworkDecodeWidth = tile.previewArtworkDecodeWidth
@@ -2947,6 +2961,9 @@ ApplicationWindow {
                     || tile.previewStatusLayer <= tile.previewVideoLayer
                     || tile.previewFavoriteLayer <= tile.previewArtworkLayer
                     || tile.previewFavoriteLayer <= tile.previewVideoLayer
+                    || !tile.previewChromeBelowVideo
+                    || !tile.previewChromeInsideCard
+                    || !tile.previewActionsSeparated
                     || !hoverPreviewPlayer.hasVideo
                     || hoverPreviewPlayer.duration < 1) {
                 const detail = "playback game="
@@ -2963,6 +2980,9 @@ ApplicationWindow {
                                + (tile ? tile.previewArtworkLayer : -1) + "/"
                                + (tile ? tile.previewStatusLayer : -1) + "/"
                                + (tile ? tile.previewFavoriteLayer : -1)
+                               + " footerBelowVideo=" + (tile && tile.previewChromeBelowVideo)
+                               + " footerInsideCard=" + (tile && tile.previewChromeInsideCard)
+                               + " actionsSeparated=" + (tile && tile.previewActionsSeparated)
                 console.error("LUNCHPAIL_HOVER_PREVIEW_UI_FAILED " + detail)
                 library.report_hover_preview_ui_failure(detail)
                 Qt.exit(2)
@@ -3027,7 +3047,7 @@ ApplicationWindow {
                 reportReady()
                 return
             }
-            root.hoverPreviewTile.grabToImage(function(result) {
+            root.hoverPreviewTile.previewCard.grabToImage(function(result) {
                 if (!result.saveToFile(root.screenshotOutput)) {
                     const detail = "could not save hover screenshot="
                                    + root.screenshotOutput
@@ -10670,6 +10690,7 @@ ApplicationWindow {
                 downloadJobIndex >= 0 && downloadJobState !== "IMPORTED"
                 ? downloadQueue.job_badge_at(downloadJobIndex) : ""
             property var previewVideoOutput: tileVideoOutput
+            readonly property var previewCard: card
             readonly property real previewCardExpansion: cardGeometry.expansion
             readonly property bool playBadgeVisible: cardPlayButton.visible
             readonly property real previewCardViewportX: cardGeometry.viewportX
@@ -10687,6 +10708,15 @@ ApplicationWindow {
             readonly property real previewArtworkLayer: coverImage.z
             readonly property real previewStatusLayer: previewStatus.z
             readonly property real previewFavoriteLayer: favoriteButton.z
+            readonly property bool previewChromeBelowVideo:
+                cardChrome.y >= artwork.y + artwork.height
+            readonly property bool previewChromeInsideCard:
+                cardChrome.y + cardChrome.height <= gridTitle.y
+            readonly property bool previewActionsSeparated:
+                cardPlayButton.visible
+                ? favoriteButton.x + favoriteButton.width <= cardPlayButton.x
+                  && cardPlayButton.x + cardPlayButton.width <= cardPreviewMuteButton.x
+                : favoriteButton.x + favoriteButton.width <= cardPreviewMuteButton.x
             readonly property bool controllerFocusElsewhere:
                 hoverFocusState.controllerFocusElsewhere(grid.activeFocus,
                                                         grid.currentIndex, tile.index)
@@ -10906,6 +10936,7 @@ ApplicationWindow {
                     expanded: card.expanded
                     baseWidth: tile.width - 16
                     baseHeight: tile.height - 16
+                    expandedExtraHeight: 64
                     tileWidth: tile.width
                     tileHeight: tile.height
                     tileViewportX: {
@@ -10929,7 +10960,10 @@ ApplicationWindow {
                     anchors.right: parent.right
                     anchors.top: parent.top
                     anchors.margins: 9 * card.expansion
-                    height: parent.height - 79 * card.expansion
+                    // Reserve the controls before decoding begins, so the
+                    // picture never jumps when its first frame arrives.
+                    height: Math.max(1, parent.height - 79 * card.expansion
+                                     - (tile.previewRequested ? cardChrome.height : 0))
                     radius: 9 * card.expansion
                     artworkPresent: tile.previewActive
                                     || coverImage.status === Image.Ready
@@ -10990,74 +11024,6 @@ ApplicationWindow {
                         }
                     }
 
-                    Rectangle {
-                        z: previewPresentation.overlayLayer
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        height: 48 * card.expansion
-                        visible: tile.previewActive
-                        color: "#b90b1119"
-                        Text {
-                            anchors.left: parent.left
-                            anchors.leftMargin: 10 * card.expansion
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: parent.width - 54 * card.expansion
-                            text: "VIDEO  ·  "
-                                  + (tile.previewResolvedVideoSource.length > 0
-                                     ? tile.previewResolvedVideoSource.toUpperCase()
-                                     : "LOCAL CACHE")
-                            color: root.ink
-                            font.pixelSize: Math.round(9 * card.expansion)
-                            font.weight: Font.Bold
-                            font.letterSpacing: Math.round(0.8 * card.expansion)
-                            font.kerning: true
-                            font.hintingPreference: Font.PreferDefaultHinting
-                            renderType: Text.NativeRendering
-                            elide: Text.ElideRight
-                        }
-                    }
-
-                    MediaPreviewActivity {
-                        id: previewStatus
-                        z: previewPresentation.overlayLayer
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        anchors.margins: 8
-                        requested: tile.previewRequested
-                                 && library.hover_preview_game_id === tile.gameId
-                        hasVideo: tile.previewResolvedVideoUrl.toString().length > 0
-                        playbackFailed: root.hoverPreviewPlaybackError.length > 0
-                        resolving: library.hover_preview_loading
-                        queueState: tile.previewQueueState
-                    }
-
-                    Rectangle {
-                        z: previewPresentation.overlayLayer
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.bottom: parent.bottom
-                        height: previewErrorText.implicitHeight
-                                + 18 * card.expansion
-                        visible: tile.previewRequested
-                                 && root.hoverPreviewPlaybackError.length > 0
-                        color: "#df3a2026"
-                        Text {
-                            id: previewErrorText
-                            anchors.left: parent.left
-                            anchors.right: parent.right
-                            anchors.margins: 9 * card.expansion
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: root.hoverPreviewPlaybackError
-                            color: "#ffb2b9"
-                            font.pixelSize: Math.round(9 * card.expansion)
-                            font.kerning: true
-                            font.hintingPreference: Font.PreferDefaultHinting
-                            renderType: Text.NativeRendering
-                            wrapMode: Text.WordWrap
-                        }
-                    }
-
                     Text {
                         z: previewPresentation.overlayLayer
                         anchors.centerIn: parent
@@ -11076,15 +11042,78 @@ ApplicationWindow {
                                   || coverImage.status === Image.Error)
                                  && !tile.previewActive
                     }
+                }
+
+                // Artwork can carry badges at rest; a hover preview gets a
+                // separate footer. No source label, action, or status is
+                // painted over the video, including during decoder warmup.
+                Item {
+                    id: cardChrome
+                    x: artwork.x
+                    y: tile.previewRequested ? artwork.y + artwork.height : artwork.y
+                    width: artwork.width
+                    height: tile.previewRequested ? 64 * card.expansion : artwork.height
+                    readonly property real actionScale: tile.previewRequested
+                        ? Math.min(card.expansion, Math.max(0.5,
+                                   (width - 22 * card.expansion) / 104))
+                        : card.expansion
+                    z: previewPresentation.overlayLayer
+
+                    Text {
+                        id: previewSourceText
+                        anchors.left: parent.left
+                        anchors.right: cardAvailabilityBadge.visible ? cardAvailabilityBadge.left : parent.right
+                        anchors.leftMargin: 4 * card.expansion
+                        anchors.rightMargin: 6 * card.expansion
+                        y: 4 * card.expansion
+                        height: 18 * card.expansion
+                        visible: tile.previewRequested
+                        text: root.hoverPreviewPlaybackError.length > 0
+                              ? root.hoverPreviewPlaybackError
+                              : tile.previewActive
+                                ? "VIDEO  ·  " + (tile.previewResolvedVideoSource.length > 0
+                                                  ? tile.previewResolvedVideoSource.toUpperCase()
+                                                  : "LOCAL CACHE")
+                                : "VIDEO PREVIEW"
+                        color: root.hoverPreviewPlaybackError.length > 0 ? "#ffb2b9" : root.muted
+                        font.pixelSize: Math.round(9 * card.expansion)
+                        font.weight: Font.Bold
+                        font.letterSpacing: 0.8 * card.expansion
+                        font.kerning: true
+                        font.hintingPreference: Font.PreferDefaultHinting
+                        renderType: Text.NativeRendering
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        ToolTip.visible: previewSourceHover.hovered
+                                         && (truncated || root.hoverPreviewPlaybackError.length > 0)
+                        ToolTip.text: text
+                        HoverHandler { id: previewSourceHover }
+                    }
+
+                    MediaPreviewActivity {
+                        id: previewStatus
+                        z: previewPresentation.overlayLayer
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        anchors.margins: 8
+                        requested: tile.previewRequested
+                                 && library.hover_preview_game_id === tile.gameId
+                        hasVideo: tile.previewResolvedVideoUrl.toString().length > 0
+                        playbackFailed: root.hoverPreviewPlaybackError.length > 0
+                        resolving: library.hover_preview_loading
+                        queueState: tile.previewQueueState
+                    }
+
                     Rectangle {
+                        id: cardAvailabilityBadge
                         z: previewPresentation.overlayLayer
                         visible: tile.availabilityBadge.length > 0
                         anchors.top: parent.top
                         anchors.right: parent.right
-                        anchors.margins: 9 * card.expansion
-                        implicitWidth: badgeText.implicitWidth
-                                       + 14 * card.expansion
-                        implicitHeight: 25 * card.expansion
+                        anchors.margins: (tile.previewRequested ? 4 : 9) * card.expansion
+                        implicitWidth: Math.min(parent.width * 0.55,
+                                                badgeText.implicitWidth + 14 * card.expansion)
+                        implicitHeight: (tile.previewRequested ? 18 : 25) * card.expansion
                         radius: 7 * card.expansion
                         color: tile.gameLocal
                                ? "#d91d3d35"
@@ -11097,6 +11126,8 @@ ApplicationWindow {
                         Text {
                             id: badgeText
                             anchors.centerIn: parent
+                            width: Math.min(implicitWidth, parent.width - 14 * card.expansion)
+                            elide: Text.ElideRight
                             text: tile.availabilityBadge
                             color: tile.gameLocal
                                    ? root.accentCool
@@ -11116,12 +11147,15 @@ ApplicationWindow {
                         anchors.left: parent.left
                         anchors.top: parent.top
                         anchors.margins: 8 * card.expansion
-                        width: 36 * card.expansion
-                        height: 36 * card.expansion
+                        anchors.topMargin: tile.previewRequested
+                            ? parent.height - 4 * card.expansion - height : 8 * card.expansion
+                        anchors.leftMargin: (tile.previewRequested ? 4 : 8) * card.expansion
+                        width: 36 * cardChrome.actionScale
+                        height: 36 * cardChrome.actionScale
                         favorite: tile.favorite
                         busy: tile.favoriteBusy
                         gameTitle: tile.gameTitle
-                        iconSize: 20 * card.expansion
+                        iconSize: 20 * cardChrome.actionScale
                         onToggleRequested: favorite => library.set_favorite(tile.gameId, favorite)
                     }
                     GameActionButton {
@@ -11129,10 +11163,13 @@ ApplicationWindow {
                         objectName: "coverPlayButton"
                         anchors.left: parent.left
                         anchors.bottom: parent.bottom
-                        anchors.margins: 8 * card.expansion
-                        showLabel: parent.width >= 150 * card.expansion
-                        width: (showLabel ? 80 : 36) * card.expansion
-                        height: 36 * card.expansion
+                        anchors.margins: (tile.previewRequested ? 4 : 8) * card.expansion
+                        anchors.leftMargin: tile.previewRequested
+                            ? favoriteButton.x + favoriteButton.width + 6 * card.expansion
+                            : 8 * card.expansion
+                        showLabel: parent.width >= (tile.previewRequested ? 174 : 150) * card.expansion
+                        width: (showLabel ? 80 : 36) * cardChrome.actionScale
+                        height: 36 * cardChrome.actionScale
                         z: previewPresentation.overlayLayer
                         visible: tile.gameLocal
                         enabled: root.pendingCardLaunchGameId !== tile.gameId
@@ -11140,9 +11177,9 @@ ApplicationWindow {
                                  && !gameDetails.game_running
                         positive: true
                         iconName: "play"
-                        iconSize: 20 * card.expansion
-                        font.pixelSize: 12 * card.expansion
-                        spacing: 7 * card.expansion
+                        iconSize: 20 * cardChrome.actionScale
+                        font.pixelSize: 12 * cardChrome.actionScale
+                        spacing: 7 * cardChrome.actionScale
                         text: "Play"
                         busy: root.pendingCardLaunchGameId === tile.gameId
                         Accessible.name: "Play " + tile.gameTitle
@@ -11159,9 +11196,9 @@ ApplicationWindow {
                         z: previewPresentation.overlayLayer
                         anchors.right: parent.right
                         anchors.bottom: parent.bottom
-                        anchors.margins: 8 * card.expansion
-                        width: 32 * card.expansion
-                        height: 32 * card.expansion
+                        anchors.margins: (tile.previewRequested ? 6 : 8) * card.expansion
+                        width: 32 * cardChrome.actionScale
+                        height: 32 * cardChrome.actionScale
                         visible: tile.previewActive
                         flat: true
                         highlighted: !root.videoAudioMuted
@@ -11174,12 +11211,12 @@ ApplicationWindow {
                         // focus, which suppresses hover previews on other cards.
                         focusPolicy: Qt.TabFocus
                         contentItem: Item {
-                            implicitWidth: 20 * card.expansion
-                            implicitHeight: 20 * card.expansion
+                            implicitWidth: 20 * cardChrome.actionScale
+                            implicitHeight: 20 * cardChrome.actionScale
                             SemanticIcon {
                                 anchors.centerIn: parent
-                                width: 20 * card.expansion
-                                height: 20 * card.expansion
+                                width: 20 * cardChrome.actionScale
+                                height: 20 * cardChrome.actionScale
                                 name: root.videoAudioMuted ? "mute" : "volume"
                                 color: cardPreviewMuteButton.highlighted ? "#ffcb84" : "#f4f7fb"
                             }
@@ -11189,11 +11226,12 @@ ApplicationWindow {
                 }
 
                 HoverMarqueeText {
+                    id: gridTitle
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.leftMargin: 12 * card.expansion
                     anchors.rightMargin: 12 * card.expansion
-                    anchors.top: artwork.bottom
+                    anchors.top: tile.previewRequested ? cardChrome.bottom : artwork.bottom
                     anchors.topMargin: 10 * card.expansion
                     text: tile.gameTitle
                     hovered: tile.hoverEmphasis

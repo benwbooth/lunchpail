@@ -15,6 +15,7 @@ QtObject {
 
     property real margin: 8
     property real trailingInset: 0
+    property real expandedExtraHeight: 0
     property bool animated: true
     readonly property real availableWidth: Math.max(
                                                 0,
@@ -26,13 +27,13 @@ QtObject {
                                                  1,
                                                  Math.min(2,
                                                           availableWidth / Math.max(1, baseWidth),
-                                                          availableHeight / Math.max(1, baseHeight)))
+                                                          availableHeight / Math.max(1, baseHeight + expandedExtraHeight)))
     readonly property real restingViewportX: tileViewportX
                                                 + (tileWidth - baseWidth) / 2
     readonly property real restingViewportY: tileViewportY
                                                 + (tileHeight - baseHeight) / 2
     readonly property real maximumCardWidth: baseWidth * maximumExpansion
-    readonly property real maximumCardHeight: baseHeight * maximumExpansion
+    readonly property real maximumCardHeight: (baseHeight + expandedExtraHeight) * maximumExpansion
     readonly property real maximumCenteredViewportX: tileViewportX
                                                        + (tileWidth - maximumCardWidth) / 2
     readonly property real maximumCenteredViewportY: tileViewportY
@@ -79,8 +80,9 @@ QtObject {
     }
 
     property real expansion: expanded ? maximumExpansion : 1
+    property real extraHeight: expanded ? expandedExtraHeight : 0
     readonly property real cardWidth: baseWidth * expansion
-    readonly property real cardHeight: baseHeight * expansion
+    readonly property real cardHeight: (baseHeight + extraHeight) * expansion
     readonly property real centeredViewportX: tileViewportX
                                                 + (tileWidth - cardWidth) / 2
     readonly property real centeredViewportY: tileViewportY
@@ -89,7 +91,7 @@ QtObject {
     // neighboring row merely because that row is partly outside the viewport.
     // Keep clamping active through the collapse animation, then return to the
     // delegate-local inset once the card reaches its ordinary size.
-    readonly property bool needsViewportClamp: expansion > 1.001
+    readonly property bool needsViewportClamp: expansion > 1.001 || extraHeight > 0.001
     readonly property real viewportX: needsViewportClamp
                                       ? clampToViewport(centeredViewportX,
                                                         cardWidth,
@@ -114,6 +116,10 @@ QtObject {
     }
 
     Behavior on expansion {
+        enabled: geometry.animated
+        NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+    }
+    Behavior on extraHeight {
         enabled: geometry.animated
         NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
     }
