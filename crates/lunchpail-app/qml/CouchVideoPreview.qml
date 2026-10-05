@@ -6,7 +6,7 @@ Rectangle {
     id: preview
     property url source: ""
     property bool active: false
-    property bool muted: true
+    property bool muted: false
     property string label: "Gameplay preview"
     property bool paused: false
     property bool backgroundMode: false

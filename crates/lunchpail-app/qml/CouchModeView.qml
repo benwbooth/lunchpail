@@ -93,7 +93,7 @@ Item {
     property int selectedDatabaseId: 0
     property double selectedMediaId: 0
     property double heroMediaId: 0
-    property bool videoMuted: true
+    property bool videoMuted: false
     signal videoMuteRequested()
     signal videoRequested(url source)
     signal systemMediaRequested(string platform)

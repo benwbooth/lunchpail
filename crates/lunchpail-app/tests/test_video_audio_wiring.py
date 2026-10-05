@@ -1,6 +1,5 @@
 """Guard the shared preference wiring in the full application QML."""
 from pathlib import Path
-import re
 import unittest
 
 
@@ -9,14 +8,20 @@ class VideoAudioWiring(unittest.TestCase):
     def setUpClass(cls):
         cls.qml = (Path(__file__).resolve().parents[1] / "qml" / "Main.qml").read_text()
 
-    def test_every_speaker_control_changes_the_same_preference(self):
+    def test_every_speaker_control_changes_the_active_modes_saved_preference(self):
         self.assertNotIn("hoverPreviewAudioMuted", self.qml)
         self.assertIn("unmuted: !root.videoAudioMuted", self.qml)
-        self.assertEqual(
-            re.findall(r"root\.videoAudioMuted\s*=\s*([^\n]+)", self.qml),
-            ["!root.videoAudioMuted"] * 4,
-        )
+        self.assertNotRegex(self.qml, r"root\.videoAudioMuted\s*=")
+        self.assertEqual(self.qml.count("videoAudioPreferences.toggle(root.couchModeActive)"), 3)
+        self.assertEqual(self.qml.count("onVideoMuteRequested: videoAudioPreferences.toggle(true)"), 1)
         self.assertNotIn("gameVideoAudio", self.qml)
+
+    def test_modes_read_their_separate_preferences(self):
+        self.assertRegex(self.qml, r"readonly property bool videoAudioMuted: root\.couchModeActive\s*"
+                                  r"\? videoAudioPreferences\.couchMuted\s*"
+                                  r": videoAudioPreferences\.normalMuted")
+        self.assertIn("videoMuted: videoAudioPreferences.couchMuted", self.qml)
+        self.assertIn("VideoAudioPreferences { id: videoAudioPreferences }", self.qml)
 
     def test_unmute_cannot_reload_or_reconfigure_the_details_video(self):
         self.assertNotIn("enableAudio", self.qml)

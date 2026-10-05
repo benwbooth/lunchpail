@@ -6,6 +6,7 @@ Item {
     required property var app
     required property var view
     required property var library
+    property var audioControls: []
     property int step: 0
     property bool capturing: false
     property string lastSource: ""
@@ -16,6 +17,50 @@ Item {
     readonly property string platform: "Nintendo Entertainment System"
     Component.onCompleted: { view.sfxEnabled = false; view.windowActive = false }
     function fail(message) { console.error("LUNCHPAIL_COUCH_MEDIA_FAILED " + message); Qt.exit(2) }
+    // Two native processes on the same copied profile: write starts with no
+    // VideoAudio settings; read must restore the choices made by real controls.
+    function checkAudioPreferences() {
+        const phase = app.argumentValue("--video-audio-check")
+        if (!phase) return true
+        if (phase !== "write" && phase !== "read") { fail("unknown audio phase"); return false }
+        const couchMuted = phase === "read"
+        const normalMuted = !couchMuted
+        if (!app.couchModeActive || app.videoAudioMuted !== couchMuted
+                || view.videoMuted !== couchMuted || view.gameVideoPreview.muted !== couchMuted) {
+            fail("Couch audio restore/default " + phase); return false
+        }
+        app.exitCouchMode()
+        if (app.videoAudioMuted !== normalMuted || audioControls.length !== 3) {
+            fail("normal audio restore/default " + phase); return false
+        }
+        for (const control of audioControls) {
+            control.clicked()
+            if (app.videoAudioMuted !== !normalMuted || view.videoMuted !== couchMuted) {
+                fail("normal speaker control or mode isolation"); return false
+            }
+            control.clicked()
+        }
+        app.enterCouchMode()
+        if (app.videoAudioMuted !== couchMuted) { fail("Couch mode switch"); return false }
+        view.videoMuteRequested()
+        if (app.videoAudioMuted !== !couchMuted || view.gameVideoPreview.muted !== !couchMuted) {
+            fail("Couch speaker control"); return false
+        }
+        app.exitCouchMode()
+        if (app.videoAudioMuted !== normalMuted) { fail("Couch changed normal preference"); return false }
+        app.enterCouchMode()
+        // Write leaves both choices opposite their defaults; read restores
+        // its original choices so it can be repeated without reseeding.
+        if (phase === "read") view.videoMuteRequested()
+        else {
+            app.exitCouchMode()
+            audioControls[0].clicked()
+            app.enterCouchMode()
+        }
+        console.log("LUNCHPAIL_VIDEO_AUDIO_READY phase=" + phase
+                    + " controls=pass mode_isolation=pass couch_muted=" + app.videoAudioMuted)
+        return true
+    }
     function capture(name) {
         capturing = true
         view.grabToImage(result => {
@@ -69,6 +114,7 @@ Item {
                 if (++probe.stableTicks < 3) return
                 probe.capture("next-game-ready"); probe.step = 7
             } else if (probe.step === 7) {
+                if (!probe.checkAudioPreferences()) return
                 console.log("LUNCHPAIL_COUCH_MEDIA_READY selected_video=pass system_isolation=pass progress_identity=pass")
                 Qt.quit()
             }

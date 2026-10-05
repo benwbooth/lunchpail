@@ -9,6 +9,10 @@ TestCase {
         id: previewComponent
         Lunchpail.CouchVideoPreview { width: 640; height: 406 }
     }
+    function test_couch_video_defaults_to_unmuted() {
+        const preview = createTemporaryObject(previewComponent, this)
+        compare(preview.muted, false)
+    }
     function test_muting_does_not_reset_pause_intent() {
         const preview = createTemporaryObject(previewComponent, this)
         preview.paused = true
@@ -29,7 +33,7 @@ TestCase {
         compare(preview.position, 0)
     }
     function test_real_video_continues_when_unmuted() {
-        const preview = createTemporaryObject(previewComponent, this)
+        const preview = createTemporaryObject(previewComponent, this, { muted: true })
         preview.source = Qt.resolvedUrl("../fixtures/video-audio-sync.mp4")
         preview.active = true
         tryVerify(function() { return preview.playing && preview.position > 1000 }, 5000)

@@ -205,9 +205,11 @@ ApplicationWindow {
     property var hoverPreviewTile: null
     property string hoverPreviewPendingGameId: ""
     property bool hoverPreviewPlaying: false
-    // One user choice for every grid preview and the details/fullscreen video.
-    // Changing games or closing a player must not reset it.
-    property bool videoAudioMuted: true
+    // Share audio across every video within a mode, but remember each mode's
+    // choice separately across games, mode switches, and application restarts.
+    readonly property bool videoAudioMuted: root.couchModeActive
+                                           ? videoAudioPreferences.couchMuted
+                                           : videoAudioPreferences.normalMuted
     property string hoverPreviewPlaybackError: ""
     property int hoverPreviewProbeStage: 0
     property int hoverPreviewPlaybackCycles: 0
@@ -711,6 +713,8 @@ ApplicationWindow {
         id: notificationSettings
         category: "Notifications"
     }
+
+    VideoAudioPreferences { id: videoAudioPreferences }
 
     Settings {
         id: couchFeedbackSettings
@@ -9371,7 +9375,7 @@ ApplicationWindow {
                         color: fullscreenMuteButton.enabled ? "#f4f7fb" : root.muted
                     }
                 }
-                onClicked: root.videoAudioMuted = !root.videoAudioMuted
+                onClicked: videoAudioPreferences.toggle(root.couchModeActive)
             }
             LbButton {
                 Layout.preferredWidth: root.couchModeActive ? 96 : 72
@@ -11221,7 +11225,7 @@ ApplicationWindow {
                                 color: cardPreviewMuteButton.highlighted ? "#ffcb84" : "#f4f7fb"
                             }
                         }
-                        onClicked: root.videoAudioMuted = !root.videoAudioMuted
+                        onClicked: videoAudioPreferences.toggle(root.couchModeActive)
                     }
                 }
 
@@ -11765,7 +11769,7 @@ ApplicationWindow {
         preferredGameId: root.selectedGameId
         currentFilterKey: root.effectiveAvailability
         currentPlatformName: root.selectedPlatform
-        videoMuted: root.videoAudioMuted
+        videoMuted: videoAudioPreferences.couchMuted
         speech: couchSpeech
         assistant: localAssistant
         ai: localAi
@@ -11778,7 +11782,7 @@ ApplicationWindow {
             root.rememberPlatformSearch(false)
             root.scheduleFilter()
         }
-        onVideoMuteRequested: root.videoAudioMuted = !root.videoAudioMuted
+        onVideoMuteRequested: videoAudioPreferences.toggle(true)
         onSystemMediaRequested: platform => {
             couchSystemMediaDialog.platform = platform
             couchSystemMediaDialog.open()
@@ -11845,7 +11849,10 @@ ApplicationWindow {
 
     Loader {
         active: root.couchMediaUiProbe
-        sourceComponent: CouchMediaProbe { app: root; view: couchModeView; library: library }
+        sourceComponent: CouchMediaProbe {
+            app: root; view: couchModeView; library: library
+            audioControls: [cardPreviewMuteButton, detailVideoMuteButton, fullscreenMuteButton]
+        }
     }
 
     Loader {
@@ -14377,7 +14384,7 @@ ApplicationWindow {
                                                        : detailVideoMuteButton.highlighted ? "#ffcb84" : "#f4f7fb"
                                             }
                                         }
-                                        onClicked: root.videoAudioMuted = !root.videoAudioMuted
+                                        onClicked: videoAudioPreferences.toggle(root.couchModeActive)
                                         ToolTip.visible: hovered
                                         ToolTip.text: Accessible.name
                                     }
