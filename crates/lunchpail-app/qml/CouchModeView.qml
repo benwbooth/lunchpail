@@ -20,7 +20,8 @@ Item {
     property bool sfxEnabled: true
     property real sfxVolume: 0.22
     signal searchRequested(string text)
-    readonly property bool microphoneActive: speech.listening || searchOverlay.microphoneBusy
+    readonly property bool audioSuppressedForVoice: handsFreeController.capturingCommand
+        || searchOverlay.microphoneBusy
     readonly property bool handsFreeAllowed: !!ai && ai.hands_free && active && visible && windowActive && inputEnabled
         && !details.game_running && !launchStatusOverlayOpen && !downloadOverlayOpen
         && !overlayOpen && (!searchOpen || !searchOverlay.askMode) && !modelInstall.visible
@@ -282,7 +283,7 @@ Item {
     CouchFeedback {
         id: feedback
         active: view.active && view.inputEnabled
-        muted: !view.sfxEnabled || view.microphoneActive
+        muted: !view.sfxEnabled || view.audioSuppressedForVoice
         volume: view.sfxVolume
     }
 
@@ -1506,7 +1507,7 @@ Item {
                 && !view.platformWheelOpen && !view.collectionWheelOpen && !view.variantWheelOpen
                 && !view.attractOpen && !view.launchStatusOverlayOpen && !view.downloadOverlayOpen
                 && !view.details.game_running
-        muted: view.videoMuted || view.microphoneActive
+        muted: view.videoMuted || view.audioSuppressedForVoice
         label: view.browsing.theme_video_url ? "HYPERSPIN VIDEO THEME" : "GAMEPLAY PREVIEW"
     }
 
@@ -1941,7 +1942,14 @@ Item {
         spacing: 8; z: 20
         visible: view.hasPreviewVideo && !view.overlayOpen && !view.platformWheelOpen
         CouchActionButton { text: couchVideo.paused ? "Play video" : "Pause video"; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: couchVideo.paused = !couchVideo.paused }
-        CouchActionButton { text: view.videoMuted ? "Unmute" : "Mute"; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: view.videoMuteRequested() }
+        CouchActionButton {
+            text: view.videoMuted ? "Unmute all game videos" : "Mute all game videos"
+            iconName: view.videoMuted ? "mute" : "volume"
+            inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
+            onClicked: view.videoMuteRequested()
+            ToolTip.visible: hovered
+            ToolTip.text: text
+        }
         CouchActionButton { text: "Fullscreen"; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: view.videoRequested(couchVideo.source) }
     }
     Text {
@@ -2122,7 +2130,7 @@ Item {
         details: view.browsing
         selectedGameId: view.selectedGameId
         active: view.active
-        microphoneActive: view.microphoneActive
+        microphoneActive: view.audioSuppressedForVoice
         blocked: !view.inputEnabled || view.launchStatusOverlayOpen
                  || (couchVideo.playing && !view.videoMuted)
                  || view.downloadOverlayOpen
@@ -2548,7 +2556,7 @@ Item {
             source: platformPresentation.videoUrl
             visible: source.toString().length > 0
             active: view.active && view.platformWheelOpen && view.inputEnabled && visible && !view.details.game_running
-            muted: view.videoMuted || view.microphoneActive
+            muted: view.videoMuted || view.audioSuppressedForVoice
             label: "PLATFORM VIDEO THEME"
         }
         Rectangle {
@@ -2691,7 +2699,14 @@ Item {
                 Row {
                     spacing: 8; visible: platformVideo.visible
                     CouchActionButton { text: platformVideo.paused ? "Play" : "Pause"; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: platformVideo.paused = !platformVideo.paused }
-                    CouchActionButton { text: view.videoMuted ? "Unmute" : "Mute"; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: view.videoMuteRequested() }
+                    CouchActionButton {
+                        text: view.videoMuted ? "Unmute all game videos" : "Mute all game videos"
+                        iconName: view.videoMuted ? "mute" : "volume"
+                        inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
+                        onClicked: view.videoMuteRequested()
+                        ToolTip.visible: hovered
+                        ToolTip.text: text
+                    }
                     CouchActionButton { text: "Fullscreen"; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: view.videoRequested(platformVideo.source) }
                 }
                 Text {

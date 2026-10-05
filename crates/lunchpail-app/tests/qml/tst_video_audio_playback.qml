@@ -16,6 +16,15 @@ TestCase {
     property bool watchPosition: false
     property real lowestPosition: 0
 
+    QtObject {
+        id: voice
+        property bool listening: false
+        property bool hands_free: false
+        property bool awake: false
+        property bool busy: false
+    }
+    Lunchpail.CouchHandsFreeController { id: voiceController; speech: voice }
+
     VideoOutput {
         id: output
         anchors.fill: parent
@@ -39,7 +48,7 @@ TestCase {
         videoSource: video.source
         videoPosition: video.position
         previewPlaying: video.playbackState === MediaPlayer.PlayingState
-        unmuted: !test.muted
+        unmuted: !test.muted && !voiceController.capturingCommand
         // Exercise the real audio decoder/output without playing a test tone
         // through the user's speakers.
         volume: 0
@@ -53,6 +62,9 @@ TestCase {
     function init() {
         watchPosition = false
         muted = true
+        voice.listening = false
+        voice.hands_free = false
+        voice.awake = false
         video.source = fixture
         tryCompare(video, "mediaStatus", MediaPlayer.LoadedMedia, 5000)
         verify(video.seekable)
@@ -164,5 +176,34 @@ TestCase {
         compare(sound.audioSource.toString(), "")
         compare(sound.audioPlaybackState, MediaPlayer.StoppedState)
         compare(video.playbackState, MediaPlayer.StoppedState)
+    }
+
+    function test_hands_free_idle_allows_audio_and_commands_temporarily_silence_it() {
+        voice.hands_free = true
+        voice.listening = true
+        video.play()
+        muted = false
+        waitForSound()
+        tryVerify(function() { return video.position > 2800 && frameSpy.count > 2 }, 5000)
+        const before = video.position
+        sourceSpy.clear()
+        stateSpy.clear()
+
+        voice.awake = true
+        compare(sound.audioSource.toString(), "")
+        verify(sound.audioMuted)
+        verify(!test.muted, "Voice ducking must preserve the shared mute choice")
+        wait(150)
+        voice.awake = false
+        waitForSound()
+        verify(video.position >= before)
+        compare(sourceSpy.count, 0)
+        compare(stateSpy.count, 0)
+
+        muted = true
+        voice.awake = true
+        voice.awake = false
+        compare(sound.audioSource.toString(), "")
+        verify(sound.audioMuted, "Finishing a voice command must not override an explicit mute")
     }
 }

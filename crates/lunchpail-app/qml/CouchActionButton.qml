@@ -7,9 +7,11 @@ Button {
     property color panelColor: "#101823"
     property color accentColor: "#ffab52"
     property bool emphasized: false
-    implicitWidth: Math.max(44, label.implicitWidth + 44)
+    property string iconName: ""
+    readonly property bool iconOnly: iconName.length > 0
+    implicitWidth: iconOnly ? 44 : Math.max(44, label.implicitWidth + 44)
     implicitHeight: 44
-    padding: 14
+    padding: iconOnly ? 10 : 14
     hoverEnabled: true
     scale: down ? 0.96 : hovered || visualFocus ? 1.025 : 1
     Behavior on scale { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
@@ -22,19 +24,28 @@ Button {
         border.color: control.hovered || control.visualFocus || control.emphasized ? control.accentColor : "#384758"
         Behavior on color { ColorAnimation { duration: 140 } }
         Behavior on border.color { ColorAnimation { duration: 140 } }
-        Rectangle {
-            anchors { top: parent.top; left: parent.left; right: parent.right; margins: 13 }
-            height: 1; color: "#35ffffff"
-        }
     }
-    contentItem: Text {
-        id: label
-        text: control.text
-        textFormat: Text.PlainText
-        color: control.enabled ? control.inkColor : "#758294"
-        font.pixelSize: 12; font.weight: Font.DemiBold
-        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-        elide: Text.ElideRight
+    contentItem: Item {
+        Text {
+            id: label
+            objectName: "couchActionLabel"
+            anchors.fill: parent
+            visible: !control.iconOnly
+            text: control.text
+            textFormat: Text.PlainText
+            color: control.enabled ? control.inkColor : "#758294"
+            font.pixelSize: 12; font.weight: Font.DemiBold
+            horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+        }
+        SemanticIcon {
+            objectName: "couchActionIcon"
+            anchors.centerIn: parent
+            width: 24; height: 24
+            visible: control.iconOnly
+            name: control.iconName
+            color: control.enabled ? control.inkColor : "#758294"
+        }
     }
     Accessible.name: text
 }
