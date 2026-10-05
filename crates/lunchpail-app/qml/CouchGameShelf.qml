@@ -17,6 +17,8 @@ MomentumListView {
     property bool navigationActive: false
     signal currentGameChanged()
     signal cardActivated(int index)
+    signal cardHoverMoved(int index, point position)
+    signal cardHoverLeft(int index)
 
     orientation: ListView.Horizontal
     spacing: 16
@@ -47,5 +49,7 @@ MomentumListView {
         selected: ListView.isCurrentItem
         ink: shelf.ink; muted: shelf.muted; accent: shelf.accent; panel: shelf.panel
         onActivated: index => shelf.cardActivated(index)
+        onHoverMoved: (index, position) => shelf.cardHoverMoved(index, position)
+        onHoverLeft: index => shelf.cardHoverLeft(index)
     }
 }

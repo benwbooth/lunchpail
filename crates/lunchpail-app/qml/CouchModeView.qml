@@ -87,6 +87,8 @@ Item {
     readonly property bool hasPreviewVideo: previewVideoUrl.toString().length > 0
     readonly property var gameVideoPreview: couchVideo
     readonly property var systemVideoPreview: platformVideo
+    readonly property var gameBrowser: shelf
+    readonly property var platformBrowser: platformWheel
     readonly property var viewStyles: ["wheel", "shelf", "wall", "album"]
     readonly property var viewLabels: ["Logo wheel", "Cover shelf", "Cover wall", "Cover flow"]
     readonly property string viewLabel: viewLabels[Math.max(0, viewStyles.indexOf(library.couch_view_style))]
@@ -293,10 +295,15 @@ Item {
 
     function toggleViewStyle() {
         const selectedId = selectedGameId
+        const selectedPlatformIndex = platformWheelIndex
         const nextStyle = viewStyles[(viewStyles.indexOf(library.couch_view_style) + 1) % viewStyles.length]
         if (!library.save_couch_view_style(nextStyle))
             return false
         Qt.callLater(function() {
+            if (platformWheelOpen) {
+                platformWheel.currentIndex = selectedPlatformIndex
+                platformWheel.positionViewAtIndex(selectedPlatformIndex, ListView.Contain)
+            }
             if (selectedId.length > 0)
                 focusGameById(selectedId)
             else if (shelf.currentIndex >= 0)
@@ -923,6 +930,8 @@ Item {
 
     function handleNavigation(action) {
         if (!active || !inputEnabled) return false
+        shelf.cancelPointerSelection()
+        platformWheel.cancelPointerSelection()
         if (searchOpen) return searchOverlay.handleNavigation(action)
         const handled = navigate(action)
         if (handled) feedback.play(action === "back" ? "back"
@@ -998,9 +1007,15 @@ Item {
                 closePlatformWheel()
             } else if (action === "details") {
                 systemMediaRequested(library.platform_name_at(platformWheelIndex))
-            } else if (action === "up" || action === "left") {
+            } else if (action === "menu" || action === "cycle_zone") {
+                toggleViewStyle()
+            } else if (action === "up") {
+                movePlatformWheel(-platformWheel.columns)
+            } else if (action === "down") {
+                movePlatformWheel(platformWheel.columns)
+            } else if (action === "left") {
                 movePlatformWheel(-1)
-            } else if (action === "down" || action === "right") {
+            } else if (action === "right") {
                 movePlatformWheel(1)
             } else if (action === "page_left") {
                 movePlatformWheel(-5)
@@ -1340,7 +1355,7 @@ Item {
             }
         } else if (event.key === Qt.Key_V && shortcut
                    && !overlayOpen && !attractOpen
-                   && !platformWheelOpen && !collectionWheelOpen
+                   && !collectionWheelOpen
                    && !variantWheelOpen && !launchStatusOverlayOpen) {
             event.accepted = toggleViewStyle()
             return
@@ -1629,7 +1644,8 @@ Item {
         anchors.leftMargin: 70
         anchors.top: categoryRow.bottom
         anchors.topMargin: view.wallView || view.albumView ? 28 : Math.max(42, parent.height * 0.055)
-        width: view.wallView || view.albumView ? parent.width - 140 : Math.min(760, parent.width * 0.49)
+        width: (view.wallView || view.albumView) && !view.hasPreviewVideo
+               ? parent.width - 140 : Math.min(760, parent.width * 0.53 - 70)
         spacing: view.wallView || view.albumView ? 8 : 14
         transform: Translate { id: copyEntrance }
 
@@ -1855,13 +1871,15 @@ Item {
 
     CouchVideoPreview {
         id: couchVideo
-        visible: view.hasPreviewVideo && !view.wallView && !view.albumView
-        x: view.cinematicWheel ? 70 : view.width * 0.55
-        y: view.cinematicWheel ? gameCopy.y + gameCopy.height + 18 : categoryRow.y + categoryRow.height + 38
+        visible: view.hasPreviewVideo
+        x: view.cinematicWheel ? 70 : view.wallView || view.albumView ? view.width * 0.64 : view.width * 0.55
+        y: view.cinematicWheel ? gameCopy.y + gameCopy.height + 18 : categoryRow.y + categoryRow.height + 22
         width: view.cinematicWheel ? Math.min(view.width * 0.49, Math.max(200, footer.y - y - 66) * 1.6)
-                                  : view.width * 0.4
+                                  : view.width * (view.wallView || view.albumView ? 0.31 : 0.4)
         height: view.cinematicWheel ? Math.max(160, footer.y - y - 20)
-                                   : Math.min(width * 0.62 + 46, shelfArea.y - y - 18)
+                : view.wallView || view.albumView ? Math.min(width * 0.5625 + 46, view.height * 0.31)
+                                   : Math.min(width * 0.62 + 46,
+                                              footer.y - Math.max(250, view.height * 0.30) - y - 18)
         source: view.previewVideoUrl
         active: view.active && visible && view.inputEnabled && !view.overlayOpen
                 && !view.platformWheelOpen && !view.collectionWheelOpen && !view.variantWheelOpen
@@ -1882,7 +1900,8 @@ Item {
                                    : view.wallView ? parent.width - 120 : parent.width
         height: view.cinematicWheel
                 ? Math.max(320, footer.y - categoryRow.y - categoryRow.height - 46)
-                : view.wallView || view.albumView ? Math.max(180, footer.y - gameCopy.y - gameCopy.height - 28)
+                : view.wallView || view.albumView ? Math.max(180, footer.y - Math.max(gameCopy.y + gameCopy.height,
+                          view.hasPreviewVideo ? couchVideo.y + couchVideo.height : 0) - 28)
                 : Math.max(250, parent.height * 0.30)
 
         Text {
@@ -1916,6 +1935,10 @@ Item {
             cardRadius: view.cardRadius
             viewStyle: view.library.couch_view_style
             navigationActive: view.navigationZone === 2
+            hoverSelectionEnabled: view.active && view.inputEnabled && !view.overlayOpen
+                && !view.platformWheelOpen && !view.collectionWheelOpen && !view.variantWheelOpen
+                && !view.searchOpen && !view.attractOpen && !view.launchStatusOverlayOpen && !view.downloadOverlayOpen
+            onCardHovered: index => { view.navigationZone = 2; view.noteActivity() }
 
             onCurrentGameChanged: {
                 if (!view.active)
@@ -2485,12 +2508,22 @@ Item {
                         font.letterSpacing: 1.3
                     }
                     Text {
-                        text: view.library.platform_count + " platforms · exact catalog filtering"
+                        text: view.library.platform_count + " platforms · " + view.viewLabel
                         color: view.muted
                         font.pixelSize: 11
                         font.weight: Font.DemiBold
                         font.letterSpacing: 0.4
                     }
+                }
+
+                LbButton {
+                    anchors.right: parent.right
+                    anchors.rightMargin: 94
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 190; height: 44
+                    text: view.viewLabel + "  ·  Ctrl+V"
+                    Accessible.name: "Change platform and game view"
+                    onClicked: view.toggleViewStyle()
                 }
 
                 Rectangle {
@@ -2516,140 +2549,21 @@ Item {
                 }
             }
 
-            MomentumListView {
+            CouchPlatformBrowser {
                 id: platformWheel
                 anchors.left: parent.left
-                anchors.leftMargin: 34
-                width: parent.width * 0.48
+                anchors.leftMargin: 24
+                width: parent.width * (view.cinematicWheel ? 0.48 : 0.62)
                 anchors.top: parent.top
                 anchors.topMargin: 128
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 82
-                model: view.library.platform_count
-                clip: true
-                reuseItems: true
-                cacheBuffer: Math.max(0, Math.round(height))
-                spacing: 6
-                boundsBehavior: Flickable.StopAtBounds
-                snapMode: ListView.SnapToItem
-                preferredHighlightBegin: height * 0.5 - 42
-                preferredHighlightEnd: height * 0.5 + 42
-                highlightRangeMode: ListView.StrictlyEnforceRange
-                highlightMoveDuration: 120
-                onCurrentIndexChanged: {
-                    if (currentIndex >= 0)
-                        view.platformWheelIndex = currentIndex
-                }
-
-                delegate: Item {
-                    id: platformRow
-                    required property int index
-                    property string platformName: view.library.platform_name_at(index)
-                    property int gameCount: view.library.platform_game_count_at(index)
-                    property bool selected: platformWheel.currentIndex === index
-                    property int distance: Math.abs(index - platformWheel.currentIndex)
-                    width: platformWheel.width
-                    height: 84
-                    opacity: selected ? 1 : distance <= 2 ? 0.74 : 0.42
-                    scale: selected ? 1 : 0.975
-                    Behavior on height { NumberAnimation { duration: 110 } }
-                    Behavior on opacity { NumberAnimation { duration: 110 } }
-                    Behavior on scale { NumberAnimation { duration: 110 } }
-
-                    Rectangle {
-                        anchors.fill: parent
-                        anchors.leftMargin: platformRow.selected ? 0 : 16
-                        anchors.rightMargin: platformRow.selected ? 0 : 16
-                        radius: 16
-                        color: platformRow.selected
-                               ? view.withAlpha(view.panelRaised, 0.9)
-                               : platformHover.hovered
-                                 ? view.withAlpha(view.panelRaised, 0.55)
-                                 : "transparent"
-                        border.color: platformRow.selected ? view.accent : "transparent"
-                        border.width: platformRow.selected ? 2 : 0
-
-                        Rectangle {
-                            anchors.left: parent.left
-                            anchors.leftMargin: 16
-                            anchors.verticalCenter: parent.verticalCenter
-                            width: 96
-                            height: 58
-                            radius: 14
-                            color: platformRowLogo.status === Image.Ready ? "transparent" : view.withAlpha(view.panel, 0.8)
-                            border.color: "transparent"
-                            Image {
-                                id: platformRowLogo
-                                anchors { fill: parent; margins: 4 }
-                                source: { view.mediaRevision; return view.library.platform_media_url(platformRow.platformName, "clear-logo") }
-                                asynchronous: true; fillMode: Image.PreserveAspectFit; sourceSize: Qt.size(240, 140)
-                            }
-                            Text {
-                                anchors.centerIn: parent
-                                visible: platformRowLogo.status !== Image.Ready
-                                text: platformRow.platformName.length > 0
-                                      ? platformRow.platformName.charAt(0).toUpperCase() : "?"
-                                color: view.withAlpha(view.ink, 0.97)
-                                font.pixelSize: platformRow.selected ? 23 : 19
-                                font.weight: Font.Black
-                            }
-                        }
-
-                        Column {
-                            anchors.left: parent.left
-                            anchors.leftMargin: 128
-                            anchors.right: countColumn.left
-                            anchors.rightMargin: 24
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 4
-
-                            Text {
-                                width: parent.width
-                                text: platformRow.platformName
-                                color: view.ink
-                                font.pixelSize: platformRow.selected ? 19 : 15
-                                font.weight: platformRow.selected ? Font.Black : Font.DemiBold
-                                elide: Text.ElideRight
-                            }
-                            Text {
-                                visible: platformRow.platformName === view.currentPlatformName
-                                text: "CURRENT SHELF"
-                                color: view.accentCool
-                                font.pixelSize: 8
-                                font.weight: Font.Bold
-                                font.letterSpacing: 1
-                            }
-                        }
-
-                        Column {
-                            id: countColumn
-                            anchors.right: parent.right
-                            anchors.rightMargin: 22
-                            anchors.verticalCenter: parent.verticalCenter
-                            spacing: 3
-                            Text {
-                                anchors.right: parent.right
-                                text: platformRow.gameCount.toLocaleString(Qt.locale(), "f", 0)
-                                color: platformRow.selected ? view.accent : view.ink
-                                font.pixelSize: platformRow.selected ? 18 : 14
-                                font.weight: Font.Black
-                            }
-                            Text {
-                                anchors.right: parent.right
-                                text: platformRow.gameCount === 1 ? "GAME" : "GAMES"
-                                color: view.muted
-                                font.pixelSize: 8
-                                font.weight: Font.Bold
-                                font.letterSpacing: 1
-                            }
-                        }
-
-                        HoverHandler { id: platformHover }
-                        TapHandler {
-                            onTapped: view.choosePlatform(platformRow.index)
-                        }
-                    }
-                }
+                library: view.library
+                viewStyle: view.library.couch_view_style
+                panel: view.panel; ink: view.ink; muted: view.muted; accent: view.accent
+                hoverSelectionEnabled: view.active && view.inputEnabled && view.platformWheelOpen
+                onCurrentIndexChanged: if (currentIndex >= 0) view.platformWheelIndex = currentIndex
+                onActivated: index => view.choosePlatform(index)
             }
 
             MomentumFlickable {
@@ -2660,17 +2574,19 @@ Item {
                 width: parent.width
                 property string platform: view.library.platform_name_at(view.platformWheelIndex)
                 property url videoUrl: { view.mediaRevision; return view.library.platform_media_url(platform, "video") }
-                spacing: 24
+                readonly property bool compact: view.height < 850
+                spacing: compact ? 12 : 24
                 Image {
                     id: platformHeroLogo
-                    width: parent.width; height: status === Image.Ready ? 120 : 0
+                    width: parent.width; height: status === Image.Ready ? (platformPresentation.compact ? 64 : 120) : 0
                     source: { view.mediaRevision; return view.library.platform_media_url(platformPresentation.platform, "clear-logo") }
                     asynchronous: true; fillMode: Image.PreserveAspectFit; sourceSize: Qt.size(800, 260)
                 }
                 Text {
                     width: parent.width; text: platformPresentation.platform
-                    color: view.ink; font.pixelSize: 30; font.weight: Font.Bold
+                    color: view.ink; font.pixelSize: platformPresentation.compact ? 22 : 30; font.weight: Font.Bold
                     wrapMode: Text.WordWrap; horizontalAlignment: Text.AlignHCenter
+                    maximumLineCount: 2; elide: Text.ElideRight
                 }
                 CouchVideoPreview {
                     id: platformVideo

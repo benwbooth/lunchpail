@@ -16,6 +16,7 @@ Item {
     required property int cardRadius
     property string viewStyle: "wheel"
     property bool navigationActive: false
+    property bool hoverSelectionEnabled: true
     property int currentIndex: 0
     property bool selectionPending: true
     property string reportedGameId: ""
@@ -25,6 +26,22 @@ Item {
                                    ? presentation.item.columnCount : 1
     signal currentGameChanged()
     signal cardActivated(int index)
+    signal cardHovered(int index)
+    CouchPointerSelection {
+        id: pointerSelection
+        enabled: browser.visible && browser.hoverSelectionEnabled
+        onSelected: index => {
+            if (index >= 0 && index < browser.count) {
+                browser.currentIndex = index
+                browser.cardHovered(index)
+            }
+        }
+    }
+    HoverHandler {
+        onPointChanged: if (hovered) pointerSelection.observe(point.scenePosition)
+        onHoveredChanged: if (!hovered) pointerSelection.forget()
+    }
+    function cancelPointerSelection() { pointerSelection.cancel() }
 
     function reportSelection() {
         const item = currentItem
@@ -42,6 +59,7 @@ Item {
         const requested = Math.max(0, Math.min(currentIndex, count - 1))
         const next = count > 0 ? requested : -1
         if (item.currentIndex !== next) item.currentIndex = next
+        if (currentIndex !== next) currentIndex = next
         selectionPending = false
         Qt.callLater(reportSelection)
     }
@@ -61,12 +79,14 @@ Item {
         presentation.item.forceLayout()
         positionViewAtIndex(currentIndex, ListView.Contain)
     }
-    onWidthChanged: Qt.callLater(settleSelection)
-    onHeightChanged: Qt.callLater(settleSelection)
+    onWidthChanged: { pointerSelection.cancel(); Qt.callLater(settleSelection) }
+    onHeightChanged: { pointerSelection.cancel(); Qt.callLater(settleSelection) }
     onCurrentIndexChanged: {
+        pointerSelection.cancel()
         selectionPending = true
         applySelection()
     }
+    onViewStyleChanged: pointerSelection.cancel()
     onCurrentItemChanged: Qt.callLater(reportSelection)
 
     Loader {
@@ -110,6 +130,8 @@ Item {
             navigationActive: browser.navigationActive
             leftMargin: 70; rightMargin: 70
             onCardActivated: index => browser.cardActivated(index)
+            onCardHoverMoved: (index, position) => pointerSelection.move(index, position)
+            onCardHoverLeft: index => pointerSelection.leave(index)
         }
     }
     Component {
@@ -125,7 +147,7 @@ Item {
             readonly property int columnCount: Math.max(3, Math.min(10, Math.floor(verticalContentWidth / 220)))
             model: browser.library
             cellWidth: verticalContentWidth / columnCount
-            cellHeight: Math.min(365, cellWidth * 1.42)
+            cellHeight: Math.max(120, Math.min(365, cellWidth * 1.42, height))
             clip: true
             cacheBuffer: height / 2
             boundsBehavior: Flickable.StopAtBounds
@@ -141,6 +163,8 @@ Item {
                 accent: browser.accent
                 panel: browser.panel
                 onActivated: index => browser.cardActivated(index)
+                onHoverMoved: (index, position) => pointerSelection.move(index, position)
+                onHoverLeft: index => pointerSelection.leave(index)
             }
         }
     }
@@ -189,6 +213,8 @@ Item {
                     angle: carousel.wheel ? 0 : (pathCard.PathView.itemAngle ?? 0)
                 }
                 onActivated: index => browser.cardActivated(index)
+                onHoverMoved: (index, position) => pointerSelection.move(index, position)
+                onHoverLeft: index => pointerSelection.leave(index)
             }
             Path {
                 id: wheelPath

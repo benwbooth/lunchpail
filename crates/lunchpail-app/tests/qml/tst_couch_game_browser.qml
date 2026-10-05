@@ -103,6 +103,62 @@ TestCase {
         }
     }
     SignalSpy { id: activation; signalName: "cardActivated" }
+    function test_expanding_layout_under_parked_pointer_keeps_game() {
+        const browser = createTemporaryObject(browserComponent, this, {width: 700})
+        mouseMove(browser, 300, 200)
+        mouseMove(browser, 305, 205)
+        wait(250)
+        browser.currentIndex = 17
+        tryVerify(() => browser.currentItem && browser.currentItem.index === 17)
+        mouseMove(this, 1000, 260)
+        wait(300)
+        browser.width = 1120
+        browser.viewStyle = "wall"
+        wait(500)
+        compare(browser.currentIndex, 17)
+        mouseMove(this, 1200, 690)
+    }
+    function test_controller_cancels_hover_dwell_at_navigation_boundary() {
+        const browser = createTemporaryObject(browserComponent, this, {viewStyle: "wall"})
+        tryCompare(browser, "count", 36)
+        browser.currentIndex = 1
+        tryVerify(() => browser.currentItem && browser.currentItem.index === 1)
+        const card = browser.currentItem
+        browser.currentIndex = 0
+        mouseMove(card, card.width / 2, card.height / 2)
+        mouseMove(card, card.width / 2 + 5, card.height / 2 + 5)
+        wait(50)
+        browser.cancelPointerSelection()
+        wait(250)
+        compare(browser.currentIndex, 0)
+        mouseMove(this, 1200, 690)
+    }
+    function test_hover_selects_without_activating_or_chasing_controller_data() {
+        return ["wall", "wheel", "album", "shelf"].map(style => ({tag: style, style: style}))
+    }
+    function test_hover_selects_without_activating_or_chasing_controller(data) {
+        const browser = createTemporaryObject(browserComponent, this, { viewStyle: data.style })
+        tryCompare(browser, "count", 36)
+        browser.currentIndex = 1
+        tryVerify(() => browser.currentItem && browser.currentItem.index === 1)
+        const card = browser.currentItem
+        browser.currentIndex = 0
+        wait(300)
+        activation.target = browser; activation.clear()
+        mouseMove(card, card.width / 2, card.height / 2)
+        mouseMove(card, card.width / 2 + 5, card.height / 2 + 5)
+        tryCompare(browser, "currentIndex", 1)
+        compare(activation.count, 0)
+        browser.currentIndex = 2
+        wait(450)
+        compare(browser.currentIndex, 2)
+        browser.hoverSelectionEnabled = false
+        mouseMove(card, card.width / 2 + 10, card.height / 2 + 10)
+        wait(250)
+        compare(browser.currentIndex, 2, "Overlays must disable background hover selection")
+        activation.target = null
+        mouseMove(this, 1200, 690)
+    }
     function test_wall_wheel_keeps_gliding_and_reserves_slim_scrollbar() {
         const browser = createTemporaryObject(browserComponent, this, { viewStyle: "wall" })
         tryCompare(browser, "count", 36)

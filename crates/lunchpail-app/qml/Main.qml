@@ -342,7 +342,8 @@ ApplicationWindow {
     readonly property bool couchViewStyleUiProbe: couchViewStyleRestoreUiProbe
                                                   || Qt.application.arguments.indexOf("--couch-view-style-ui-probe") >= 0
     readonly property bool couchSmoothnessUiProbe: Qt.application.arguments.indexOf("--couch-smoothness-ui-probe") >= 0
-    readonly property bool couchPolishUiProbe: Qt.application.arguments.indexOf("--couch-polish-ui-probe") >= 0
+    readonly property bool couchViewsUiProbe: Qt.application.arguments.indexOf("--couch-views-ui-probe") >= 0
+    readonly property bool couchPolishUiProbe: couchViewsUiProbe || Qt.application.arguments.indexOf("--couch-polish-ui-probe") >= 0
     readonly property bool couchSearchUiProbe: Qt.application.arguments.indexOf("--couch-search-ui-probe") >= 0
     readonly property bool localAiUiProbe: Qt.application.arguments.indexOf("--local-ai-ui-probe") >= 0
     readonly property bool couchModeUiProbe: couchSearchUiProbe || couchPolishUiProbe || couchSmoothnessUiProbe || couchGamepadUiProbe || couchPlatformUiProbe
@@ -11781,7 +11782,12 @@ ApplicationWindow {
     }
 
     Loader {
-        active: root.couchPolishUiProbe
+        active: root.couchViewsUiProbe
+        sourceComponent: CouchViewsProbe { app: root; view: couchModeView; library: library }
+    }
+
+    Loader {
+        active: root.couchPolishUiProbe && !root.couchViewsUiProbe
         sourceComponent: CouchPolishProbe {
             app: root; view: couchModeView; library: library; details: gameDetails
             toolsPage: couchGameToolDialog

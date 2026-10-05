@@ -15,9 +15,18 @@ keyboard, or mouse. Open it from the main window's Couch Mode control.
 | Cover shelf | A horizontal cover row with stable spacing and a selected-game preview. |
 
 Use the view button, **Library & settings**, or the Couch Mode section in
-Settings. Press **Ctrl+V** to cycle views from the keyboard.
+Settings. Press **Ctrl+V** to cycle views from the keyboard. The platform picker
+has the same wall, wheel, cover-flow, and shelf presentations and its own view
+button. With the platform picker open, the controller's Menu button (or Tab)
+also cycles views. The saved presentation choice applies to platforms and games.
 
-Lunchpail remembers the view and keeps the selected game when you switch.
+Lunchpail remembers the view and keeps the selected game and platform when you
+switch. Pausing the pointer over a card selects it without opening or launching
+anything; controller navigation works even with the pointer parked over a card.
+In every game view, selection plays the cached HyperSpin video theme when one is
+available, falling back to the cached gameplay video. Changing views keeps the
+same preview and the shared mute preference. Games without either video keep
+their artwork presentation.
 
 ## Browse and play
 
@@ -185,8 +194,8 @@ find a pre-rendered HyperSpin game theme, a system wheel logo, or a platform vid
 through your connected EmuMovies account. Theme videos require FTP access from a
 supporting EmuMovies account. Availability varies by system and game.
 
-Game themes are stored separately from gameplay videos. The logo wheel and cover
-shelf prefer a cached theme and otherwise play the cached gameplay clip; browsing
+Game themes are stored separately from gameplay videos. All four game views
+prefer a cached theme and otherwise play the cached gameplay clip; browsing
 does not download video packs. Previews preserve aspect ratio, can be paused or
 opened full-screen, and share the global video mute preference. Background music
 stops while an audible preview is playing. Opening another page suspends previews.

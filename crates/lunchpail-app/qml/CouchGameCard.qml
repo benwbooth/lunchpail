@@ -38,6 +38,8 @@ Item {
                      : library.artwork_url(gameMediaId, "box-front")
     }
     signal activated(int index)
+    signal hoverMoved(int index, point position)
+    signal hoverLeft(int index)
 
     // The viewport owns fetching. Delegate creation and role changes must not
     // enqueue the same image repeatedly while the wheel is moving.
@@ -134,7 +136,11 @@ Item {
             onToggleRequested: favorite => card.library.set_favorite(card.gameId, favorite)
         }
     }
-    HoverHandler { id: hover }
+    HoverHandler {
+        id: hover
+        onPointChanged: if (hovered) card.hoverMoved(card.index, point.scenePosition)
+        onHoveredChanged: if (!hovered) card.hoverLeft(card.index)
+    }
     TapHandler { onTapped: card.activated(card.index) }
     Accessible.role: Accessible.ListItem
     Accessible.name: gameTitle + ", " + gamePlatform
