@@ -50,10 +50,13 @@ struct GeneratedArcadeEntry {
 fn generate_couch_sounds() -> PathBuf {
     let output = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
     let mut qrc = String::from("<RCC><qresource prefix=\"/couch-sounds\">\n");
-    for (name, frequencies, duration) in [
-        ("move", [660.0f64, 880.0], 0.045),
-        ("confirm", [660.0, 990.0], 0.105),
-        ("back", [580.0, 390.0], 0.09),
+    for (name, frequencies, duration, gain) in [
+        ("move", [1200.0f64, 960.0, 760.0], 0.035, 0.22),
+        ("confirm", [440.0, 660.0, 880.0], 0.135, 0.42),
+        ("back", [660.0, 494.0, 330.0], 0.11, 0.36),
+        ("switch", [330.0, 494.0, 740.0], 0.16, 0.34),
+        ("enter", [330.0, 494.0, 660.0], 0.28, 0.4),
+        ("launch", [330.0, 660.0, 990.0], 0.32, 0.46),
     ] {
         let count = (48000.0 * duration) as u32;
         let size = count * 2;
@@ -73,10 +76,13 @@ fn generate_couch_sounds() -> PathBuf {
         let mut phase = 0.0;
         for index in 0..count {
             let fraction = f64::from(index) / f64::from(count);
-            let frequency = frequencies[if fraction < 0.45 { 0 } else { 1 }];
+            let note = fraction * 3.0;
+            let frequency = frequencies[(note as usize).min(2)];
             phase += std::f64::consts::TAU * frequency / 48000.0;
-            let envelope = (fraction * 20.0).min(1.0) * (1.0 - fraction).powi(2);
-            let sample = (phase.sin() * envelope * 11000.0) as i16;
+            let articulation = (std::f64::consts::PI * note.fract()).sin().sqrt();
+            let envelope = (fraction * 24.0).min(1.0) * (1.0 - fraction).powi(2);
+            let wave = phase.sin() + 0.18 * (phase * 2.0).sin() + 0.06 * (phase * 3.0).sin();
+            let sample = (wave * articulation * envelope * gain * 24000.0) as i16;
             bytes.extend_from_slice(&sample.to_le_bytes());
         }
         let path = output.join(format!("couch-{name}.wav"));
@@ -191,6 +197,12 @@ fn main() {
                 "qml/CouchSearchOverlay.qml",
                 "qml/CouchHandsFreeController.qml",
                 "qml/CouchThemeRequest.qml",
+                "qml/CouchEntrySelection.qml",
+                "qml/CouchEntryProbe.qml",
+                "qml/CouchActionButton.qml",
+                "qml/CouchFocusFrame.qml",
+                "qml/CouchSoundPolicy.qml",
+                "qml/CouchPlatformIdentity.qml",
                 "qml/CouchSearchProbe.qml",
                 "qml/CouchBackgroundMusic.qml",
                 "qml/CouchDownloadScreen.qml",

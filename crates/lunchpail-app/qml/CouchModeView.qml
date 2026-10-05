@@ -56,6 +56,7 @@ Item {
         onDeclined: view.installAction = ""
     }
     readonly property bool feedbackReady: feedback.ready
+    readonly property var soundFeedback: feedback
     readonly property var searchPanel: searchOverlay
     readonly property var installDialog: modelInstall
     property bool active: false
@@ -135,6 +136,30 @@ Item {
     readonly property var systemVideoPreview: platformVideo
     readonly property var gameBrowser: shelf
     readonly property var platformBrowser: platformWheel
+    readonly property bool entryPending: entrySelection.pending
+    CouchEntrySelection {
+        id: entrySelection
+        library: view.library
+        browser: shelf
+        active: view.active
+        onSettled: {
+            view.loadedGameId = ""
+            view.loadCurrentGame()
+        }
+    }
+    function beginGameHandoff(gameId, platform) {
+        entrySelection.begin(gameId, platform)
+        selectedGameId = gameId
+        selectedPlatform = platform
+        selectedTitle = library.display_title_for_game(gameId) || (details.game_id === gameId ? details.title : "")
+        selectedDatabaseId = library.database_id_for_game(gameId)
+        selectedMediaId = library.media_id_for_game(gameId)
+        heroMediaId = selectedMediaId
+        selectedLocal = library.local_for_game(gameId)
+        selectedDownloadable = library.downloadable_for_game(gameId)
+        loadedGameId = ""
+        library.request_couch_preview(gameId)
+    }
     readonly property var viewStyles: ["wheel", "shelf", "wall", "album"]
     readonly property var viewLabels: ["Logo wheel", "Cover shelf", "Cover wall", "Cover flow"]
     readonly property string viewLabel: viewLabels[Math.max(0, viewStyles.indexOf(library.couch_view_style))]
@@ -251,6 +276,8 @@ Item {
 
     visible: active
     focus: active
+    opacity: active ? 1 : 0
+    Behavior on opacity { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
 
     CouchFeedback {
         id: feedback
@@ -351,6 +378,8 @@ Item {
         const nextStyle = viewStyles[(viewStyles.indexOf(library.couch_view_style) + 1) % viewStyles.length]
         if (!library.save_couch_view_style(nextStyle))
             return false
+        feedback.play("switch")
+        selectionReveal.restart()
         Qt.callLater(function() {
             if (platformWheelOpen) {
                 platformWheel.currentIndex = selectedPlatformIndex
@@ -425,6 +454,7 @@ Item {
     }
 
     function chooseCategory(index) {
+        entrySelection.cancel()
         feedback.play("confirm")
         noteActivity()
         categoryIndex = Math.max(0, Math.min(categories.length - 1, index))
@@ -520,6 +550,7 @@ Item {
     }
 
     function choosePlatform(index) {
+        entrySelection.cancel()
         feedback.play("confirm")
         noteActivity()
         const platform = library.platform_name_at(index)
@@ -709,6 +740,7 @@ Item {
     }
 
     function captureCurrentGame() {
+        if (entrySelection.pending || library.filtering) return false
         if (overlayOpen) return true
         const item = shelf.currentItem
         if (!item) {
@@ -782,6 +814,7 @@ Item {
         if (index === 0) {
             if (!detailsCurrent) {
                 if (selectedLocal) {
+                    feedback.play("launch")
                     launchStatusOverlayOpen = true
                     launchRequested()
                 } else requestDetails()
@@ -791,6 +824,7 @@ Item {
                 return
             if (details.can_launch && !details.launch_busy
                     && !details.game_running) {
+                feedback.play("launch")
                 launchStatusOverlayOpen = true
                 launchRequested()
             } else if (downloadInProgress) {
@@ -1244,6 +1278,7 @@ Item {
 
     onActiveChanged: {
         if (active) {
+            entrySound.restart()
             overlayOpen = false
             platformWheelOpen = false
             collectionWheelOpen = false
@@ -1265,6 +1300,7 @@ Item {
                 shelf.positionViewAtIndex(shelf.currentIndex, ListView.Center)
             selectionDelay.restart()
         } else {
+            entrySelection.cancel()
             closeSearch()
             overlayOpen = false
             platformWheelOpen = false
@@ -1277,6 +1313,7 @@ Item {
     }
 
     onSelectedGameIdChanged: {
+        if (active && selectedGameId) selectionReveal.restart()
         if (selectedGameId.length === 0 || !detailsCurrent) {
             downloadOverlayOpen = false
             launchStatusOverlayOpen = false
@@ -1475,13 +1512,12 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        opacity: couchVideo.playing ? 0.42 : 1
         gradient: Gradient {
             orientation: Gradient.Horizontal
-            GradientStop { position: 0.0; color: view.withAlpha(view.background, Math.min(0.98, view.heroScrimOpacity + 0.28)) }
-            GradientStop { position: 0.43; color: view.withAlpha(view.background, Math.min(0.94, view.heroScrimOpacity + 0.17)) }
-            GradientStop { position: 0.75; color: view.withAlpha(view.background, view.heroScrimOpacity * 0.72) }
-            GradientStop { position: 1.0; color: view.withAlpha(view.background, Math.min(0.86, view.heroScrimOpacity + 0.08)) }
+            GradientStop { position: 0.0; color: view.withAlpha(view.background, couchVideo.playing ? 0.88 : 0.96) }
+            GradientStop { position: 0.38; color: view.withAlpha(view.background, couchVideo.playing ? 0.62 : 0.88) }
+            GradientStop { position: 0.68; color: view.withAlpha(view.background, couchVideo.playing ? 0.12 : 0.3) }
+            GradientStop { position: 1.0; color: view.withAlpha(view.background, couchVideo.playing ? 0.26 : 0.65) }
         }
     }
 
@@ -1497,6 +1533,15 @@ Item {
         }
     }
 
+    Rectangle {
+        anchors { left: parent.left; right: parent.right; top: parent.top }
+        height: 170
+        gradient: Gradient {
+            GradientStop { position: 0; color: view.withAlpha(view.background, 0.94) }
+            GradientStop { position: 0.75; color: view.withAlpha(view.background, 0.7) }
+            GradientStop { position: 1; color: "transparent" }
+        }
+    }
     Row {
         id: brand
         anchors.left: parent.left
@@ -1553,6 +1598,15 @@ Item {
                 border.color: view.categoryIndex === index
                               ? view.accent : "transparent"
                 border.width: 1
+                Behavior on color { ColorAnimation { duration: 170 } }
+                scale: categoryHover.hovered ? 1.03 : 1
+                Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                Rectangle {
+                    anchors { bottom: parent.bottom; horizontalCenter: parent.horizontalCenter; bottomMargin: 1 }
+                    height: 2; radius: 1; width: parent.width * 0.55; color: view.accent
+                    opacity: view.categoryIndex === categoryButton.index ? 1 : 0
+                    Behavior on opacity { NumberAnimation { duration: 160 } }
+                }
 
                 Text {
                     id: categoryLabel
@@ -1579,144 +1633,75 @@ Item {
     }
 
     Row {
+        id: headerActions
         anchors.right: parent.right
         anchors.rightMargin: 50
         anchors.verticalCenter: brand.verticalCenter
-        spacing: 10
+        spacing: 8
 
-        Button {
+        CouchActionButton {
             id: searchButton
-            text: view.searchText.length > 0 ? "Search: " + view.searchText : "Search · F3"
-            width: Math.min(250, implicitWidth)
-            height: 40
+            width: view.width < 1500 ? 132 : 174
+            text: view.searchText ? "Search: " + view.searchText : "Search · F3"
+            inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
             onClicked: view.openSearch(view.searchText, false)
-            background: Rectangle { radius: 10; color: view.panel; border.color: view.muted }
-            contentItem: Text {
-                text: searchButton.text; color: view.ink; font.pixelSize: 12
-                horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-                elide: Text.ElideRight
-            }
             Accessible.name: "Search games in Couch Mode"
         }
-        Button {
+        CouchActionButton {
             id: micButton
-            text: "Mic · F2"
-            height: 40
+            text: "Voice · F2"
+            inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
             onClicked: view.openSearch(view.searchText, true)
-            background: Rectangle { radius: 10; color: view.panel; border.color: view.muted }
-            contentItem: Text {
-                text: micButton.text; color: view.ink; font.pixelSize: 12
-                horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
-            }
             Accessible.name: "Local voice search"
         }
-        Button {
+        CouchActionButton {
             id: handsFreeButton
             objectName: "couchHandsFreeToggle"
+            width: 144
             text: view.speech.faulted && view.ai && view.ai.hands_free ? "Mic error · Off"
-                  : view.speech.hands_free && view.speech.listening ? (view.speech.awake ? "Listening… · Off" : "Mic on · Say Lunchpail")
-                  : view.ai && view.ai.hands_free ? "Mic suspended · Off" : "Hands-free · Enable"
-            height: 40
+                  : view.speech.hands_free && view.speech.listening ? (view.speech.awake ? "Listening…" : "Hands-free · On")
+                  : view.ai && view.ai.hands_free ? "Voice suspended" : "Hands-free · Off"
+            emphasized: !!view.ai && view.ai.hands_free
+            inkColor: view.ink; panelColor: view.panel; accentColor: view.accentCool
             onClicked: view.toggleHandsFree()
             ToolTip.visible: hovered
-            ToolTip.text: view.speech.status + " Video and music are muted while listening. Click to turn hands-free " + (view.ai && view.ai.hands_free ? "off." : "on.")
-            Accessible.name: text
+            ToolTip.text: view.speech.status + " Say Lunchpail to search. Click to turn hands-free " + (view.ai && view.ai.hands_free ? "off." : "on.")
         }
-
-        Rectangle {
-            visible: true
-            width: visible ? viewStyleLabel.implicitWidth + 34 : 0
-            height: 40
-            radius: Math.max(8, view.cardRadius - 4)
-            color: viewStyleHover.hovered
-                   ? view.withAlpha(view.panelRaised, 0.82)
-                   : view.withAlpha(view.panel, 0.72)
-            border.color: view.navigationZone === 2
-                          ? view.withAlpha(view.accent, 0.72)
-                          : view.withAlpha(view.muted, 0.48)
-
-            Text {
-                id: viewStyleLabel
-                anchors.centerIn: parent
-                text: "▦  " + view.viewLabel
-                color: view.ink
-                font.pixelSize: 9
-                font.weight: Font.Bold
-                font.letterSpacing: 0.7
-            }
-            HoverHandler { id: viewStyleHover }
-            TapHandler {
-                onTapped: {
-                    view.noteActivity()
-                    view.toggleViewStyle()
-                }
-            }
-            Accessible.role: Accessible.Button
+        CouchActionButton {
+            text: view.viewLabel + "  ▾"
+            inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
+            onClicked: { view.noteActivity(); view.toggleViewStyle() }
+            ToolTip.visible: hovered
+            ToolTip.text: "Change view · Ctrl+V"
             Accessible.name: "Change Couch Mode view, " + view.viewLabel
         }
-
-        Rectangle {
-            visible: view.gamepad.ready && view.width >= 1800
-            width: visible ? gamepadStatus.implicitWidth + 26 : 0
-            height: 40
-            radius: Math.max(8, view.cardRadius - 4)
-            color: view.withAlpha(view.panel, 0.72)
-            border.color: view.gamepad.connected_count > 0
-                          ? view.accentCool
-                          : view.gamepad.available ? view.withAlpha(view.muted, 0.48)
-                                                   : view.danger
-            Text {
-                id: gamepadStatus
-                anchors.centerIn: parent
-                text: view.gamepad.connected_count > 0
-                      ? "●  " + view.gamepad.connected_count + " CONTROLLER"
-                      : view.gamepad.available ? "○  CONTROLLER READY"
-                        : "!  GAMEPAD UNAVAILABLE"
-                color: view.gamepad.connected_count > 0
-                       ? view.accentCool : view.muted
-                font.pixelSize: 9
-                font.weight: Font.Bold
-                font.letterSpacing: 0.8
-            }
+        CouchActionButton {
+            text: "Library & settings"
+            inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
+            onClicked: { feedback.play("confirm"); view.toolsRequested() }
         }
-
-        Rectangle {
-            width: toolsLabel.implicitWidth + 28
-            height: 40
-            radius: Math.max(8, view.cardRadius - 4)
-            color: toolsHover.hovered ? view.panelRaised : view.panel
-            border.color: view.muted
-            Text {
-                id: toolsLabel
-                anchors.centerIn: parent
-                text: "Library & settings"
-                color: view.ink
-                font.pixelSize: 12
-            }
-            HoverHandler { id: toolsHover }
-            TapHandler { onTapped: view.toolsRequested() }
-            Accessible.role: Accessible.Button
-            Accessible.name: "Library and settings"
-            Accessible.onPressAction: view.toolsRequested()
+        CouchActionButton {
+            width: 44; text: "×"
+            inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
+            onClicked: { feedback.play("back"); view.exitRequested() }
+            Accessible.name: "Return to desktop mode"
         }
+    }
 
-        Rectangle {
-            width: 40
-            height: 40
-            radius: Math.max(8, view.cardRadius - 4)
-            color: exitHover.hovered ? view.withAlpha(view.panelRaised, 0.72)
-                                     : view.withAlpha(view.panel, 0.72)
-            border.color: exitHover.hovered ? view.accent
-                                            : view.withAlpha(view.muted, 0.48)
-            Text {
-                anchors.centerIn: parent
-                text: "×"
-                color: view.ink
-                font.pixelSize: 23
-            }
-            HoverHandler { id: exitHover }
-            TapHandler { onTapped: view.exitRequested() }
-        }
+    Rectangle {
+        anchors.fill: gameCopy
+        anchors.margins: -20
+        visible: !view.cinematicWheel
+        radius: 20
+        color: view.withAlpha(view.panel, view.hasPreviewVideo ? 0.76 : 0.4)
+        border.color: view.withAlpha(view.ink, 0.09)
+        opacity: gameCopy.opacity
+    }
+    Rectangle {
+        anchors { left: gameCopy.left; leftMargin: -22; top: gameCopy.top; topMargin: 4 }
+        width: 3; height: Math.min(90, gameCopy.height); radius: 2
+        color: view.accent
+        visible: view.cinematicWheel
     }
 
     Column {
@@ -1777,9 +1762,9 @@ Item {
             width: parent.width
             text: view.selectedTitle.length > 0 ? view.selectedTitle : "Choose a game"
             color: view.ink
-            font.pixelSize: view.wallView || view.albumView ? 32 : Math.max(34, Math.min(54, view.width * 0.035))
-            font.weight: Font.Black
-            lineHeight: 0.94
+            font.pixelSize: view.wallView || view.albumView ? 32 : Math.max(34, Math.min(56, view.width * 0.036))
+            font.weight: Font.Bold
+            lineHeight: 1.02
             wrapMode: Text.WordWrap
             maximumLineCount: 2
             elide: Text.ElideRight
@@ -1955,17 +1940,28 @@ Item {
         x: 70; y: footer.y - height - 12
         spacing: 8; z: 20
         visible: view.hasPreviewVideo && !view.overlayOpen && !view.platformWheelOpen
-        LbButton { text: couchVideo.paused ? "Play theme" : "Pause theme"; onClicked: couchVideo.paused = !couchVideo.paused }
-        LbButton { text: view.videoMuted ? "Unmute" : "Mute"; onClicked: view.videoMuteRequested() }
-        LbButton { text: "Fullscreen"; onClicked: view.videoRequested(couchVideo.source) }
+        CouchActionButton { text: couchVideo.paused ? "Play video" : "Pause video"; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: couchVideo.paused = !couchVideo.paused }
+        CouchActionButton { text: view.videoMuted ? "Unmute" : "Mute"; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: view.videoMuteRequested() }
+        CouchActionButton { text: "Fullscreen"; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: view.videoRequested(couchVideo.source) }
     }
     Text {
         x: 70; y: categoryRow.y + categoryRow.height + 6
         width: parent.width - 140
         text: view.browsing.theme_video_url ? "HYPERSPIN BACKGROUND"
-              : themeRequest.status + (view.browsing.video_url ? " · Showing gameplay instead"
-                  : view.platformFallbackVideo.toString() ? " · Showing platform theme" : "")
+              : view.browsing.video_url ? "GAMEPLAY PREVIEW · Game theme unavailable"
+              : view.platformFallbackVideo.toString() ? "SYSTEM THEME · Game theme unavailable"
+              : themeRequest.status ? "No video theme available" : ""
         color: view.muted; font.pixelSize: 11; elide: Text.ElideRight
+        HoverHandler { id: themeStatusHover }
+        ToolTip.visible: themeStatusHover.hovered && themeRequest.status.length > 0
+        ToolTip.text: themeRequest.status
+    }
+    Text {
+        anchors { left: gameCopy.left; top: gameCopy.bottom; topMargin: 14 }
+        width: gameCopy.width
+        visible: entrySelection.unavailable
+        text: "This game is hidden by the current library filters. Its details are still available."
+        color: view.accent; font.pixelSize: 14; wrapMode: Text.WordWrap
     }
 
     Item {
@@ -1995,6 +1991,7 @@ Item {
 
         CouchGameBrowser {
             id: shelf
+            visible: !entrySelection.unavailable
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
@@ -2043,6 +2040,7 @@ Item {
         NumberAnimation { target: gameCopy; property: "opacity"; from: 0.45; to: 1; duration: 240 }
         NumberAnimation { target: copyEntrance; property: "x"; from: 22; to: 0; duration: 280; easing.type: Easing.OutCubic }
     }
+    NumberAnimation { id: platformReveal; target: platformInfo; property: "opacity"; from: 0.4; to: 1; duration: 260; easing.type: Easing.OutCubic }
 
     Row {
         id: footer
@@ -2566,6 +2564,10 @@ Item {
 
         Rectangle {
             id: platformWheelPanel
+            scale: view.platformWheelOpen ? 1 : 0.98
+            opacity: view.platformWheelOpen ? 1 : 0
+            Behavior on scale { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            Behavior on opacity { NumberAnimation { duration: 220 } }
             anchors.centerIn: parent
             width: parent.width - 100
             height: parent.height - 90
@@ -2654,13 +2656,23 @@ Item {
                 onActivated: index => view.choosePlatform(index)
             }
 
+            Rectangle {
+                x: platformInfo.x - 16; y: platformInfo.y - 16
+                width: platformInfo.width + 32
+                height: Math.min(platformInfo.height + 32, platformPresentation.height + 32)
+                radius: 20
+                color: view.withAlpha(view.panel, 0.88)
+                border.color: view.withAlpha(view.ink, 0.12)
+            }
             MomentumFlickable {
+                id: platformInfo
                 anchors { left: platformWheel.right; right: parent.right; top: parent.top; bottom: parent.bottom; topMargin: 145; bottomMargin: 90; leftMargin: 40; rightMargin: 40 }
                 clip: true; contentWidth: width; contentHeight: platformPresentation.height
               Column {
                 id: platformPresentation
                 width: parent.width
                 property string platform: view.library.platform_name_at(view.platformWheelIndex)
+                onPlatformChanged: if (view.active && view.platformWheelOpen) platformReveal.restart()
                 property url videoUrl: { view.mediaRevision; return view.library.platform_media_url(platform, "video") }
                 readonly property bool compact: view.height < 850
                 spacing: compact ? 12 : 24
@@ -2678,9 +2690,9 @@ Item {
                 }
                 Row {
                     spacing: 8; visible: platformVideo.visible
-                    LbButton { text: platformVideo.paused ? "Play" : "Pause"; onClicked: platformVideo.paused = !platformVideo.paused }
-                    LbButton { text: view.videoMuted ? "Unmute" : "Mute"; onClicked: view.videoMuteRequested() }
-                    LbButton { text: "Fullscreen"; onClicked: view.videoRequested(platformVideo.source) }
+                    CouchActionButton { text: platformVideo.paused ? "Play" : "Pause"; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: platformVideo.paused = !platformVideo.paused }
+                    CouchActionButton { text: view.videoMuted ? "Unmute" : "Mute"; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: view.videoMuteRequested() }
+                    CouchActionButton { text: "Fullscreen"; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: view.videoRequested(platformVideo.source) }
                 }
                 Text {
                     width: parent.width
@@ -4054,6 +4066,11 @@ Item {
     }
 
     Timer {
+        id: entrySound
+        interval: 280
+        onTriggered: if (view.active) feedback.play("enter")
+    }
+    Timer {
         id: selectionDelay
         interval: 320
         repeat: false
@@ -4096,6 +4113,7 @@ Item {
     Connections {
         target: view.library
         function onFiltered_countChanged() {
+            if (entrySelection.pending) { entrySelection.reconcile(); return }
             if (shelf.count <= 0) {
                 view.stopAttractMode()
                 shelf.currentIndex = -1

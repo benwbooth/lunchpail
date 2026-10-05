@@ -25,6 +25,8 @@ Rectangle {
         id: output
         anchors { fill: parent; margins: preview.backgroundMode ? 0 : 2; bottomMargin: preview.backgroundMode ? 0 : 46 }
         fillMode: VideoOutput.PreserveAspectFit
+        opacity: preview.playing || preview.paused ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
     }
     RetryingMediaPlayer {
         id: player

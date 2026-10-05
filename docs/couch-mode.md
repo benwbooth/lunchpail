@@ -32,6 +32,17 @@ without any available video keep their artwork presentation.
 
 ## Browse and play
 
+Switching from desktop mode follows the open game-details page (or the selected
+game when details are closed). Couch Mode opens that game's platform and pins the
+same game through asynchronous filtering; an older saved Couch shelf does not
+replace it. A game hidden by an additional library filter is identified explicitly
+instead of silently selecting another title.
+
+Game and system cards share animated focus outlines, readable missing-artwork
+wordmarks, and consistent controls. Navigation, confirmation, back, view changes,
+entry, and launch each have a short original sound cue. Rapid browsing is
+rate-limited, and the existing sound-volume and mute controls apply to every cue.
+
 Choose a shelf such as My Collection, Favorites, or Recent. The platform and
 collection pickers narrow the same library used by normal mode.
 

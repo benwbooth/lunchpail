@@ -343,6 +343,7 @@ ApplicationWindow {
                                                   || Qt.application.arguments.indexOf("--couch-view-style-ui-probe") >= 0
     readonly property bool couchSmoothnessUiProbe: Qt.application.arguments.indexOf("--couch-smoothness-ui-probe") >= 0
     readonly property bool couchViewsUiProbe: Qt.application.arguments.indexOf("--couch-views-ui-probe") >= 0
+    readonly property bool couchEntryUiProbe: Qt.application.arguments.indexOf("--couch-entry-ui-probe") >= 0
     readonly property bool couchPolishUiProbe: couchViewsUiProbe || Qt.application.arguments.indexOf("--couch-polish-ui-probe") >= 0
     readonly property bool couchSearchUiProbe: Qt.application.arguments.indexOf("--couch-search-ui-probe") >= 0
     readonly property bool localAiUiProbe: Qt.application.arguments.indexOf("--local-ai-ui-probe") >= 0
@@ -1089,8 +1090,23 @@ ApplicationWindow {
         if (couchModeActive)
             return
         couchModePreviousVisibility = root.visibility
-        if (!couchModeUiProbe && library.ready)
-            restoreCouchNavigation()
+        if (!couchModeUiProbe && library.ready) {
+            // Capture the open details identity before changing any shelf or
+            // filter: those updates can asynchronously select a different row.
+            const gameId = gameDetails.panel_open && gameDetails.game_id
+                         ? gameDetails.game_id : root.selectedGameId
+            const platform = gameDetails.panel_open && gameDetails.game_id === gameId
+                           ? gameDetails.platform : gameId ? library.platform_for_game(gameId) : ""
+            if (gameId && platform) {
+                root.selectedGameId = gameId
+                couchModeView.beginGameHandoff(gameId, platform)
+                root.selectCouchPlatform(platform)
+                library.save_couch_state("platform", platform)
+                searchField.text = ""
+                filterDelay.stop()
+                library.apply_filter("", platform, "")
+            } else restoreCouchNavigation()
+        }
         gamepadInput.initialize()
         couchModeActive = true
         if (!couchModeUiProbe)
@@ -11788,6 +11804,10 @@ ApplicationWindow {
     Loader {
         active: root.couchViewsUiProbe
         sourceComponent: CouchViewsProbe { app: root; view: couchModeView; library: library }
+    }
+    Loader {
+        active: root.couchEntryUiProbe
+        sourceComponent: CouchEntryProbe { app: root; view: couchModeView; library: library; details: gameDetails }
     }
 
     Loader {
