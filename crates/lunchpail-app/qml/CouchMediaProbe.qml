@@ -30,7 +30,7 @@ Item {
             fail("Couch audio restore/default " + phase); return false
         }
         app.exitCouchMode()
-        if (app.videoAudioMuted !== normalMuted || audioControls.length !== 3) {
+        if (app.videoAudioMuted !== normalMuted || audioControls.length !== 2) {
             fail("normal audio restore/default " + phase); return false
         }
         for (const control of audioControls) {

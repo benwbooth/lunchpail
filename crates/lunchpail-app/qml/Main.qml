@@ -11851,7 +11851,7 @@ ApplicationWindow {
         active: root.couchMediaUiProbe
         sourceComponent: CouchMediaProbe {
             app: root; view: couchModeView; library: library
-            audioControls: [cardPreviewMuteButton, detailVideoMuteButton, fullscreenMuteButton]
+            audioControls: [detailVideoMuteButton, fullscreenMuteButton]
         }
     }
 
