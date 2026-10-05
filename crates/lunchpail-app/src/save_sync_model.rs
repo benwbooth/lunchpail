@@ -161,6 +161,7 @@ struct PendingSync {
     emulator_slug: String,
     runtime_platform: String,
     operation: String,
+    timing: crate::launch_timing::Timing,
 }
 
 enum SyncResult {
@@ -638,11 +639,16 @@ impl qobject::SaveSyncModel {
                 .set_message(qstring("Unknown cloud-save operation."));
             return;
         }
+        let timing = (operation == "pre_launch")
+            .then(crate::launch_timing::pending_launch)
+            .flatten()
+            .unwrap_or_else(|| crate::launch_timing::Timing::new("save_sync", "", ""));
         self.as_mut().start_sync_request(
             PendingSync {
                 emulator_slug,
                 runtime_platform,
                 operation,
+                timing,
             },
             None,
         );
@@ -653,6 +659,15 @@ impl qobject::SaveSyncModel {
         pending: PendingSync,
         remote_device_id: Option<String>,
     ) {
+        pending.timing.event(
+            "save_sync_queued",
+            serde_json::json!({
+                "operation": pending.operation,
+                "emulator_slug": pending.emulator_slug,
+                "runtime_platform": pending.runtime_platform,
+                "remote_device_selected": remote_device_id.is_some(),
+            }),
+        );
         self.as_mut().rust_mut().generation = self.as_ref().rust().generation.wrapping_add(1);
         let generation = self.as_ref().rust().generation;
         self.as_mut().rust_mut().prepared = None;
@@ -674,21 +689,31 @@ impl qobject::SaveSyncModel {
         // This also distinguishes consecutive syncs with identical outcomes.
         self.as_mut().bump_revision();
         let qt_thread = self.as_ref().qt_thread();
+        let spawn_timing = pending.timing.clone();
         let spawn = std::thread::Builder::new()
             .name("lunchpail-save-sync-prepare".into())
             .spawn(move || {
+                pending
+                    .timing
+                    .event("save_sync_worker_started", serde_json::json!({}));
                 let result = prepare_and_maybe_apply(
                     &pending.emulator_slug,
                     &pending.runtime_platform,
                     &pending.operation,
                     remote_device_id.as_deref(),
+                    &pending.timing,
                 )
                 .map_err(|error| error.to_string());
+                pending.timing.event(
+                    "save_sync_worker_finished",
+                    serde_json::json!({"success": result.is_ok()}),
+                );
                 let _ = qt_thread.queue(move |mut model| {
                     model.as_mut().finish_sync(generation, result);
                 });
             });
         if let Err(error) = spawn {
+            spawn_timing.event("save_sync_worker_spawn_failed", serde_json::json!({}));
             self.as_mut().set_busy(false);
             self.as_mut().set_status(qstring("error"));
             self.as_mut().set_message(qstring(format!(
@@ -701,6 +726,15 @@ impl qobject::SaveSyncModel {
     fn finish_sync(mut self: Pin<&mut Self>, generation: u64, result: Result<SyncResult, String>) {
         if generation != self.as_ref().rust().generation {
             return;
+        }
+        let timing = self
+            .as_ref()
+            .rust()
+            .pending_sync
+            .as_ref()
+            .map(|pending| pending.timing.clone());
+        if let Some(timing) = &timing {
+            timing.event("save_sync_result_delivered", serde_json::json!({}));
         }
         self.as_mut().set_busy(false);
         match result {
@@ -748,6 +782,12 @@ impl qobject::SaveSyncModel {
                     "Cloud save synchronization failed: {error}"
                 )));
             }
+        }
+        if let Some(timing) = &timing {
+            timing.event(
+                "save_sync_finished",
+                serde_json::json!({"status": self.as_ref().status().to_string()}),
+            );
         }
         self.as_mut().bump_revision();
     }
@@ -819,6 +859,17 @@ impl qobject::SaveSyncModel {
             ));
             return;
         }
+        let timing = self
+            .as_ref()
+            .rust()
+            .pending_sync
+            .as_ref()
+            .map(|pending| pending.timing.clone())
+            .unwrap_or_else(|| crate::launch_timing::Timing::new("save_sync", "", ""));
+        timing.event(
+            "save_sync_reviewed_apply_queued",
+            serde_json::json!({"choices": choices.len()}),
+        );
         self.as_mut().rust_mut().generation = self.as_ref().rust().generation.wrapping_add(1);
         let generation = self.as_ref().rust().generation;
         self.as_mut().set_busy(true);
@@ -830,6 +881,7 @@ impl qobject::SaveSyncModel {
         let spawn = std::thread::Builder::new()
             .name("lunchpail-save-sync-apply".into())
             .spawn(move || {
+                timing.event("save_sync_reviewed_apply_started", serde_json::json!({}));
                 let result = (|| {
                     let profile = crate::settings::load_save_cloud_profile()?
                         .context("the save-sync connection was removed")?;
@@ -841,6 +893,10 @@ impl qobject::SaveSyncModel {
                     prepared.apply(&store, &choices, &recovery_base()?, now_unix_ms()?)
                 })()
                 .map_err(|error: anyhow::Error| error.to_string());
+                timing.event(
+                    "save_sync_reviewed_apply_finished",
+                    serde_json::json!({"success": result.is_ok()}),
+                );
                 let _ = qt_thread.queue(move |mut model| {
                     if generation != model.as_ref().rust().generation {
                         return;
@@ -872,6 +928,10 @@ impl qobject::SaveSyncModel {
                             )));
                         }
                     }
+                    timing.event(
+                        "save_sync_finished",
+                        serde_json::json!({"status": model.as_ref().status().to_string()}),
+                    );
                     model.as_mut().bump_revision();
                 });
             });
@@ -888,6 +948,12 @@ impl qobject::SaveSyncModel {
     pub fn cancel_conflicts(mut self: Pin<&mut Self>) {
         if *self.as_ref().busy() {
             return;
+        }
+        if let Some(pending) = &self.as_ref().rust().pending_sync {
+            pending.timing.event(
+                "save_sync_cancelled",
+                serde_json::json!({"reason": "conflicts"}),
+            );
         }
         self.as_mut().rust_mut().generation = self.as_ref().rust().generation.wrapping_add(1);
         self.as_mut().rust_mut().prepared = None;
@@ -936,6 +1002,12 @@ impl qobject::SaveSyncModel {
         if *self.as_ref().busy() || self.as_ref().status().to_string() != "remote_devices" {
             return;
         }
+        if let Some(pending) = &self.as_ref().rust().pending_sync {
+            pending.timing.event(
+                "save_sync_cancelled",
+                serde_json::json!({"reason": "device_selection"}),
+            );
+        }
         self.as_mut().rust_mut().generation = self.as_ref().rust().generation.wrapping_add(1);
         self.as_mut().rust_mut().pending_sync = None;
         self.as_mut().rust_mut().remote_devices.clear();
@@ -958,7 +1030,9 @@ fn prepare_and_maybe_apply(
     runtime_platform: &str,
     operation: &str,
     remote_device_id: Option<&str>,
+    timing: &crate::launch_timing::Timing,
 ) -> Result<SyncResult> {
+    timing.event("save_sync_profile_load_started", serde_json::json!({}));
     let Some(profile) = crate::settings::load_save_cloud_profile()? else {
         return Ok(SyncResult::Skipped(
             "Cloud save synchronization is not configured.".to_owned(),
@@ -969,11 +1043,20 @@ fn prepare_and_maybe_apply(
             "Automatic cloud save synchronization is disabled.".to_owned(),
         ));
     }
+    timing.event(
+        "save_sync_profile_loaded",
+        serde_json::json!({"provider": profile.provider.key()}),
+    );
     let store = connected_store(&profile)?;
+    timing.event("save_sync_store_connected", serde_json::json!({}));
     let scope = SyncScope::new(emulator_slug, runtime_platform)?;
     if remote_device_id.is_none() {
         let remote_heads =
             crate::save_sync_service::remote_merge_candidates(&store, &scope, &profile.device_id)?;
+        timing.event(
+            "save_sync_remote_heads_loaded",
+            serde_json::json!({"candidates": remote_heads.len()}),
+        );
         if remote_heads.len() > 1 {
             return Ok(SyncResult::RemoteDevices(remote_heads));
         }
@@ -985,16 +1068,29 @@ fn prepare_and_maybe_apply(
         runtime_platform,
         &crate::platform_locations::LocationBases::detect(),
     )?;
+    timing.event(
+        "save_sync_routes_loaded",
+        serde_json::json!({"roots": roots.len()}),
+    );
     let prepared = prepare_sync(&store, scope, profile.device_id, roots, remote_device_id)?;
+    timing.event(
+        "save_sync_plan_finished",
+        serde_json::json!({
+            "files": prepared.local.files.len(),
+            "bytes": prepared.local.files.values().map(|file| file.size).sum::<u64>(),
+            "conflicts": prepared.plan.conflicts.len(),
+        }),
+    );
     if prepared.plan.requires_user_choice() {
         return Ok(SyncResult::Conflicts(prepared));
     }
-    Ok(SyncResult::Applied(prepared.apply(
-        &store,
-        &BTreeMap::new(),
-        &recovery_base()?,
-        now_unix_ms()?,
-    )?))
+    timing.event("save_sync_apply_started", serde_json::json!({}));
+    let applied = prepared.apply(&store, &BTreeMap::new(), &recovery_base()?, now_unix_ms()?)?;
+    timing.event(
+        "save_sync_apply_finished",
+        serde_json::json!({"actions": applied.actions.len()}),
+    );
+    Ok(SyncResult::Applied(applied))
 }
 
 fn conflict_json_value(conflict: &SyncConflict) -> serde_json::Value {

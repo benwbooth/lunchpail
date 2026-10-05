@@ -1829,12 +1829,14 @@ ApplicationWindow {
     function requestGameLaunch() {
         if (gameDetails.launch_busy || gameDetails.game_running || patchCatalog.applying)
             return
+        gameDetails.begin_launch_timing()
         root.cloudActiveTarget = null
         if (root.isProbeRun()) {
             gameDetails.launch_game()
             return
         }
         if (saveSync.busy) {
+            gameDetails.note_launch_timing("launch_blocked_by_existing_save_sync")
             root.cloudSyncError = saveSync.message.length > 0
                                   ? saveSync.message
                                   : "Another cloud-save operation is still in progress."
@@ -1847,6 +1849,7 @@ ApplicationWindow {
         }
         if (!saveSync.initialized
                 || (saveSync.status === "error" && !saveSync.credentials_saved)) {
+            gameDetails.note_launch_timing("launch_waiting_for_save_sync_setup")
             root.cloudSyncError = saveSync.message.length > 0
                                   ? saveSync.message
                                   : "Cloud-save credential status is not available."
@@ -1855,10 +1858,13 @@ ApplicationWindow {
             return
         }
         if (!saveSync.credentials_saved || !saveSync.automatic_enabled) {
+            gameDetails.note_launch_timing("pre_launch_save_sync_disabled")
             gameDetails.launch_game()
             return
         }
+        gameDetails.note_launch_timing("save_sync_target_started")
         const target = root.currentSaveSyncTarget()
+        gameDetails.note_launch_timing("save_sync_target_finished")
         if (!target.available) {
             root.cloudSyncError = target.error || "This emulator has no safe captured save path."
             root.cloudLaunchPending = true
@@ -4222,6 +4228,7 @@ ApplicationWindow {
                 LbButton {
                     text: root.cloudLaunchPending ? "Cancel launch" : "Close"
                     onClicked: {
+                        gameDetails.note_launch_timing("launch_cancelled_at_save_sync_error")
                         root.cloudLaunchPending = false
                         root.cloudActiveTarget = null
                         cloudSyncErrorDialog.close()
@@ -4232,6 +4239,7 @@ ApplicationWindow {
                     text: "Play without sync"
                     active: true
                     onClicked: {
+                        gameDetails.note_launch_timing("launch_continuing_without_save_sync")
                         root.cloudLaunchPending = false
                         root.cloudObservedGameRunning = false
                         root.cloudActiveTarget = null

@@ -1,4 +1,5 @@
 mod app_paths;
+mod launch_timing;
 mod arcade;
 mod arcade_content;
 mod arcade_download;
@@ -857,6 +858,7 @@ pub fn run() -> i32 {
             eprintln!("LUNCHPAIL_PROFILE_UPGRADE_FAILED: {error:#}");
             return 1;
         }
+        launch_timing::initialize();
         translation::prewarm_saved_settings_background();
     }
 

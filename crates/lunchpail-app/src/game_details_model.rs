@@ -375,6 +375,12 @@ pub mod qobject {
         fn launch_game(self: Pin<&mut GameDetailsModel>);
 
         #[qinvokable]
+        fn begin_launch_timing(self: &GameDetailsModel);
+
+        #[qinvokable]
+        fn note_launch_timing(self: &GameDetailsModel, stage: QString);
+
+        #[qinvokable]
         fn configure_gamebuddy(
             self: Pin<&mut GameDetailsModel>,
             enabled: bool,
@@ -6445,15 +6451,30 @@ impl qobject::GameDetailsModel {
         }
     }
 
+    pub fn begin_launch_timing(&self) {
+        crate::launch_timing::begin_launch(&self.game_id().to_string(), &self.rust().canonical_title);
+    }
+
+    pub fn note_launch_timing(&self, stage: QString) {
+        crate::launch_timing::note_pending(&stage.to_string());
+    }
+
     pub fn launch_game(mut self: Pin<&mut Self>) {
+        let timing = crate::launch_timing::take_launch(
+            &self.as_ref().game_id().to_string(), &self.as_ref().rust().canonical_title,
+        );
+        timing.event("launch_entered", serde_json::json!({}));
         self.as_mut().refresh_emulator_session();
+        timing.event("session_refresh_finished", serde_json::json!({}));
         if *self.as_ref().launch_busy()
             || *self.as_ref().game_running()
             || *self.as_ref().install_management_busy()
         {
+            timing.event("launch_rejected", serde_json::json!({"reason": "busy"}));
             return;
         }
         if !self.has_launch_content() {
+            timing.event("launch_rejected", serde_json::json!({"reason": "missing_content"}));
             self.as_mut().invalidate_launch_state();
             self.as_mut().clear_emulator_options();
             self.as_mut().set_launch_status(qstring(
@@ -6468,6 +6489,7 @@ impl qobject::GameDetailsModel {
             .iter()
             .any(crate::firmware::FirmwareStatus::needs_action)
         {
+            timing.event("launch_rejected", serde_json::json!({"reason": "firmware"}));
             self.as_mut().set_can_launch(false);
             self.as_mut().set_launch_status(qstring(
                 "Install or configure the required firmware before launching this game.",
@@ -6476,12 +6498,14 @@ impl qobject::GameDetailsModel {
         }
         let launch_input = if let Some(install) = self.as_ref().rust().prepared_install.clone() {
             let Some(catalog_database) = crate::catalog::requested_database_path() else {
+                timing.event("launch_rejected", serde_json::json!({"reason": "missing_catalog"}));
                 self.as_mut().set_launch_status(qstring(
                     "The canonical Lunchpail database is unavailable, so the emulator cannot be selected.",
                 ));
                 return;
             };
             let Some(emulator) = self.as_ref().rust().prepared_emulator.clone() else {
+                timing.event("launch_rejected", serde_json::json!({"reason": "emulator_unavailable"}));
                 self.as_mut().set_launch_status(qstring(
                     "Refresh emulator detection before launching this prepared game.",
                 ));
@@ -6497,11 +6521,13 @@ impl qobject::GameDetailsModel {
                 .ok()
                 .and_then(|index| self.as_ref().rust().local_file_paths.get(index).cloned())
             else {
+                timing.event("launch_rejected", serde_json::json!({"reason": "no_selected_file"}));
                 self.as_mut()
                     .set_launch_status(qstring("Select a present local game file to launch."));
                 return;
             };
             let Some(option) = self.selected_rom_emulator_option() else {
+                timing.event("launch_rejected", serde_json::json!({"reason": "no_selected_emulator"}));
                 self.as_mut().set_launch_status(qstring(
                     "Select an installed compatible emulator before launching this game.",
                 ));
@@ -6525,15 +6551,18 @@ impl qobject::GameDetailsModel {
         )
         .ok()
         .filter(|target| target["available"].as_bool() == Some(true));
+        timing.event("launch_validation_finished", serde_json::json!({"gamebuddy_enabled": gamebuddy_config.enabled}));
         let session = match crate::emulator_session::reserve(&game_id, &activity_title) {
             Ok(session) => session,
             Err(error) => {
+                timing.event("launch_rejected", serde_json::json!({"reason": "session_reservation"}));
                 self.as_mut().refresh_emulator_session();
                 self.as_mut()
                     .set_launch_status(qstring(format!("Could not start another game: {error:#}")));
                 return;
             }
         };
+        timing.event("session_reserved", serde_json::json!({"session_token": session.token}));
         self.as_mut().rust_mut().session_generation =
             self.as_ref().rust().session_generation.wrapping_add(1);
         let generation = self.as_ref().rust().session_generation;
@@ -6570,6 +6599,8 @@ impl qobject::GameDetailsModel {
         let started_thread = qt_thread.clone();
         let worker_session_token = session_token.clone();
         let launch_worker = crate::emulator_session::LaunchWorker::new();
+        let worker_timing = timing.clone();
+        timing.event("launch_worker_queued", serde_json::json!({}));
         let spawn_result = std::thread::Builder::new()
             .name("lunchpail-emulator-launch".into())
             // The launch planner's controller preparation carries very large
@@ -6577,6 +6608,8 @@ impl qobject::GameDetailsModel {
             // overflows before the plan builder runs its first statement.
             .stack_size(64 * 1024 * 1024)
             .spawn(move || {
+                let timing = worker_timing;
+                timing.event("launch_worker_started", serde_json::json!({}));
                 let _launch_worker = launch_worker;
                 let launch = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> anyhow::Result<(Result<(), String>, Option<String>, bool, Option<(String, bool)>)> {
                     let preparation_started = Instant::now();
@@ -6638,6 +6671,7 @@ impl qobject::GameDetailsModel {
                         }
                     };
                     let emulator_name = plan.emulator_name.clone();
+                    timing.event("launch_plan_finished", serde_json::json!({"emulator": emulator_name}));
                     eprintln!("LUNCHPAIL_LAUNCH_PREP_TIMING plan_ms={}", preparation_started.elapsed().as_millis());
                     let cleanup_paths = plan.cleanup_paths.clone();
                     let _cleanup_guard = LaunchCleanupGuard(cleanup_paths);
@@ -6690,6 +6724,7 @@ impl qobject::GameDetailsModel {
                         }
                     }
                     eprintln!("LUNCHPAIL_LAUNCH_PREP_TIMING controller_ms={}", preparation_started.elapsed().as_millis());
+                    timing.event("controller_preparation_finished", serde_json::json!({}));
                     #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
                     let mut steam_route = None;
                     #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
@@ -6897,6 +6932,7 @@ impl qobject::GameDetailsModel {
                         ).context("Preparing safe MAME auto-resume")?
                     } else { None };
                     eprintln!("LUNCHPAIL_LAUNCH_PREP_TIMING display_translation_ms={}", preparation_started.elapsed().as_millis());
+                    timing.event("display_translation_preparation_finished", serde_json::json!({}));
                     let _arcade_session = if let LaunchInput::Rom { option, path, .. } = &launch_input
                         && crate::arcade_settings::blood_available(path)
                     {
@@ -6978,6 +7014,7 @@ impl qobject::GameDetailsModel {
                         .as_ref()
                         .and_then(|observation| observation.launch_notice())
                     {
+                        timing.event("save_notice_delay_started", serde_json::json!({"intentional_delay_ms": 700}));
                         let notice_game_id = game_id.clone();
                         let notice = notice.to_owned();
                         let _ = started_thread.queue(move |mut model| {
@@ -6997,8 +7034,10 @@ impl qobject::GameDetailsModel {
                             }
                             std::thread::sleep(Duration::from_millis(25));
                         }
+                        timing.event("save_notice_delay_finished", serde_json::json!({}));
                     }
                     eprintln!("LUNCHPAIL_LAUNCH_PREP_TIMING ready_to_spawn_ms={}", preparation_started.elapsed().as_millis());
+                    timing.event("launch_preparation_finished", serde_json::json!({}));
                     let starting_game_id = game_id.clone();
                     let starting_cancel = Arc::clone(&launch_cancel);
                     let _ = started_thread.queue(move |mut model| {
@@ -7012,21 +7051,25 @@ impl qobject::GameDetailsModel {
                                 .set_launch_status(qstring("Starting the emulator…"));
                         }
                     });
+                    timing.event("gamebuddy_prepare_started", serde_json::json!({"enabled": gamebuddy_config.enabled}));
                     let (gamebuddy_session, compositor_warning) = match gamebuddy_config.prepare(
                         &activity_title, &game_id, &activity_platform, &worker_session_token, &launch_cancel,
                     ) {
                         Ok(session) => (session, None),
                         Err(error) => (None, Some(format!("GameBuddy compositor unavailable; using desktop companion: {error:#}"))),
                     };
+                    timing.event("gamebuddy_prepare_finished", serde_json::json!({"compositor_ready": gamebuddy_session.is_some(), "fallback": compositor_warning.is_some()}));
                     if launch_cancel.load(AtomicOrdering::Relaxed) {
                         anyhow::bail!(crate::rom_launch_preparation::LAUNCH_CANCELLED_ERROR);
                     }
                     if let Some(session) = &gamebuddy_session { session.apply(&mut plan); }
+                    timing.event("emulator_spawn_started", serde_json::json!({}));
                     let mut child = match calibrated_session.as_mut() {
                         Some(session) => session.spawn_frontend(&plan, &launch_cancel)?,
                         None => crate::emulator::spawn_launch_plan(&plan)?,
                     };
                     let process_id = child.id();
+                    timing.event("emulator_spawned", serde_json::json!({"emulator_pid": process_id}));
                     if let Err(error) = crate::emulator_session::mark_running(
                         &worker_session_token, process_id, &emulator_name,
                         auto_save_observation.as_ref(), sync_target.as_ref(),
@@ -7035,6 +7078,7 @@ impl qobject::GameDetailsModel {
                         let _ = child.wait();
                         return Err(error.context("tracking the emulator session"));
                     }
+                    timing.event("emulator_session_recorded", serde_json::json!({}));
                     let startup_started = Instant::now();
                     let startup_deadline = startup_started + Duration::from_millis(700);
                     let controller_deadline = startup_started + Duration::from_secs(3);
@@ -7073,6 +7117,7 @@ impl qobject::GameDetailsModel {
                         }
                         std::thread::sleep(Duration::from_millis(35));
                     }
+                    timing.event("emulator_startup_check_finished", serde_json::json!({"minimum_check_ms": 700}));
                     let play_started = Instant::now();
                     let play_session =
                         crate::settings::SettingsStore::open_default().and_then(|store| {
@@ -7085,6 +7130,7 @@ impl qobject::GameDetailsModel {
                             )
                         });
                     let activity_recorded = play_session.is_ok();
+                    timing.event("play_activity_recorded", serde_json::json!({"success": activity_recorded}));
                     let activity_warning = play_session
                         .as_ref()
                         .err()
@@ -7098,6 +7144,7 @@ impl qobject::GameDetailsModel {
                         Ok(None) => None,
                         Err(error) => Some(format!("GameBuddy: {error:#}")),
                     }};
+                    timing.event("gamebuddy_attach_finished", serde_json::json!({"enabled": gamebuddy_config.enabled, "success": gamebuddy_warning.is_none()}));
                     let tracking_warning =
                         [controller_warning, calibration_warning, activity_warning, display_warning, compositor_warning, gamebuddy_warning]
                         .into_iter()
@@ -7110,6 +7157,8 @@ impl qobject::GameDetailsModel {
                     let save_notice = auto_save_observation
                         .as_ref()
                         .and_then(|observation| observation.launch_notice().map(str::to_owned));
+                    let started_timing = timing.clone();
+                    timing.event("launch_started_delivery_queued", serde_json::json!({}));
                     let _ = started_thread.queue(move |mut model| {
                         model.as_mut().finish_launch_started(
                             generation,
@@ -7123,6 +7172,7 @@ impl qobject::GameDetailsModel {
                                 activity_recorded,
                             },
                         );
+                        started_timing.event("launch_started_ui_delivered", serde_json::json!({}));
                     });
                     let probe_terminated = if rom_probe {
                         std::thread::sleep(Duration::from_millis(1800));
@@ -7183,6 +7233,7 @@ impl qobject::GameDetailsModel {
                             Err(error) => break Err(error),
                         }
                     };
+                    timing.event("emulator_exited", serde_json::json!({"exit_code": status.as_ref().ok().and_then(|status| status.code())}));
                     drop(gamebuddy_session);
                     drop(controller_session);
                     #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
@@ -7255,6 +7306,7 @@ impl qobject::GameDetailsModel {
                         });
                     }
                     Err(error) => {
+                        timing.event("launch_failed", serde_json::json!({"cancelled": launch_cancel.load(AtomicOrdering::Relaxed)}));
                         let error = error.to_string();
                         let _ = qt_thread.queue(move |mut model| {
                             model
@@ -7265,6 +7317,7 @@ impl qobject::GameDetailsModel {
                 }
             });
         if let Err(error) = spawn_result {
+            timing.event("launch_worker_spawn_failed", serde_json::json!({}));
             let _ = crate::emulator_session::clear(&session_token);
             self.as_mut().rust_mut().launch_cancel = None;
             self.as_mut().rust_mut().session_stop_requested = None;

@@ -27,6 +27,28 @@ take longer than a small ROM launch.
 If every unchanged launch repeats the same expensive preparation, report the
 stage name and game format.
 
+Lunchpail automatically records launcher timings in
+`logs/launch-timing.jsonl` under its local application data directory. On a
+normal Linux install, this is
+`~/.local/share/lunchpail/logs/launch-timing.jsonl` (or the corresponding
+`XDG_DATA_HOME` location). The previous log is retained as
+`launch-timing.previous.jsonl`; each file is limited to about 5 MiB.
+
+Each JSON line has a wall-clock `timestamp_ms`, a `trace_id` identifying the
+launch, `elapsed_ms` since the launch request, and `delta_ms` since its previous
+event. Stages cover the pre-launch save check, save-sync worker/UI delivery,
+ROM/launch-plan preparation, controllers, display/translation, the save-notice
+delay, GameBuddy's compositor handshake, emulator spawning, and the startup
+check. Manual and post-exit save syncs have separate traces. Review waits are
+included in elapsed time. These are launcher milestones, not proof that the
+emulator has rendered its first frame.
+
+After a slow launch, keep the lines with that launch's `trace_id` (and the
+previous file if rotation occurred). Logs contain game titles/IDs, emulator
+names, process IDs, stage timings, and selected status/count metadata, but not
+credentials, ROM contents, or full launch commands. Logging is asynchronous;
+an unavailable or overloaded log writer cannot prevent a game from launching.
+
 ## The wrong controller works, or input happens twice
 
 Check Player 1's dropdown and the saved mapping scope. If using Steam Input,
@@ -96,4 +118,3 @@ and include:
 
 Do not attach ROMs, BIOS dumps, account tokens, or passwords. Review logs and
 screenshots for private paths and account details before sharing them.
-
