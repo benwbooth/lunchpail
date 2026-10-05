@@ -205,14 +205,14 @@ Rectangle {
             elide: Text.ElideRight
         }
 
-        LbButton {
+        GameActionButton {
             id: launchAction
             objectName: "launchAction"
             width: parent.width
             height: 48
             text: hero.launchBusy ? "Cancel preparation"
-                  : hero.gameRunning ? hero.sessionStopping ? "Stopping emulator…" : "■  Stop emulator"
-                  : hero.canLaunch ? "▶  Play"
+                  : hero.gameRunning ? hero.sessionStopping ? "Stopping emulator…" : "Stop emulator"
+                  : hero.canLaunch ? "Play"
                   : hero.prepareBusy ? "Preparing install…"
                   : hero.prepareNeeded ? "Prepare install"
                   : hero.firmwareSetupNeeded ? hero.firmwareSetupLabel
@@ -222,8 +222,9 @@ Rectangle {
                      )
             font.pixelSize: 12
             font.weight: Font.Bold
-            highlighted: hero.canLaunch && !hero.launchBusy && !hero.gameRunning
-            positive: highlighted
+            positive: hero.canLaunch && !hero.launchBusy && !hero.gameRunning
+            iconName: hero.gameRunning || hero.launchBusy ? "stop" : hero.canLaunch ? "play" : ""
+            busy: hero.prepareBusy || hero.sessionStopping
             onClicked: {
                 if (hero.launchBusy)
                     hero.cancelLaunchRequested()

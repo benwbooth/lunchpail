@@ -1037,6 +1037,53 @@ impl CouchVideoRequest {
     }
 }
 
+#[derive(Clone, Debug)]
+struct CouchThemeStatus {
+    phase: &'static str,
+    progress: i32,
+    status: String,
+}
+
+impl CouchThemeStatus {
+    fn json(&self, key: &str) -> String {
+        serde_json::json!({
+            "key": key, "phase": self.phase, "progress": self.progress, "status": self.status
+        })
+        .to_string()
+    }
+
+    fn completed(label: &str, result: &anyhow::Result<PathBuf>) -> Self {
+        match result {
+            Ok(_) => Self {
+                phase: "ready",
+                progress: 100,
+                status: format!("{label} ready"),
+            },
+            Err(error) => {
+                let message = format!("{error:#}");
+                let phase = if emumovies_credentials_missing(&message) {
+                    "setup-required"
+                } else if emumovies_video_unavailable(&message)
+                    || message.contains("No EmuMovies HyperSpin video theme")
+                    || message.contains("No platform video found")
+                {
+                    "unavailable"
+                } else {
+                    "error"
+                };
+                Self {
+                    phase,
+                    progress: -1,
+                    status: format!(
+                        "{label} unavailable: {}",
+                        bounded_automatic_video_error(&message)
+                    ),
+                }
+            }
+        }
+    }
+}
+
 pub struct LibraryModelRust {
     database_path: QString,
     status_message: QString,
@@ -1195,7 +1242,7 @@ pub struct LibraryModelRust {
     couch_theme_pending: Option<CouchVideoRequest>,
     couch_theme_selected: Option<String>,
     couch_theme_cancel: Option<Arc<AtomicBool>>,
-    couch_theme_results: HashMap<String, String>,
+    couch_theme_results: HashMap<String, CouchThemeStatus>,
     media_started: Option<std::time::Instant>,
     media_fetch_started: Option<std::time::Instant>,
     media_fetch_queue: Option<MediaFetchQueue>,
@@ -4045,11 +4092,14 @@ impl qobject::LibraryModel {
             .couch_theme_results
             .get(&key)
             .cloned()
-            .unwrap_or_else(|| format!("Finding a {}…", request.label()));
+            .unwrap_or_else(|| CouchThemeStatus {
+                phase: "queued",
+                progress: -1,
+                status: format!("Queued {}…", request.label()),
+            });
         self.as_mut().rust_mut().couch_theme_selected = Some(key.clone());
-        self.as_mut().set_couch_theme_status_json(qstring(
-            serde_json::json!({"key": key, "status": status}).to_string(),
-        ));
+        self.as_mut()
+            .set_couch_theme_status_json(qstring(status.json(&key)));
         self.as_mut().start_couch_theme(request);
     }
 
@@ -4079,11 +4129,58 @@ impl qobject::LibraryModel {
         let cancel = Arc::new(AtomicBool::new(false));
         self.as_mut().rust_mut().couch_theme_active = Some(key.clone());
         self.as_mut().rust_mut().couch_theme_cancel = Some(cancel.clone());
+        self.as_mut().set_couch_theme_status_json(qstring(
+            CouchThemeStatus {
+                phase: "finding",
+                progress: -1,
+                status: format!("Finding a {}…", request.label()),
+            }
+            .json(&key),
+        ));
         let qt_thread = self.as_ref().qt_thread();
+        let progress_thread = qt_thread.clone();
         std::thread::spawn(move || {
             let callback_cancel = cancel.clone();
-            let progress: crate::emumovies::ProgressCallback =
-                Box::new(move |_| !callback_cancel.load(Ordering::Acquire));
+            let progress_key = key.clone();
+            let label = request.label();
+            let last_percent = std::sync::atomic::AtomicI32::new(-1);
+            let progress: crate::emumovies::ProgressCallback = Box::new(move |value| {
+                if callback_cancel.load(Ordering::Acquire) {
+                    return false;
+                }
+                let percent = (value * 100.0).round().clamp(0.0, 100.0) as i32;
+                if last_percent.swap(percent, Ordering::Relaxed) == percent {
+                    return true;
+                }
+                let key = progress_key.clone();
+                let queued_cancel = callback_cancel.clone();
+                let _ = progress_thread.queue(move |mut model| {
+                    // A cancelled selection may still have a queued Qt callback.
+                    if queued_cancel.load(Ordering::Acquire)
+                        || model.rust().couch_theme_selected.as_deref() != Some(&key)
+                        || model.rust().couch_theme_active.as_deref() != Some(&key)
+                    {
+                        return;
+                    }
+                    let status = CouchThemeStatus {
+                        phase: if percent > 0 {
+                            "downloading"
+                        } else {
+                            "finding"
+                        },
+                        progress: percent,
+                        status: if percent > 0 {
+                            format!("Downloading {label}… {percent}%")
+                        } else {
+                            format!("Finding a {label}…")
+                        },
+                    };
+                    model
+                        .as_mut()
+                        .set_couch_theme_status_json(qstring(status.json(&key)));
+                });
+                !callback_cancel.load(Ordering::Acquire)
+            });
             let result = match &request {
                 CouchVideoRequest::Game(game) => {
                     crate::emumovies_model::download_saved_theme_video(
@@ -4103,20 +4200,20 @@ impl qobject::LibraryModel {
                 model.as_mut().rust_mut().couch_theme_active = None;
                 model.as_mut().rust_mut().couch_theme_cancel = None;
                 if !cancelled {
-                    let status = match &result {
-                        Ok(_) => format!("{} ready", request.label()),
-                        Err(error) => format!("{} unavailable: {error:#}", request.label()),
-                    };
+                    let status = CouchThemeStatus::completed(request.label(), &result);
                     // Session cache avoids repeatedly requesting absent themes.
-                    model
-                        .as_mut()
-                        .rust_mut()
-                        .couch_theme_results
-                        .insert(key.clone(), status.clone());
+                    // Network/account failures remain retryable on reselection.
+                    if matches!(status.phase, "ready" | "unavailable") {
+                        model
+                            .as_mut()
+                            .rust_mut()
+                            .couch_theme_results
+                            .insert(key.clone(), status.clone());
+                    }
                     if model.rust().couch_theme_selected.as_deref() == Some(&key) {
-                        model.as_mut().set_couch_theme_status_json(qstring(
-                            serde_json::json!({"key": key, "status": status}).to_string(),
-                        ));
+                        model
+                            .as_mut()
+                            .set_couch_theme_status_json(qstring(status.json(&key)));
                     }
                     if let CouchVideoRequest::Game(game) = &request {
                         model
@@ -7674,6 +7771,37 @@ fn media_asset_url(asset: &MediaAsset, _revision: i32) -> QUrl {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn couch_theme_status_preserves_identity_phase_and_percentage() {
+        let status = CouchThemeStatus {
+            phase: "downloading",
+            progress: 43,
+            status: "Downloading game theme… 43%".into(),
+        };
+        let value: serde_json::Value = serde_json::from_str(&status.json("game:zelda")).unwrap();
+        assert_eq!(value["key"], "game:zelda");
+        assert_eq!(value["phase"], "downloading");
+        assert_eq!(value["progress"], 43);
+    }
+
+    #[test]
+    fn couch_theme_completion_distinguishes_coverage_setup_and_network_failure() {
+        let ready = CouchThemeStatus::completed("Game theme", &Ok(PathBuf::from("video.mp4")));
+        assert_eq!((ready.phase, ready.progress), ("ready", 100));
+        for (message, phase) in [
+            ("No EmuMovies HyperSpin video theme found", "unavailable"),
+            ("No platform video found for system", "unavailable"),
+            ("No video folder found", "unavailable"),
+            ("no EmuMovies credentials are saved", "setup-required"),
+            ("Connection timed out", "error"),
+        ] {
+            let status = CouchThemeStatus::completed("Video theme", &Err(anyhow::anyhow!(message)));
+            assert_eq!(status.phase, phase, "{message}");
+            assert_eq!(status.progress, -1);
+            assert!(status.status.contains(message));
+        }
+    }
 
     #[test]
     fn selected_artwork_cache_key_tracks_only_that_asset() {

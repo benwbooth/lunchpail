@@ -227,15 +227,20 @@ through your connected EmuMovies account. Theme videos require FTP access from a
 supporting EmuMovies account. Availability varies by system and game.
 
 Game themes are stored separately from gameplay videos. All four game views
-automatically request a missing individual theme; browsing never downloads whole
-video packs. Unavailable themes are remembered for the session and the status
-explains missing account/access/coverage. Backgrounds preserve aspect ratio, can be paused or
+automatically request a missing individual theme and gameplay video after selection
+settles; browsing never downloads whole video packs. While a game video is missing,
+the game's artwork stays visible instead of playing a platform video. The media
+status below the categories shows queued/look-up/download activity, transfer
+percentages, missing-account guidance, or unavailable media. Hover it for details.
+Unavailable themes are remembered for the session; network failures can retry
+when you reselect the game. Backgrounds preserve aspect ratio, can be paused or
 opened full-screen, and share the global video mute preference. Background music
 stops while an audible preview is playing. Opening another page suspends previews.
 
 The platform picker displays cached system logos and automatically finds a missing
 individual system video after selection settles. All four platform views use the
-video as a full-window background and show lookup/availability status. Game and
+video as a full-window background and show lookup/availability status and download
+progress. System videos are only used in the platform browser. Game and
 system lookups share one transfer queue; rapid scrolling cancels the old selection
 and keeps only the latest request. Local custom videos take priority and do not
 require an account. These use a separate system-media cache, never a game's box

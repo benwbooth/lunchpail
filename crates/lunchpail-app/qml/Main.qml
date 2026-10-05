@@ -344,10 +344,11 @@ ApplicationWindow {
     readonly property bool couchSmoothnessUiProbe: Qt.application.arguments.indexOf("--couch-smoothness-ui-probe") >= 0
     readonly property bool couchViewsUiProbe: Qt.application.arguments.indexOf("--couch-views-ui-probe") >= 0
     readonly property bool couchEntryUiProbe: Qt.application.arguments.indexOf("--couch-entry-ui-probe") >= 0
+    readonly property bool couchMediaUiProbe: Qt.application.arguments.indexOf("--couch-media-ui-probe") >= 0
     readonly property bool couchPolishUiProbe: couchViewsUiProbe || Qt.application.arguments.indexOf("--couch-polish-ui-probe") >= 0
     readonly property bool couchSearchUiProbe: Qt.application.arguments.indexOf("--couch-search-ui-probe") >= 0
     readonly property bool localAiUiProbe: Qt.application.arguments.indexOf("--local-ai-ui-probe") >= 0
-    readonly property bool couchModeUiProbe: couchSearchUiProbe || couchPolishUiProbe || couchSmoothnessUiProbe || couchGamepadUiProbe || couchPlatformUiProbe
+    readonly property bool couchModeUiProbe: couchMediaUiProbe || couchSearchUiProbe || couchPolishUiProbe || couchSmoothnessUiProbe || couchGamepadUiProbe || couchPlatformUiProbe
                                              || couchCollectionUiProbe
                                              || couchVariantUiProbe
                                              || couchAttractUiProbe
@@ -2443,6 +2444,7 @@ ApplicationWindow {
         navigation_enabled: (root.active || root.couchGamepadUiProbe)
                             && !root.couchPolishUiProbe
                             && !root.couchSmoothnessUiProbe
+                            && !root.couchMediaUiProbe
                             && !root.controllerLearnActive
                             && !(settingsDialog.visible && controllerAutomaticSetup.testInput && !root.couchModeActive)
                             && !controllerAutomaticSetup.calibrationActive
@@ -4534,7 +4536,7 @@ ApplicationWindow {
                     root.beginHoverPreviewProbe()
                 }
                 else if (root.couchModeUiProbe) {
-                    if (root.couchSearchUiProbe) {
+                    if (root.couchSearchUiProbe || root.couchMediaUiProbe) {
                         root.selectedPlatform = "Nintendo Entertainment System"
                         searchField.text = ""
                         library.apply_filter("", root.selectedPlatform, "")
@@ -5468,7 +5470,7 @@ ApplicationWindow {
         interval: 650
         repeat: false
         onTriggered: {
-            if (root.couchSearchUiProbe || root.couchLaunchUiProbe || root.couchDownloadUiProbe || root.couchSmoothnessUiProbe || root.couchPolishUiProbe)
+            if (root.couchMediaUiProbe || root.couchSearchUiProbe || root.couchLaunchUiProbe || root.couchDownloadUiProbe || root.couchSmoothnessUiProbe || root.couchPolishUiProbe)
                 return
             if (!root.couchGamepadUiProbe && !root.couchPlatformUiProbe
                     && !root.couchCollectionUiProbe
@@ -6610,7 +6612,7 @@ ApplicationWindow {
 
     Timer {
         interval: 20000
-        running: root.couchModeUiProbe && !root.couchSearchUiProbe && !root.couchLaunchUiProbe && !root.couchSmoothnessUiProbe && !root.couchPolishUiProbe
+        running: root.couchModeUiProbe && !root.couchMediaUiProbe && !root.couchSearchUiProbe && !root.couchLaunchUiProbe && !root.couchSmoothnessUiProbe && !root.couchPolishUiProbe
                  && !root.couchModeProbeCaptured
         repeat: false
         onTriggered: {
@@ -11114,56 +11116,40 @@ ApplicationWindow {
                         anchors.left: parent.left
                         anchors.top: parent.top
                         anchors.margins: 8 * card.expansion
-                        width: 32 * card.expansion
-                        height: 32 * card.expansion
+                        width: 36 * card.expansion
+                        height: 36 * card.expansion
                         favorite: tile.favorite
                         busy: tile.favoriteBusy
                         gameTitle: tile.gameTitle
-                        font.pixelSize: 17 * card.expansion
+                        iconSize: 20 * card.expansion
                         onToggleRequested: favorite => library.set_favorite(tile.gameId, favorite)
                     }
-                    LbRoundButton {
+                    GameActionButton {
                         id: cardPlayButton
+                        objectName: "coverPlayButton"
                         anchors.left: parent.left
                         anchors.bottom: parent.bottom
                         anchors.margins: 8 * card.expansion
-                        width: 40 * card.expansion
-                        height: 40 * card.expansion
+                        showLabel: parent.width >= 150 * card.expansion
+                        width: (showLabel ? 80 : 36) * card.expansion
+                        height: 36 * card.expansion
                         z: previewPresentation.overlayLayer
                         visible: tile.gameLocal
                         enabled: root.pendingCardLaunchGameId !== tile.gameId
                                  && !gameDetails.launch_busy
                                  && !gameDetails.game_running
-                        highlighted: enabled
                         positive: true
-                        font.pixelSize: 17 * card.expansion
+                        iconName: "play"
+                        iconSize: 20 * card.expansion
+                        font.pixelSize: 12 * card.expansion
+                        spacing: 7 * card.expansion
+                        text: "Play"
+                        busy: root.pendingCardLaunchGameId === tile.gameId
                         Accessible.name: "Play " + tile.gameTitle
                         onClicked: root.requestCardLaunch(
                                        tile.gameId, tile.gameDatabaseId,
                                        tile.gameTitle, tile.gamePlatform, true)
-                        contentItem: Item {
-                            implicitWidth: 26 * card.expansion
-                            implicitHeight: 26 * card.expansion
-                            SemanticIcon {
-                                id: cardPlayGlyph
-                                anchors.centerIn: parent
-                                width: parent.width
-                                height: parent.height
-                                name: "play"
-                                filled: true
-                                color: cardPlayButton.enabled ? "#f4fff7" : root.muted
-                                visible: !cardPendingText.visible
-                            }
-                            Text {
-                                id: cardPendingText
-                                anchors.centerIn: parent
-                                visible: root.pendingCardLaunchGameId === tile.gameId
-                                text: "…"
-                                color: cardPlayButton.enabled ? "#f4fff7" : root.muted
-                                font: cardPlayButton.font
-                            }
-                        }
-                        ToolTip.visible: hovered
+                        ToolTip.visible: hovered || visualFocus
                         ToolTip.text: gameDetails.game_running
                                       ? "Stop " + gameDetails.session_title + " in Game Details"
                                       : "Play " + tile.gameTitle
@@ -11779,7 +11765,8 @@ ApplicationWindow {
         onGameSelected: function(gameId, databaseId, title, platform,
                                  local, downloadable) {
             // Selection is cheap: do not rebuild the desktop details pane,
-            // rank ROM sources, resolve emulators or download videos per card.
+            // rank ROM sources or resolve emulators. Debounced media requests
+            // belong to CouchThemeRequest, not this per-card selection handler.
             root.selectedGameId = gameId
             root.selectedDatabaseId = databaseId
             root.selectedMediaId = library.media_id_for_game(gameId)
@@ -11816,6 +11803,11 @@ ApplicationWindow {
     Loader {
         active: root.couchEntryUiProbe
         sourceComponent: CouchEntryProbe { app: root; view: couchModeView; library: library; details: gameDetails }
+    }
+
+    Loader {
+        active: root.couchMediaUiProbe
+        sourceComponent: CouchMediaProbe { app: root; view: couchModeView; library: library }
     }
 
     Loader {
@@ -13244,22 +13236,19 @@ ApplicationWindow {
                 font.weight: Font.Bold
                 font.letterSpacing: 1.4
             }
-            LbRoundButton {
+            FavoriteButton {
                 id: detailFavoriteButton
+                objectName: "detailFavoriteButton"
                 anchors.right: detailMetadataButton.left
                 anchors.rightMargin: 4
                 anchors.verticalCenter: parent.verticalCenter
                 width: 34
                 height: 34
-                text: root.selectedFavoritePending ? "…" : root.selectedFavorite ? "★" : "☆"
-                flat: true
+                favorite: root.selectedFavorite
+                busy: root.selectedFavoritePending
+                gameTitle: gameDetails.title
                 enabled: root.selectedGameId.length > 0 && !root.selectedFavoritePending
-                font.pixelSize: 17
-                onClicked: library.set_favorite(root.selectedGameId,
-                                                !root.selectedFavorite)
-                ToolTip.visible: hovered
-                ToolTip.text: root.selectedFavorite
-                              ? "Remove from Favorites" : "Add to Favorites"
+                onToggleRequested: favorite => library.set_favorite(root.selectedGameId, favorite)
             }
             LbRoundButton {
                 id: detailMetadataButton

@@ -49,4 +49,17 @@ TestCase {
         verify(!preview.playing)
         compare(preview.position, pausedPosition)
     }
+    function test_leaving_preview_clears_frame_and_stops_playback() {
+        const preview = createTemporaryObject(previewComponent, this)
+        preview.source = Qt.resolvedUrl("../fixtures/video-audio-sync.mp4")
+        preview.active = true
+        tryVerify(function() { return preview.playing && preview.position > 100 }, 5000)
+        preview.paused = true
+        preview.active = false
+        tryCompare(preview, "playing", false)
+        preview.source = ""
+        compare(preview.paused, false)
+        compare(preview.errorMessage, "")
+        compare(preview.source.toString(), "")
+    }
 }

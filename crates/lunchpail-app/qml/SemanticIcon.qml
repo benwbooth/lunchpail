@@ -28,7 +28,9 @@ Item {
         mute: "M3 9 H7 L12 5 V19 L7 15 H3 Z M15 9 L21 15 M21 9 L15 15",
         fullscreen: "M9 4 H4 V9 M15 4 H20 V9 M20 15 V20 H15 M9 20 H4 V15",
         // Centroid sits at (12, 12), so the triangle reads optically centered.
-        play: "M8 4.5 L20 12 L8 19.5 Z"
+        play: "M8 4.5 L20 12 L8 19.5 Z",
+        stop: "M6 6 H18 V18 H6 Z",
+        loading: "M12 3 A9 9 0 1 1 3 12"
     })
     Shape {
         anchors.fill: parent

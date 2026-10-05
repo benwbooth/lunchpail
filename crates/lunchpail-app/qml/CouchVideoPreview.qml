@@ -17,14 +17,23 @@ Rectangle {
     signal muteRequested()
     signal fullscreenRequested(url source)
     color: backgroundMode ? "transparent" : "#060a10"; radius: backgroundMode ? 0 : 14; border.color: backgroundMode ? "transparent" : "#3b5063"; clip: true
-    onSourceChanged: { paused = false; errorMessage = "" }
-    onActiveChanged: { if (!active) player.pause(); else if (!paused) player.play() }
+    // clearOutput was added in Qt 6.9; packaged Qt 6.8 builds still hide the
+    // inactive sink and let the source reset clear it.
+    function clearFrame() {
+        if (typeof output.clearOutput === "function") output.clearOutput()
+    }
+    onSourceChanged: { paused = false; errorMessage = ""; clearFrame() }
+    onActiveChanged: {
+        if (!active) { player.pause(); clearFrame() }
+        else if (!paused) player.play()
+    }
     onPausedChanged: { if (paused) player.pause(); else if (active) player.play() }
 
     VideoOutput {
         id: output
         anchors { fill: parent; margins: preview.backgroundMode ? 0 : 2; bottomMargin: preview.backgroundMode ? 0 : 46 }
         fillMode: VideoOutput.PreserveAspectFit
+        visible: preview.active && preview.source.toString().length > 0
         opacity: preview.playing || preview.paused ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
     }

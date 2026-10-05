@@ -119,7 +119,9 @@ TestCase {
         verify(action)
         verify(action.visible)
         verify(action.positive)
-        compare(action.background.color, "#237a4d")
+        compare(action.text, "Play")
+        compare(action.iconName, "play")
+        verify(findChild(action, "gameActionLabel").visible)
     }
 
     function test_arcade_settings_are_scoped_collapsible_and_locked_during_play() {
@@ -563,7 +565,8 @@ TestCase {
         verify(hero)
         const action = findChild(hero, "launchAction")
         verify(action)
-        compare(action.text, "■  Stop emulator")
+        compare(action.text, "Stop emulator")
+        compare(action.iconName, "stop")
         verify(action.enabled)
         verify(!action.highlighted)
         verify(!action.positive)

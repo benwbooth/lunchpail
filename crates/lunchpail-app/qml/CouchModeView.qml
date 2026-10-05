@@ -131,8 +131,8 @@ Item {
     readonly property bool cinematicWheel: library.couch_view_style === "wheel"
     readonly property bool wallView: library.couch_view_style === "wall"
     readonly property bool albumView: library.couch_view_style === "album"
-    readonly property url platformFallbackVideo: { mediaRevision; return selectedPlatform ? library.platform_media_url(selectedPlatform, "video") : "" }
-    readonly property url previewVideoUrl: browsing.theme_video_url || browsing.video_url || platformFallbackVideo
+    // A system theme belongs to the system browser, never to a selected game.
+    readonly property url previewVideoUrl: browsing.theme_video_url || browsing.video_url || ""
     readonly property bool hasPreviewVideo: previewVideoUrl.toString().length > 0
     readonly property var gameVideoPreview: couchVideo
     readonly property var systemVideoPreview: platformVideo
@@ -1964,17 +1964,23 @@ Item {
         }
         CouchActionButton { text: "Fullscreen"; soundFeedback: feedback; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: view.videoRequested(couchVideo.source) }
     }
-    Text {
+    CouchMediaStatus {
+        id: gameMediaStatus
+        objectName: "couchGameMediaStatus"
         x: 70; y: categoryRow.y + categoryRow.height + 6
-        width: parent.width - 140
-        text: view.browsing.theme_video_url ? "HYPERSPIN BACKGROUND"
-              : view.browsing.video_url ? "GAMEPLAY PREVIEW · Game theme unavailable"
-              : view.platformFallbackVideo.toString() ? "SYSTEM THEME · Game theme unavailable"
-              : themeRequest.status ? "No video theme available" : ""
-        color: view.muted; font.pixelSize: 11; elide: Text.ElideRight
-        HoverHandler { id: themeStatusHover }
-        ToolTip.visible: themeStatusHover.hovered && themeRequest.status.length > 0
-        ToolTip.text: themeRequest.status
+        width: Math.min(600, parent.width - 140)
+        visible: view.active && !!view.selectedGameId && !view.platformWheelOpen
+        library: view.library
+        gameId: view.selectedGameId
+        videoKind: view.browsing.theme_video_url ? "theme" : view.browsing.video_url ? "gameplay" : ""
+        themePhase: themeRequest.phase
+        themeProgress: themeRequest.progress
+        themeMessage: themeRequest.status
+        selectionPending: themeRequest.pending
+        playbackError: couchVideo.errorMessage
+        ink: view.ink
+        muted: view.muted
+        accent: view.accentCool
     }
     Text {
         anchors { left: gameCopy.left; top: gameCopy.bottom; topMargin: 14 }
@@ -2739,6 +2745,16 @@ Item {
                     color: view.muted; font.pixelSize: 14
                     wrapMode: Text.WordWrap; horizontalAlignment: Text.AlignHCenter
                     maximumLineCount: 3; elide: Text.ElideRight
+                }
+                InlineProgressBar {
+                    width: parent.width; height: 5
+                    visible: !platformPresentation.videoUrl.toString()
+                             && ["queued", "finding", "downloading"].indexOf(themeRequest.phase) >= 0
+                    from: 0; to: 100
+                    value: Math.max(0, themeRequest.progress)
+                    indeterminate: themeRequest.progress <= 0
+                    fillColor: view.accentCool
+                    trackColor: view.withAlpha(view.muted, 0.2)
                 }
                 Text {
                     width: parent.width
