@@ -11,6 +11,7 @@ Item {
     required property var gamepad
     required property var downloadQueue
     required property var speech
+    property var assistant: null
     property string searchText: ""
     property bool searchOpen: false
     property bool sfxEnabled: true
@@ -247,9 +248,10 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         y: 105
         width: Math.min(960, parent.width - 100)
-        height: 335
+        height: askMode ? Math.max(450, Math.min(800, view.height - 140)) : 335
         visible: view.searchOpen && view.active
         speech: view.speech
+        assistant: view.assistant
         query: view.searchText
         resultCount: shelf.count
         panelColor: view.panel
@@ -259,6 +261,17 @@ Item {
         onQueryEdited: text => view.searchRequested(text)
         onCloseRequested: view.closeSearch()
         onFeedbackRequested: kind => feedback.play(kind)
+        onSettingsRequested: { view.closeSearch(); view.settingsRequested("local-ai") }
+        onGameChosen: game => {
+            view.selectedGameId = game.id
+            view.selectedDatabaseId = game.database_id
+            view.selectedTitle = game.title
+            view.selectedPlatform = game.platform
+            view.selectedLocal = game.local
+            view.selectedDownloadable = game.downloadable
+            view.selectedMediaId = view.library.media_id_for_game(game.id)
+            view.requestDetails()
+        }
     }
 
     onInputEnabledChanged: if (!inputEnabled && searchOpen) closeSearch()

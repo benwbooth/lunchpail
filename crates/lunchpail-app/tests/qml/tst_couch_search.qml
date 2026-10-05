@@ -22,6 +22,7 @@ TestCase {
                 property int preparations: 0
                 property int cancellations: 0
                 property int stops: 0
+                signal completed(string text)
                 function prepare() { preparations++; busy = true }
                 function start() { starts++; busy = true; listening = true }
                 function stop() { stops++; busy = false; listening = false }

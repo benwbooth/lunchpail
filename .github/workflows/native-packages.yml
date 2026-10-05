@@ -37,6 +37,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Install pinned Vulkan build SDK
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'vulkan-sdk.exe'
+          $sdk = Join-Path $env:RUNNER_TEMP 'vulkan-sdk'
+          Invoke-WebRequest 'https://sdk.lunarg.com/sdk/download/1.4.321.1/windows/vulkansdk-windows-X64-1.4.321.1.exe' -OutFile $installer
+          if ((Get-FileHash $installer -Algorithm SHA256).Hash.ToLower() -ne 'baaa4f7ca11ed3d82aa1c102b21208915485bbaa473068c763daa425cca468bd') { throw 'Vulkan SDK checksum mismatch' }
+          $install = Start-Process $installer -ArgumentList @('--root', $sdk, '--accept-licenses', '--default-answer', '--confirm-command', 'install', 'copy_only=1') -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw 'Vulkan build SDK installation failed' }
+          "VULKAN_SDK=$sdk" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$sdk\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append
       - uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}
@@ -53,6 +65,8 @@ jobs:
           "LIBCHDMAN_PREBUILT_LOCAL_ARCHIVE=$archive" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Build release executable
         run: cargo build --locked --release --package lunchpail-app --package lunchpail-controller-probe --bin lunchpail --bin lunchpail-controller-probe
+      - name: Build bundled CPU and Vulkan inference
+        run: python packaging/build-inference.py
       - name: Stage Qt runtime and database
         shell: pwsh
         run: |
@@ -60,6 +74,8 @@ jobs:
           New-Item -ItemType Directory -Force "$stage\bin", "$stage\share\lunchpail" | Out-Null
           Copy-Item 'target\release\lunchpail.exe' "$stage\bin\lunchpail.exe"
           Copy-Item 'target\release\lunchpail-controller-probe.exe' "$stage\bin\lunchpail-controller-probe.exe"
+          Copy-Item 'target\inference\*.exe' "$stage\bin\"
+          Copy-Item 'packaging\inference-licenses' "$stage\share\lunchpail\inference-licenses" -Recurse
           python packaging/stage-ocr-runtime.py windows-x86_64 --runtime-dir "$stage\bin" --licenses-dir "$stage\share\lunchpail"
           if ($LASTEXITCODE -ne 0) { throw 'OCR runtime staging failed' }
           $sdlArchive = Join-Path $env:RUNNER_TEMP 'SDL3-3.4.12-x64.zip'
@@ -113,12 +129,16 @@ jobs:
           echo "LIBCHDMAN_PREBUILT_LOCAL_ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
       - name: Build release executable
         run: cargo build --locked --release --package lunchpail-app --package lunchpail-controller-probe --bin lunchpail --bin lunchpail-controller-probe
+      - name: Build bundled CPU and Metal inference
+        run: python3 packaging/build-inference.py
       - name: Assemble application bundle
         run: |
           rm -rf dist/Lunchpail.app
           mkdir -p dist/Lunchpail.app/Contents/MacOS dist/Lunchpail.app/Contents/share/lunchpail
           install -m 0755 target/release/lunchpail dist/Lunchpail.app/Contents/MacOS/lunchpail
           install -m 0755 target/release/lunchpail-controller-probe dist/Lunchpail.app/Contents/MacOS/lunchpail-controller-probe
+          install -m 0755 target/inference/lunchpail-*-cpu target/inference/lunchpail-*-gpu dist/Lunchpail.app/Contents/MacOS/
+          cp -R packaging/inference-licenses dist/Lunchpail.app/Contents/share/lunchpail/
           python3 packaging/stage-ocr-runtime.py macos-arm64 --runtime-dir dist/Lunchpail.app/Contents/MacOS --licenses-dir dist/Lunchpail.app/Contents/share/lunchpail
           sdl_source="$(mktemp -d "${RUNNER_TEMP}/lunchpail-sdl3.XXXXXX")"
           curl --fail --location --retry 3 https://github.com/libsdl-org/SDL/releases/download/release-3.4.12/SDL3-3.4.12.tar.gz -o "$sdl_source/source.tar.gz"
@@ -216,7 +236,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Install native build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev libgl1-mesa-dev libpulse-dev libudev-dev libwayland-dev libxkbcommon-dev patchelf
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev libgl1-mesa-dev libpulse-dev libudev-dev libwayland-dev libxkbcommon-dev patchelf libvulkan-dev glslc libclang-dev
       - uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}
@@ -231,12 +251,16 @@ jobs:
           echo "LIBCHDMAN_PREBUILT_LOCAL_ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
       - name: Build release executable
         run: cargo build --locked --release --no-default-features --package lunchpail-app --package lunchpail-controller-probe --bin lunchpail --bin lunchpail-controller-probe
+      - name: Build bundled CPU and Vulkan inference
+        run: python3 packaging/build-inference.py
       - name: Stage AppDir
         run: |
           rm -rf dist/AppDir dist/appimage-assets
           mkdir -p dist/AppDir/usr/bin dist/AppDir/usr/share/lunchpail dist/appimage-assets
           install -m 0755 target/release/lunchpail dist/AppDir/usr/bin/lunchpail
           install -m 0755 target/release/lunchpail-controller-probe dist/AppDir/usr/bin/lunchpail-controller-probe
+          install -m 0755 target/inference/lunchpail-*-cpu target/inference/lunchpail-*-gpu dist/AppDir/usr/bin/
+          cp -R packaging/inference-licenses dist/AppDir/usr/share/lunchpail/
           install -m 0644 assets/lunchpail.svg dist/appimage-assets/io.github.benwbooth.Lunchpail.svg
           cargo run --locked --release --package lunchpail-db -- extract --archive artifacts/lunchpail.db.7z --output dist/AppDir/usr/share/lunchpail
           test -f dist/AppDir/usr/share/lunchpail/lunchpail.db
@@ -253,7 +277,10 @@ jobs:
           EXTRA_QT_PLUGINS: imageformats;multimedia
           OUTPUT: dist/Lunchpail-linux-x86_64.AppImage
           QML_SOURCES_PATHS: crates/lunchpail-app/qml
-        run: ./linuxdeploy --appdir dist/AppDir --desktop-file packaging/io.github.benwbooth.Lunchpail.desktop --icon-file dist/appimage-assets/io.github.benwbooth.Lunchpail.svg --executable dist/AppDir/usr/bin/lunchpail --plugin qt --output appimage
+        run: |
+          inference_args=()
+          for worker in dist/AppDir/usr/bin/lunchpail-*-cpu dist/AppDir/usr/bin/lunchpail-*-gpu; do inference_args+=(--executable "$worker"); done
+          ./linuxdeploy --appdir dist/AppDir --desktop-file packaging/io.github.benwbooth.Lunchpail.desktop --icon-file dist/appimage-assets/io.github.benwbooth.Lunchpail.svg --executable dist/AppDir/usr/bin/lunchpail "${inference_args[@]}" --plugin qt --output appimage
       - name: Verify AppImage payload
         run: |
           chmod +x dist/Lunchpail-linux-x86_64.AppImage

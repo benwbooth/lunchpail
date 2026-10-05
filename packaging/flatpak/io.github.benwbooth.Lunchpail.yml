@@ -4,6 +4,7 @@ runtime-version: '6.10'
 sdk: org.kde.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.llvm20
 command: lunchpail
 
 finish-args:
@@ -38,10 +39,11 @@ modules:
   - name: lunchpail
     buildsystem: simple
     build-options:
-      append-path: /usr/lib/sdk/rust-stable/bin
+      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm20/bin
       env:
         CARGO_HOME: /run/build/lunchpail/cargo
         CARGO_NET_OFFLINE: 'true'
+        LIBCLANG_PATH: /usr/lib/sdk/llvm20/lib
         QMAKE: /usr/bin/qmake6
         LUNCHPAIL_SDL3_LIBRARY: /app/lib/libSDL3.so.0
         # MAME's CHD core is linked from a pinned prebuilt archive (declared
@@ -53,15 +55,18 @@ modules:
         ORT_LIB_PATH: /run/build/lunchpail/onnxruntime/lib
         ORT_PREFER_DYNAMIC_LINK: '1'
     build-commands:
+      - python3 packaging/build-inference.py --offline
       - cargo build --locked --offline --release --no-default-features --package lunchpail-app --package lunchpail-controller-probe --bin lunchpail --bin lunchpail-controller-probe
       - cargo run --locked --offline --release --package lunchpail-db -- extract --archive artifacts/lunchpail.db.7z --output database
       - install -Dm0755 target/release/lunchpail /app/bin/lunchpail
       - install -Dm0755 target/release/lunchpail-controller-probe /app/bin/lunchpail-controller-probe
+      - install -m0755 target/inference/lunchpail-*-cpu target/inference/lunchpail-*-gpu /app/bin/
       - install -Dm0755 onnxruntime/lib/libonnxruntime.so.1.28.0 /app/lib/libonnxruntime.so.1.28.0
       - ln -s libonnxruntime.so.1.28.0 /app/lib/libonnxruntime.so.1
       - ln -s libonnxruntime.so.1 /app/lib/libonnxruntime.so
       - install -Dm0755 onnxruntime/lib/libonnxruntime_providers_shared.so /app/lib/libonnxruntime_providers_shared.so
       - install -Dm0644 database/lunchpail.db /app/share/lunchpail/lunchpail.db
+      - cp -R packaging/inference-licenses /app/share/lunchpail/
       - install -Dm0644 packaging/io.github.benwbooth.Lunchpail.desktop /app/share/applications/io.github.benwbooth.Lunchpail.desktop
       - install -Dm0644 packaging/io.github.benwbooth.Lunchpail.metainfo.xml /app/share/metainfo/io.github.benwbooth.Lunchpail.metainfo.xml
       - install -Dm0644 assets/lunchpail.svg /app/share/icons/hicolor/scalable/apps/io.github.benwbooth.Lunchpail.svg

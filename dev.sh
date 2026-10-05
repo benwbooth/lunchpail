@@ -42,6 +42,7 @@ start_app() {
 
 # Returns non-zero when the build fails.
 build() {
+  python3 packaging/build-inference.py
   cargo build -p lunchpail-app -p lunchpail-controller-probe --bin lunchpail --bin lunchpail-controller-probe "${ocr_feature_args[@]}"
 }
 
@@ -78,8 +79,9 @@ watchexec --restart --shell=none \
   --watch vendor \
   --watch Cargo.toml \
   --watch Cargo.lock \
-  --exts rs,qml,json,toml,lock,h,cpp,slang,slangp,lua \
-  -- bash -c 'ocr_feature_args=(); if [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]]; then ocr_feature_args=(--features rocm-ocr); fi; if cargo build -p lunchpail-app -p lunchpail-controller-probe --bin lunchpail --bin lunchpail-controller-probe "${ocr_feature_args[@]}"; then echo LUNCHPAIL_DEV_BUILT; fi' \
+  --watch packaging/build-inference.py \
+  --exts rs,qml,json,toml,lock,h,cpp,slang,slangp,lua,py \
+  -- bash -c 'ocr_feature_args=(); if [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]]; then ocr_feature_args=(--features rocm-ocr); fi; if python3 packaging/build-inference.py && cargo build -p lunchpail-app -p lunchpail-controller-probe --bin lunchpail --bin lunchpail-controller-probe "${ocr_feature_args[@]}"; then echo LUNCHPAIL_DEV_BUILT; fi' \
   | while IFS= read -r line; do
       printf '[dev] %s\n' "$line"
       if [[ "$line" == LUNCHPAIL_DEV_BUILT ]]; then

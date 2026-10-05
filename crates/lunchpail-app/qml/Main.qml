@@ -344,6 +344,7 @@ ApplicationWindow {
     readonly property bool couchSmoothnessUiProbe: Qt.application.arguments.indexOf("--couch-smoothness-ui-probe") >= 0
     readonly property bool couchPolishUiProbe: Qt.application.arguments.indexOf("--couch-polish-ui-probe") >= 0
     readonly property bool couchSearchUiProbe: Qt.application.arguments.indexOf("--couch-search-ui-probe") >= 0
+    readonly property bool localAiUiProbe: Qt.application.arguments.indexOf("--local-ai-ui-probe") >= 0
     readonly property bool couchModeUiProbe: couchSearchUiProbe || couchPolishUiProbe || couchSmoothnessUiProbe || couchGamepadUiProbe || couchPlatformUiProbe
                                              || couchCollectionUiProbe
                                              || couchVariantUiProbe
@@ -715,6 +716,18 @@ ApplicationWindow {
         property real soundVolume: 0.22
     }
     CouchSpeechModel { id: couchSpeech }
+    LocalAiModel { id: localAi }
+    AssistantModel { id: localAssistant }
+    Timer { interval: 60; repeat: true; running: localAssistant.busy; onTriggered: localAssistant.poll() }
+    Timer { interval: 100; repeat: true; running: localAi.busy; onTriggered: localAi.poll() }
+    Connections {
+        target: localAi
+        function onSpeech_modelChanged() { couchSpeech.cancel(); couchSpeech.refresh() }
+        function onSpeech_readyChanged() { couchSpeech.refresh() }
+        function onComputeChanged() { couchSpeech.cancel(); couchSpeech.refresh(); localAssistant.cancel(); localAssistant.refresh() }
+        function onAssistant_modelChanged() { localAssistant.cancel(); localAssistant.refresh() }
+        function onAssistant_readyChanged() { localAssistant.refresh() }
+    }
 
     NotificationHistory {
         id: notificationHistory
@@ -851,6 +864,7 @@ ApplicationWindow {
              : requestedSettingsSection === "emulators" ? emulatorSettingsSection
              : requestedSettingsSection === "controllers" ? controllerSection
              : requestedSettingsSection === "translation" ? translationSettingsSection
+             : requestedSettingsSection === "local-ai" ? localAiSettingsSection
              : requestedSettingsSection === "achievements" ? achievementSettingsSection
              : null
     }
@@ -11670,6 +11684,13 @@ ApplicationWindow {
     }
 
     Loader {
+        active: root.localAiUiProbe
+        sourceComponent: LocalAiProbe {
+            app: root; view: couchModeView; library: library; ai: localAi
+            assistant: localAssistant; speech: couchSpeech; settingsDialog: settingsDialog
+        }
+    }
+    Loader {
         active: root.couchSearchUiProbe
         sourceComponent: CouchSearchProbe {
             app: root; view: couchModeView; library: library; speech: couchSpeech
@@ -11695,6 +11716,7 @@ ApplicationWindow {
         currentPlatformName: root.selectedPlatform
         videoMuted: root.videoAudioMuted
         speech: couchSpeech
+        assistant: localAssistant
         searchText: searchField.text
         sfxEnabled: couchFeedbackSettings.soundsEnabled
         sfxVolume: couchFeedbackSettings.soundVolume
@@ -20795,6 +20817,11 @@ ApplicationWindow {
                         }
                     }
                     SettingsNavButton {
+                        text: "Local AI & voice"
+                        active: root.requestedSettingsSection === "local-ai"
+                        onClicked: root.openSettingsFor("local-ai")
+                    }
+                    SettingsNavButton {
                         text: "RetroAchievements"
                         active: root.requestedSettingsSection === "achievements"
                         onClicked: {
@@ -23255,6 +23282,15 @@ ApplicationWindow {
                     id: achievementSettingsSection
                     Layout.fillWidth: true
                     backend: retroAchievements
+                }
+                Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
+                LocalAiSettings {
+                    id: localAiSettingsSection
+                    Layout.fillWidth: true
+                    ai: localAi
+                    inkColor: root.ink
+                    mutedColor: root.muted
+                    accentColor: root.accent
                 }
                 Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: root.line }
                 ColumnLayout {

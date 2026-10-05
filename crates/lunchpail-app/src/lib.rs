@@ -10,6 +10,12 @@ mod bezel_library;
 mod build_info;
 mod couch_speech;
 mod couch_speech_model;
+mod local_ai;
+mod local_ai_model;
+mod assistant_tools;
+mod assistant;
+mod assistant_model;
+mod mcp_server;
 mod catalog;
 mod collection_identity;
 pub mod collection_identity_model;
@@ -406,6 +412,12 @@ fn needs_widget_application(
 
 pub fn run() -> i32 {
     app_paths::import_legacy_environment();
+    if std::env::args().any(|arg| arg == "--mcp-stdio") {
+        return match mcp_server::run() {
+            Ok(()) => 0,
+            Err(error) => { eprintln!("Lunchpail MCP: {error:#}"); 1 }
+        };
+    }
     if std::env::args().nth(1).as_deref() == Some("--prepare-dev-restart") {
         return match std::env::args().nth(2).and_then(|pid| pid.parse::<u32>().ok()) {
             Some(pid) => match single_instance::prepare_dev_restart(pid) {

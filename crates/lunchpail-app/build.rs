@@ -184,6 +184,8 @@ fn main() {
                 "qml/GameFileIdentityDialog.qml",
                 "qml/CollectionMemberPresentationDialog.qml",
                 "qml/CouchAudioSettings.qml",
+                "qml/LocalAiSettings.qml",
+                "qml/LocalAiProbe.qml",
                 "qml/CouchFeedback.qml",
                 "qml/CouchSearchOverlay.qml",
                 "qml/CouchSearchProbe.qml",
@@ -272,6 +274,8 @@ fn main() {
     .qt_module("Multimedia")
     .file("src/build_info.rs")
     .file("src/couch_speech_model.rs")
+    .file("src/local_ai_model.rs")
+    .file("src/assistant_model.rs")
     .file("src/desktop_application.rs")
     .file("src/collection_identity_model.rs")
     .file("src/download_queue_model.rs")

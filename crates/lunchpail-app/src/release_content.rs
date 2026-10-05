@@ -357,7 +357,7 @@ pub fn initialize(connection: &Connection) -> Result<()> {
             }
             index
         };
-        println!(
+        eprintln!(
             "LUNCHPAIL_NON_RETAIL_METADATA platforms={} exact_titles={} families={} cached={from_cache} elapsed_ms={}",
             index.platforms.len(),
             index

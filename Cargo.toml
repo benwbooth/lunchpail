@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/lunchpail-app", "crates/lunchpail-db", "crates/lunchpail-controller-probe", "crates/lunchpail-patching", "vendor/rapidocr-core"]
+members = ["crates/lunchpail-app", "crates/lunchpail-db", "crates/lunchpail-controller-probe", "crates/lunchpail-patching", "crates/lunchpail-ai", "crates/lunchpail-llm", "crates/lunchpail-speech", "vendor/rapidocr-core"]
 
 [workspace.package]
 version = "0.1.3"
@@ -80,6 +80,13 @@ opt-level = 3
 opt-level = 3
 
 [profile.dev.package.imageproc]
+opt-level = 3
+
+# Multi-gigabyte model verification must stay responsive in the live dev app.
+[profile.dev.package.lunchpail-ai]
+opt-level = 2
+
+[profile.dev.package.sha2]
 opt-level = 3
 
 [patch.crates-io]

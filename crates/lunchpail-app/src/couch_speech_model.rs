@@ -35,6 +35,10 @@ pub mod qobject {
         fn cancel(self: Pin<&mut CouchSpeechModel>);
         #[qinvokable]
         fn poll(self: Pin<&mut CouchSpeechModel>);
+        #[qinvokable]
+        fn refresh(self: Pin<&mut CouchSpeechModel>);
+        #[qsignal]
+        fn completed(self: Pin<&mut CouchSpeechModel>, text: QString);
     }
 }
 
@@ -44,6 +48,7 @@ pub struct CouchSpeechModelRust {
     listening: bool,
     status: QString,
     transcript: QString,
+    backend: String,
     control: Arc<AtomicU8>,
     receiver: Option<mpsc::Receiver<Event>>,
 }
@@ -57,9 +62,10 @@ impl Default for CouchSpeechModelRust {
             status: QString::from(if ready {
                 "Ready. Press the microphone button to speak."
             } else {
-                "Voice search runs locally. Enable it to download the 191 MB English model."
+                "Choose a speech model in Settings → Local AI & voice, or download the selected model here."
             }),
             transcript: QString::default(),
+            backend: String::new(),
             control: Arc::new(AtomicU8::new(0)),
             receiver: None,
         }
@@ -71,6 +77,17 @@ impl Drop for CouchSpeechModelRust {
     }
 }
 impl qobject::CouchSpeechModel {
+    pub fn refresh(mut self: Pin<&mut Self>) {
+        let ready = crate::local_ai::speech_ready();
+        self.as_mut().set_ready(ready);
+        if !*self.busy() {
+            self.set_status(QString::from(if ready {
+                "Ready. Press the microphone button to speak."
+            } else {
+                "Choose or download a speech model in Settings → Local AI & voice."
+            }));
+        }
+    }
     fn begin(mut self: Pin<&mut Self>, prepare: bool) {
         if *self.busy() {
             return;
@@ -79,6 +96,7 @@ impl qobject::CouchSpeechModel {
         let (tx, rx) = mpsc::channel();
         self.as_mut().rust_mut().control = control.clone();
         self.as_mut().rust_mut().receiver = Some(rx);
+        self.as_mut().rust_mut().backend.clear();
         self.as_mut().set_busy(true);
         self.as_mut().set_transcript(QString::default());
         self.as_mut().set_status(QString::from(if prepare {
@@ -139,16 +157,26 @@ impl qobject::CouchSpeechModel {
                         "Listening locally… Speak a game title. Stops after a pause or 15 seconds.",
                     ));
                 }
+                Event::Decoding => {
+                    self.as_mut().set_listening(false);
+                    self.as_mut()
+                        .set_status(QString::from("Microphone off. Transcribing locally…"));
+                }
                 Event::Text(text) => self.as_mut().set_transcript(QString::from(&text)),
+                Event::Backend(text) => self.as_mut().rust_mut().backend = text,
                 Event::Finished(text) => {
                     self.as_mut().set_transcript(QString::from(&text));
                     self.as_mut().set_listening(false);
                     self.as_mut().set_busy(false);
-                    self.as_mut().set_status(QString::from(if text.is_empty() {
-                        "No speech detected. Try again, or type a game title."
+                    let status = if text.is_empty() {
+                        "No speech detected. Try again, or type a question.".to_owned()
+                    } else if self.backend.is_empty() {
+                        "Microphone off. Transcribed locally on CPU.".to_owned()
                     } else {
-                        "Microphone off. Edit the text or browse the results."
-                    }));
+                        format!("Microphone off. Transcribed locally on {}.", self.backend)
+                    };
+                    self.as_mut().set_status(QString::from(status));
+                    self.as_mut().completed(QString::from(text));
                 }
                 Event::Error(error, model_ready) => {
                     self.as_mut().set_listening(false);

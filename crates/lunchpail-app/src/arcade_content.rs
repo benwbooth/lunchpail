@@ -205,7 +205,7 @@ pub fn initialize(connection: &Connection) -> Result<()> {
             index.add_title(entry.title, entry.preferred_lookup);
         }
     }
-    println!(
+    eprintln!(
         "LUNCHPAIL_ARCADE_ADULT_METADATA sets={} matched_sets={} title_families={} source=Mature.ini-0.289",
         index.romsets.len(),
         index.matched_romsets.len(),

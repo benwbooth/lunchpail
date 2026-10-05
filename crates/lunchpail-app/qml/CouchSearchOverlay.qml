@@ -6,6 +6,8 @@ import QtQuick.Layouts
 FocusScope {
     id: search
     required property var speech
+    property var assistant: null
+    property bool askMode: false
     property string query: ""
     property int resultCount: 0
     property color panelColor: "#172230"
@@ -17,7 +19,19 @@ FocusScope {
     signal queryEdited(string text)
     signal closeRequested()
     signal feedbackRequested(string kind)
+    signal settingsRequested()
+    signal gameChosen(var game)
+    readonly property var answer: assistant ? JSON.parse(assistant.result_json || "{}") : ({})
+    readonly property var resultRows: (answer.games || []).map(g => ({kind: "game", data: g}))
+        .concat((answer.patches || []).map(p => ({kind: "patch", data: p})))
+    readonly property int baseActionCount: assistant ? 4 : 3
+    readonly property int actionCount: baseActionCount + (askMode ? resultRows.length : 0)
     readonly property bool microphoneBusy: acceptingVoice && speech.busy
+    onAnswerChanged: Qt.callLater(function() {
+        // ListView otherwise retains row-zero at the top and clips its
+        // preceding evidence/uncertainty header when results arrive.
+        results.positionViewAtBeginning()
+    })
 
     function open(initialText) {
         controllerIndex = 0
@@ -27,7 +41,7 @@ FocusScope {
     }
     function focusInput() { field.forceActiveFocus() }
     function edit(text) {
-        queryEdited(text)
+        if (!askMode) queryEdited(text)
     }
     function cancelVoice() {
         acceptingVoice = false
@@ -35,6 +49,7 @@ FocusScope {
     }
     function close() {
         cancelVoice()
+        if (assistant && assistant.busy) assistant.cancel()
         feedbackRequested("back")
         closeRequested()
     }
@@ -52,27 +67,59 @@ FocusScope {
     }
     function clear() {
         cancelVoice()
+        if (askMode && assistant) assistant.clear()
         field.text = ""
         edit("")
         field.forceActiveFocus()
+    }
+    function toggleMode() {
+        cancelVoice()
+        if (assistant && assistant.busy) assistant.cancel()
+        askMode = !askMode
+        controllerIndex = 0
+        field.text = askMode ? "" : query
+        field.forceActiveFocus()
+    }
+    function submit() {
+        if (!askMode) { close(); return }
+        if (!assistant || !assistant.ready) { settingsRequested(); return }
+        if (assistant.busy) assistant.cancel()
+        else { cancelVoice(); assistant.ask(field.text) }
+    }
+    function chooseRow(index) {
+        const row = resultRows[index]
+        if (!row) return
+        if (row.kind === "game") { close(); gameChosen(row.data) }
+        else if (/^https?:\/\//i.test(row.data.source_url || "")) Qt.openUrlExternally(row.data.source_url)
+    }
+    function activate(index) {
+        if (index === 0) microphone()
+        else if (index === 1) clear()
+        else if (index === 2) submit()
+        else if (index === 3 && assistant) toggleMode()
+        else chooseRow(index - baseActionCount)
+    }
+    onControllerIndexChanged: {
+        if (controllerIndex >= baseActionCount) {
+            results.currentIndex = controllerIndex - baseActionCount
+            results.positionViewAtIndex(results.currentIndex, ListView.Contain)
+        }
     }
     function handleNavigation(action) {
         if (action === "back") { close(); return true }
         if (action === "details" || action === "menu") { microphone(); return true }
         if (action === "left" || action === "up" || action === "right" || action === "down") {
-            controllerIndex = (controllerIndex + (action === "left" || action === "up" ? 2 : 1)) % 3
+            controllerIndex = (controllerIndex + (action === "left" || action === "up" ? actionCount - 1 : 1)) % actionCount
             feedbackRequested("move")
             return true
         }
         if (action === "accept") {
-            if (controllerIndex === 0) microphone()
-            else if (controllerIndex === 1) clear()
-            else close()
+            activate(controllerIndex)
             return true
         }
         return true // Search owns controller input; never launch a hidden game.
     }
-    onVisibleChanged: if (!visible) cancelVoice()
+    onVisibleChanged: if (!visible) { cancelVoice(); if (assistant && assistant.busy) assistant.cancel() }
     Keys.onEscapePressed: event => { close(); event.accepted = true }
     Keys.onPressed: event => {
         if (event.key === Qt.Key_F2) {
@@ -89,10 +136,16 @@ FocusScope {
     }
     Connections {
         target: search.speech
+        ignoreUnknownSignals: true // Also permits simple speech fakes in isolated UI tests.
         function onTranscriptChanged() {
             if (!search.visible || !search.acceptingVoice || !search.speech.transcript.length) return
             field.text = search.speech.transcript
             search.edit(field.text)
+        }
+        function onCompleted(text) {
+            if (!search.visible || !search.acceptingVoice) return
+            search.acceptingVoice = false
+            if (search.askMode && search.assistant && text.trim().length) search.assistant.ask(text)
         }
     }
     Timer { interval: 50; repeat: true; running: search.speech.busy; onTriggered: search.speech.poll() }
@@ -108,7 +161,7 @@ FocusScope {
         anchors.margins: 26
         spacing: 14
         Text {
-            text: "SEARCH GAMES  ·  " + search.resultCount + " RESULTS"
+            text: search.askMode ? "ASK LUNCHPAIL  ·  LOCAL AI" : "SEARCH GAMES  ·  " + search.resultCount + " RESULTS"
             color: search.inkColor; font.pixelSize: 20; font.bold: true
         }
         TextField {
@@ -118,24 +171,26 @@ FocusScope {
             Layout.preferredHeight: 62
             font.pixelSize: 28
             color: search.inkColor
-            placeholderText: "Type or speak a game title"
+            placeholderText: search.askMode ? "Find me a SNES JRPG with an English patch" : "Type or speak a game title"
             placeholderTextColor: search.mutedColor
             selectByMouse: true
             onTextEdited: { search.cancelVoice(); search.edit(text) }
-            onAccepted: search.close()
+            onAccepted: search.submit()
             Keys.onEscapePressed: event => { search.close(); event.accepted = true }
             Keys.onPressed: event => {
                 if (event.key === Qt.Key_F2) { search.microphone(); event.accepted = true }
             }
             background: Rectangle { color: "#090f19"; radius: 10; border.color: search.accentColor }
-            Accessible.name: "Search games in Couch Mode"
+            Accessible.name: search.askMode ? "Ask Lunchpail a game question" : "Search games in Couch Mode"
         }
         RowLayout {
             Layout.fillWidth: true
             spacing: 12
             Repeater {
                 model: [search.speech.busy ? (search.acceptingVoice ? "Stop microphone" : "Cancel download")
-                        : search.speech.ready ? "Speak · F2" : "Enable voice · 191 MB", "Clear search", "Browse results"]
+                        : search.speech.ready ? "Speak · F2" : "Download speech model", search.askMode ? "New question" : "Clear search",
+                        search.askMode ? (!search.assistant || !search.assistant.ready ? "AI settings" : search.assistant.busy ? "Cancel answer" : "Ask") : "Browse results"]
+                        .concat(search.assistant ? [search.askMode ? "Search titles" : "Ask AI"] : [])
                 delegate: Button {
                     id: action
                     required property int index
@@ -163,9 +218,7 @@ FocusScope {
                     }
                     onClicked: {
                         search.controllerIndex = index
-                        if (index === 0) search.microphone()
-                        else if (index === 1) search.clear()
-                        else search.close()
+                        search.activate(index)
                     }
                 }
             }
@@ -181,8 +234,59 @@ FocusScope {
         }
         Text {
             Layout.fillWidth: true
-            text: "Local English recognition · Audio is never saved or uploaded · Enter / Esc to browse"
+            text: search.askMode ? "Enter to ask · F2 to speak · Esc to close · Read-only recommendations" : "Local speech recognition · Audio is never saved or uploaded · Enter / Esc to browse"
             color: search.mutedColor; font.pixelSize: 13; wrapMode: Text.WordWrap
+        }
+        Text {
+            Layout.fillWidth: true; visible: search.askMode
+            text: search.assistant ? search.assistant.status : ""; textFormat: Text.PlainText
+            color: search.accentColor; font.pixelSize: 13; wrapMode: Text.WordWrap
+            maximumLineCount: 3; elide: Text.ElideRight
+        }
+        ListView {
+            id: results
+            objectName: "assistantResults"
+            Layout.fillWidth: true; Layout.fillHeight: true
+            visible: search.askMode
+            clip: true; spacing: 10
+            model: search.resultRows
+            header: Column {
+                width: results.width; spacing: 10
+                Text {
+                    width: parent.width; text: search.answer.message || ""; textFormat: Text.PlainText
+                    color: search.inkColor; font.pixelSize: 16; wrapMode: Text.WordWrap
+                }
+                Text {
+                    width: parent.width; text: search.answer.notice || ""; textFormat: Text.PlainText
+                    color: search.mutedColor; font.pixelSize: 12; wrapMode: Text.WordWrap
+                    bottomPadding: 10
+                }
+            }
+            delegate: Button {
+                id: resultButton
+                required property var modelData
+                required property int index
+                width: results.width
+                height: resultText.implicitHeight + 24
+                highlighted: search.controllerIndex === search.baseActionCount + index
+                onClicked: search.chooseRow(index)
+                contentItem: Text {
+                    id: resultText
+                    textFormat: Text.PlainText
+                    text: resultButton.modelData.kind === "game"
+                        ? resultButton.modelData.data.title + " · " + resultButton.modelData.data.platform + "\n"
+                          + resultButton.modelData.data.genre + " · " + resultButton.modelData.data.year + " · Rating " + resultButton.modelData.data.rating
+                          + (resultButton.modelData.data.local ? " · Installed" : "") + "\nOpen game details"
+                        : "Patch candidate: " + resultButton.modelData.data.title + "\n"
+                          + resultButton.modelData.data.provider + " · " + (resultButton.modelData.data.language || "Language unknown")
+                          + " · " + resultButton.modelData.data.compatibility + "\nOpen provider source"
+                    color: resultButton.highlighted ? "#101720" : search.inkColor
+                    font.pixelSize: 15; wrapMode: Text.WordWrap
+                }
+                background: Rectangle { radius: 10; color: resultButton.highlighted ? search.accentColor : "#243345"; border.color: "#667487" }
+                Accessible.name: resultText.text
+            }
+            ScrollBar.vertical: ScrollBar {}
         }
     }
 }

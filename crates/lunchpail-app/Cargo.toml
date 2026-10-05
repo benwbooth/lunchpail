@@ -67,6 +67,9 @@ libchdman-rs.workspace = true
 tempfile = "3.14"
 lunchpail-controller-probe = { path = "../lunchpail-controller-probe" }
 lunchpail-patching = { path = "../lunchpail-patching" }
+lunchpail-ai = { path = "../lunchpail-ai" }
+rmcp = { version = "=3.5.0", default-features = false, features = ["server", "transport-io"] }
+schemars = "1.2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

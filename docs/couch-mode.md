@@ -37,12 +37,15 @@ button opens the current query. Results update in the current shelf/platform;
 Enter or Escape returns to those results. Back once more clears the query before
 leaving Couch Mode. The Game Menu's **Search games · voice or keyboard** action
 opens the same panel with a controller. In the panel, the D-pad selects the mic,
-clear, or browse button, and the south face button activates it.
+clear, browse, or Ask AI button, and the south face button activates it.
 
-**F2** or the Mic button offers a one-time **191 MB English model download** from
-the model publisher on Hugging Face. This setup step does not open the microphone.
+Choose a speech model in **Settings → Local AI & voice**. Selecting it starts a
+revision-pinned, SHA-256 verified download from Hugging Face. Interrupted downloads
+resume when retried. **F2** or the Mic button can also download the currently
+selected model. This setup step does not open the microphone.
 After setup, activate **Speak** to capture from the system's default microphone.
-Local sherpa-onnx recognition updates the editable query while you speak. Capture
+Sherpa's English recognizer updates the editable query while you speak; Whisper
+returns the completed utterance after capture. Capture
 stops at a speech pause, after 15 seconds, when you press Stop, or when you leave
 the panel. Typing cancels voice input so late results cannot replace your edits.
 Audio is never saved or uploaded. A network connection is only needed for model
@@ -58,9 +61,74 @@ without changing the shared video mute preference or the music's paused state.
 The recognizer is [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), Apache-2.0,
 with the Apache-2.0 [English streaming Zipformer model](https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-21).
 Model files are revision-pinned and SHA-256 checked before use, and stored in the
-application data directory under `speech/zipformer-en-2023-06-21`. To choose another
+application data directory under `speech/zipformer-en-2023-06-21`. Whisper models
+are stored under `ai/models`. To choose another
 microphone, change your operating system's default input device before starting
 voice search.
+
+## Local assistant setup
+
+This feature is in the development build; older release packages do not include
+the bundled inference workers.
+
+1. Open **Settings → Local AI & voice**.
+2. Select an assistant model. **Qwen3 4B (2.50 GB)** is the balanced starting point;
+   the 0.8B model saves memory but can be less reliable with tools. The 8B model
+   needs more memory and can be slow on a CPU.
+3. Select speech recognition: **Whisper Base English (148 MB)** is a balanced
+   CPU/GPU option, Tiny English uses 78 MB, and Small Multilingual uses 488 MB.
+   Existing **Sherpa streaming English (191 MB)** remains a CPU-only option.
+4. Leave compute on **Automatic**, or require CPU/GPU explicitly. Selecting models
+   downloads them automatically; no Ollama, Python, account, or separate server
+   needs to be installed.
+5. Open Couch Mode search and choose **Ask AI**. Type a question and press Enter,
+   or press **Speak / F2**. Voice questions are submitted only when recognition
+   finishes, not on every partial transcript.
+
+For example: “Find me a good SNES JRPG with an English translation patch.”
+Follow up with “Only ones I have installed.” **New question** clears the prior
+conversation. The assistant does not change the normal shelf filter.
+
+Windows/Linux GPU workers use Vulkan for compatible AMD, NVIDIA and Intel
+drivers; Apple Silicon uses Metal. **Check hardware** reports detected GPUs;
+an answer reports the device actually used. Auto retries a CPU-only worker if
+the GPU fails; GPU-required mode reports an error. RAM/VRAM requirements exceed
+the model's file size. The CPU fallback does not require a GPU driver.
+
+The Rust application embeds integration with llama.cpp and whisper.cpp through
+isolated, bundled helper executables. They are part of the package, not services
+the user must start. Build them during development with
+`python3 packaging/build-inference.py`; `dev.sh` does this automatically. GPU builds
+need the platform's Vulkan SDK/shader compiler or Xcode tools, while end users
+only need a compatible graphics driver. Keep all four worker executables beside
+the packaged app. The developer SDK is never installed on users' machines.
+
+Prompts and audio stay on the device. Patch lookup contacts the selected provider
+using the catalog game's title/platform, not the audio or entire conversation.
+Recommendations are read-only: no game download, launch, patch download, or
+patch application tool exists. Game cards must use IDs retrieved from the catalog;
+patch cards must come from a provider result. Adult and non-retail games are
+excluded from this first assistant version. The model selects recommendations;
+the app constructs factual summaries from tool evidence instead of displaying
+unverified generated availability claims. Selections can still be mistaken.
+Patch matches are candidates; translation completeness and
+compatibility with your ROM remain unknown until checked. See [patches](patches.md)
+for provider coverage, API keys and the separate manual review/apply workflow.
+
+This assistant/speech setup is independent of the older **live in-game OCR
+translation** feature, whose Ollama/GPU requirements are described in
+[translation](translation.md).
+
+### Optional MCP access
+
+Other MCP clients can start the installed executable with `--mcp-stdio` and,
+optionally, `--database /absolute/path/to/lunchpail.db`. It serves the same
+`search_games`, `game_details`, and `translation_patches` tools using the official
+Rust MCP SDK. It does not open a network port, start the GUI, download models,
+or run an LLM. A client already supplying its own LLM does not need a Lunchpail
+assistant model. Stdio startup is opt-in; the built-in assistant needs no MCP
+configuration. Only connect a client you trust with your game catalog and
+installed-status metadata.
 
 ## Game details and tools
 

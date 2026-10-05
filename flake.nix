@@ -103,13 +103,17 @@
             ninja
             p7zip
             pkg-config
+            rustPlatform.bindgenHook
+            python3
             qt6.wrapQtAppsHook
-          ];
+          ] ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.shaderc ];
           buildInputs = qtModules ++ [ onnxruntimeForHost ]
             ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
             dwarfs
             pkgs.systemd
             pkgs.alsa-lib
+            pkgs.vulkan-headers
+            pkgs.vulkan-loader
           ];
           SHERPA_ONNX_LIB_DIR = "${sherpaLibraries}/lib";
           dontUseCmakeConfigure = true;
@@ -136,6 +140,9 @@
           '';
           cargoBuildFlags = [ "--package" "lunchpail-app" "--package" "lunchpail-controller-probe" "--bin" "lunchpail" "--bin" "lunchpail-controller-probe" ]
             ++ pkgs.lib.optionals (system == "x86_64-linux") [ "--features" "rocm-ocr" ];
+          postBuild = ''
+            python3 packaging/build-inference.py --offline --target ${pkgs.stdenv.hostPlatform.rust.rustcTarget}
+          '';
           doCheck = true;
           checkPhase = ''
             runHook preCheck
@@ -169,7 +176,9 @@
             runHook postCheck
           '';
           postInstall = ''
+            install -m0755 target/inference/lunchpail-*-cpu target/inference/lunchpail-*-gpu "$out/bin/"
             mkdir -p "$out/share/lunchpail"
+            cp -R packaging/inference-licenses "$out/share/lunchpail/"
             7z x -y "artifacts/lunchpail.db.7z" "-o$out/share/lunchpail" >/dev/null
             install -Dm644 assets/lunchpail.svg \
               "$out/share/icons/hicolor/scalable/apps/io.github.benwbooth.Lunchpail.svg"
@@ -241,6 +250,7 @@
         };
 
         devShells.default = pkgs.mkShell {
+          nativeBuildInputs = [ pkgs.rustPlatform.bindgenHook ];
           LUNCHPAIL_SDL3_LIBRARY = "${pkgs.lib.getLib pkgs.sdl3}/lib/${if pkgs.stdenv.hostPlatform.isDarwin then "libSDL3.dylib" else "libSDL3.so.0"}";
           packages = (with pkgs; [
             cargo
@@ -261,6 +271,9 @@
             pkgs.mold
             pkgs.systemd
             pkgs.alsa-lib
+            pkgs.shaderc
+            pkgs.vulkan-headers
+            pkgs.vulkan-loader
           ];
 
           SHERPA_ONNX_LIB_DIR = "${sherpaLibraries}/lib";
