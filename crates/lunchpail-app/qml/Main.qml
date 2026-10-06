@@ -11903,6 +11903,10 @@ ApplicationWindow {
         active: !root.couchModeActive
         windowActive: root.active
         gameRunning: gameDetails.game_running
+        previewAudioRequested: !root.videoAudioMuted
+            && ((root.hoverPreviewPlaying && hoverPreviewPlayer.hasAudio)
+                || (gameVideoPlayer.playbackState === MediaPlayer.PlayingState
+                    && gameVideoPlayer.hasAudio))
         inputBlocked: {
             for (let i = 0; i < Overlay.overlay.children.length; ++i) {
                 const item = Overlay.overlay.children[i]

@@ -17,6 +17,7 @@ QtObject {
     property alias position: mediaPlayer.position
     readonly property alias duration: mediaPlayer.duration
     readonly property alias hasVideo: mediaPlayer.hasVideo
+    readonly property alias hasAudio: mediaPlayer.hasAudio
     readonly property alias mediaStatus: mediaPlayer.mediaStatus
     readonly property alias playbackState: mediaPlayer.playbackState
     readonly property alias seekable: mediaPlayer.seekable

@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls as Controls
+import QtMultimedia
 import QtTest
 import "../../qml" as Lunchpail
 
@@ -9,6 +10,26 @@ TestCase {
     when: windowShown
     visible: true; width: 1000; height: 740
     readonly property var overlay: Controls.Overlay.overlay
+    property var audioPane: null
+    property bool previewMuted: true
+    VideoOutput { id: previewOutput; width: 320; height: 180 }
+    Lunchpail.RetryingMediaPlayer {
+        id: preview
+        activeAudioTrack: -1; audioOutput: null; videoOutput: previewOutput
+        loops: MediaPlayer.Infinite
+    }
+    Lunchpail.PreviewAudioCompanion {
+        id: previewSound
+        videoSource: preview.source; videoPosition: preview.position
+        previewPlaying: preview.playbackState === MediaPlayer.PlayingState
+        unmuted: !test.previewMuted && !!test.audioPane && !test.audioPane.audioSuppressedForVoice
+        volume: 0
+    }
+    function cleanup() {
+        previewMuted = true
+        audioPane = null
+        preview.stop(); preview.source = ""
+    }
     Component {
         id: popupComponent
         Controls.Dialog {
@@ -94,6 +115,76 @@ TestCase {
         p.speech.search_requested("play the selected game")
         compare(p.assistant.question, "play the selected game")
         compare(p.speech.listening, false); compare(p.assistant.busy, true)
+    }
+    function test_preview_unmute_pauses_open_mic_without_changing_preference() {
+        const p = pane(); p.ai.hands_free = true
+        compare(p.speech.listening, true); compare(p.audioSuppressedForVoice, true)
+        p.previewAudioRequested = true
+        compare(p.handsFreeAllowed, false); compare(p.speech.listening, false)
+        compare(p.audioSuppressedForVoice, false); compare(p.ai.hands_free, true)
+        // Focus changes used to make the supposedly unmuted video intermittent.
+        p.windowActive = false; p.windowActive = true
+        compare(p.speech.listening, false); compare(p.audioSuppressedForVoice, false)
+        p.previewAudioRequested = false
+        compare(p.handsFreeAllowed, true); compare(p.speech.listening, true)
+        compare(p.audioSuppressedForVoice, true); compare(p.ai.hands_free, true)
+    }
+    function test_push_to_talk_and_replies_still_duck_an_audible_preview() {
+        const p = pane(); p.ai.hands_free = true; p.previewAudioRequested = true
+        p.open(""); p.searchPanel.microphone()
+        compare(p.speech.listening, true); compare(p.audioSuppressedForVoice, true)
+        p.searchPanel.cancelVoice()
+        compare(p.speech.listening, false); compare(p.audioSuppressedForVoice, false)
+        p.speechOutput.speaking = true; compare(p.audioSuppressedForVoice, true)
+        p.speechOutput.speaking = false; compare(p.audioSuppressedForVoice, false)
+    }
+    function test_wake_word_listener_remains_available_during_preview() {
+        const p = pane()
+        p.assistant.config_json = JSON.stringify({captions:true,wake_word:true})
+        p.ai.hands_free = true; p.previewAudioRequested = true
+        compare(p.handsFreeAllowed, true); compare(p.speech.listening, true)
+        compare(p.audioSuppressedForVoice, false)
+        p.speech.awake = true; compare(p.audioSuppressedForVoice, true)
+        p.speech.awake = false; compare(p.audioSuppressedForVoice, false)
+        // Changing to open conversation while audio plays must stop capture.
+        p.assistant.config_json = JSON.stringify({captions:true,wake_word:false})
+        compare(p.speech.listening, false); compare(p.audioSuppressedForVoice, false)
+    }
+    function test_real_video_unmute_with_open_mic_survives_focus_and_repeated_toggles() {
+        const p = pane(); audioPane = p
+        p.previewAudioRequested = Qt.binding(function() {
+            return !test.previewMuted && preview.hasAudio
+                && preview.playbackState === MediaPlayer.PlayingState
+        })
+        p.ai.hands_free = true
+        preview.source = Qt.resolvedUrl("../fixtures/video-audio-sync.mp4")
+        preview.play()
+        tryVerify(function() { return preview.position > 500 && preview.hasAudio }, 5000)
+        for (let i = 0; i < 3; ++i) {
+            const before = preview.position
+            previewMuted = false
+            tryCompare(previewSound.player, "playbackState", MediaPlayer.PlayingState, 5000)
+            verify(previewSound.player.hasAudio)
+            compare(p.speech.listening, false)
+            p.windowActive = false; p.windowActive = true
+            wait(150)
+            compare(previewSound.player.playbackState, MediaPlayer.PlayingState)
+            verify(preview.position >= before, "Unmute restarted the video")
+            previewMuted = true
+            compare(previewSound.audioSource.toString(), "")
+            compare(p.speech.listening, true)
+        }
+        previewMuted = false
+        tryCompare(previewSound.player, "playbackState", MediaPlayer.PlayingState, 5000)
+        preview.pause()
+        compare(p.speech.listening, true)
+        compare(previewSound.audioSource.toString(), "")
+        preview.play()
+        tryCompare(previewSound.player, "playbackState", MediaPlayer.PlayingState, 5000)
+        compare(p.speech.listening, false)
+        preview.source = ""
+        compare(p.speech.listening, true)
+        compare(p.ai.hands_free, true)
     }
     function test_visible_mic_off_control_stops_listening_without_settings() {
         const p = pane(); p.open(""); p.ai.hands_free = true

@@ -15,15 +15,20 @@ Item {
     property bool windowActive: true
     property bool gameRunning: false
     property bool inputBlocked: false
+    // This is the user's requested video sound, independent of voice ducking.
+    // Deriving it from the actual audio decoder would create a mic/audio loop.
+    property bool previewAudioRequested: false
     property bool opened: false
     property bool coolingDown: false
     readonly property var config: JSON.parse(assistant.config_json || "{}")
     readonly property var searchPanel: conversation
+    readonly property bool handsFreePausedForPreview: previewAudioRequested && !config.wake_word
     readonly property bool handsFreeAllowed: active && windowActive && !gameRunning && !inputBlocked
         && ai.hands_free && !assistant.busy && !speechOutput.speaking && !coolingDown
-        && !conversation.microphoneBusy
+        && !conversation.microphoneBusy && !handsFreePausedForPreview
     readonly property bool audioSuppressedForVoice: active
-        && (handsFree.capturingCommand || conversation.microphoneBusy || speechOutput.speaking)
+        && ((handsFree.capturingCommand && !handsFreePausedForPreview)
+            || conversation.microphoneBusy || speechOutput.speaking)
     signal settingsRequested()
     signal gameChosen(var game)
     function open(text) {
@@ -76,7 +81,9 @@ Item {
             spacing: 6
             Text {
                 Layout.fillWidth: true
-                text: desktop.speech.listening ? "● Mic on" : "NORMAL MODE"
+                text: desktop.speech.listening ? "● Mic on"
+                      : desktop.ai.hands_free && desktop.handsFreePausedForPreview
+                        ? "Mic paused · preview audio" : "NORMAL MODE"
                 color: desktop.speech.listening ? "#72e1a0" : "#acb6c6"
                 font.pixelSize: 12; font.bold: true
             }
