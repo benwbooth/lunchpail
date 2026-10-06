@@ -6765,7 +6765,7 @@ ApplicationWindow {
     }
 
     Timer {
-        interval: 20000
+        interval: root.couchDownloadUiProbe ? 90000 : 20000
         running: root.couchModeUiProbe && !root.couchMediaUiProbe && !root.couchSearchUiProbe && !root.couchLaunchUiProbe && !root.couchSmoothnessUiProbe && !root.couchPolishUiProbe
                  && !root.couchModeProbeCaptured
         repeat: false
@@ -6780,7 +6780,11 @@ ApplicationWindow {
                           + root.selectedCollectionId + " games="
                           + library.filtered_count + " game="
                           + couchModeView.selectedGameId + " collection-wheel="
-                          + couchModeView.collectionWheelOpen)
+                          + couchModeView.collectionWheelOpen + " details-loading="
+                          + gameDetails.loading + " sources-loading="
+                          + gameDetails.torrent_loading + " candidates="
+                          + gameDetails.download_candidate_count() + " source-status="
+                          + gameDetails.message)
             Qt.exit(2)
         }
     }
