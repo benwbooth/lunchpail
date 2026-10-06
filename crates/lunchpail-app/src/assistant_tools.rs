@@ -437,7 +437,7 @@ mod tests {
             crate::catalog::Game {id:"arms".into(),title:"Brothers in Arms".into(),..Default::default()},
         ],..Default::default()})};
         for (query, expected) in [("SUPER MARIO BROTHERS", "mario"), ("Brothers in Arms", "arms"), ("Bros. in Arms", "arms")] {
-            let result = context.search(&SearchGames {query:query.into(),..Default::default()}).unwrap();
+            let result = context.search(&SearchGames {query:query.into(),limit:12,..Default::default()}).unwrap();
             assert_eq!(result["total_matches"], 1);
             assert_eq!(result["games"][0]["id"], expected);
         }
