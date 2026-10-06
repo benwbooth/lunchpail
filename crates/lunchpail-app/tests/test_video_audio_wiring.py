@@ -38,7 +38,19 @@ class VideoAudioWiring(unittest.TestCase):
         self.assertIn("videoPosition: gameVideoPlayer.position", sound)
         self.assertIn("previewPlaying: gameVideoPlayer.playbackState === MediaPlayer.PlayingState", sound)
         self.assertIn("unmuted: !root.videoAudioMuted", sound)
-        self.assertIn("volume: 0.45", sound)
+        self.assertIn("volume: root.hoverPreviewExclusiveProbe ? 0 : 0.45", sound)
+
+    def test_video_decoders_and_sound_share_exclusive_playback_ownership(self):
+        for player_id, sound_id, permission in (
+            ("gameVideoPlayer", "gameVideoSound", "detailsAllowed"),
+            ("hoverPreviewPlayer", "hoverPreviewSound", "gridAllowed"),
+        ):
+            player = self.qml.split(f"id: {player_id}", 1)[1].split("onSourceChanged:", 1)[0]
+            self.assertIn(f"playbackAllowed: previewPlayback.{permission}", player)
+            sound = self.qml.split(f"id: {sound_id}", 1)[1].split("RetryingMediaPlayer {", 1)[0]
+            self.assertIn(f"&& previewPlayback.{permission}", sound)
+        self.assertIn("fullscreenOpen: mediaFullscreen.opened", self.qml)
+        self.assertIn("suspended: gameDetails.game_running", self.qml)
 
 
 if __name__ == "__main__":

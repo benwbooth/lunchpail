@@ -22,16 +22,32 @@ QtObject {
     readonly property alias playbackState: mediaPlayer.playbackState
     readonly property alias seekable: mediaPlayer.seekable
     property bool autoPlay: false
+    property bool playbackAllowed: true
+    property bool playbackRequested: false
+    property bool explicitlyPaused: false
 
     signal errorOccurred(int error, string errorString)
     signal autoPlayRequested(url source)
 
     onAutoPlayChanged: Qt.callLater(ensureAutoPlay)
     onVideoOutputChanged: Qt.callLater(ensureAutoPlay)
+    onPlaybackAllowedChanged: {
+        if (!playbackAllowed) {
+            playbackRequested = playbackRequested
+                                || mediaPlayer.playbackState === MediaPlayer.PlayingState
+            // This is a temporary suspension, not an explicit user pause.
+            mediaPlayer.pause()
+        } else if (playbackRequested && !explicitlyPaused) {
+            mediaPlayer.play()
+        } else {
+            Qt.callLater(ensureAutoPlay)
+        }
+    }
 
     function ensureAutoPlay() {
         const activeSource = retryControllerObject.activeSource
-        if (!autoPlay || activeSource.toString().length === 0
+        if (!playbackAllowed || explicitlyPaused || !autoPlay
+                || activeSource.toString().length === 0
                 || !mediaPlayer.videoOutput
                 || mediaPlayer.playbackState === MediaPlayer.PlayingState)
             return
@@ -40,18 +56,25 @@ QtObject {
         // playback intent in QMediaPlayer. Waiting only for LoadedMedia loses
         // that intent when a cached source or VideoOutput is rebound without a
         // fresh media-status transition.
-        mediaPlayer.play()
+        play()
     }
 
     function play() {
-        player.play()
+        explicitlyPaused = false
+        playbackRequested = true
+        if (playbackAllowed)
+            player.play()
     }
 
     function pause() {
+        explicitlyPaused = true
+        playbackRequested = false
         player.pause()
     }
 
     function stop() {
+        explicitlyPaused = true
+        playbackRequested = false
         player.stop()
     }
 
@@ -61,6 +84,11 @@ QtObject {
 
     property Connections retryConnections: Connections {
         target: retryControllerObject
+        function onDesiredSourceChanged() {
+            root.playbackRequested = false
+            root.explicitlyPaused = false
+            Qt.callLater(root.ensureAutoPlay)
+        }
         function onActiveSourceChanged() {
             Qt.callLater(root.ensureAutoPlay)
         }
@@ -87,8 +115,15 @@ QtObject {
             }
         }
         onPlaybackStateChanged: {
-            if (playbackState === MediaPlayer.PlayingState)
+            if (playbackState === MediaPlayer.PlayingState) {
+                // A backend can finish an earlier asynchronous play request
+                // after ownership changed. Never let it bypass the gate.
+                if (!root.playbackAllowed) {
+                    pause()
+                    return
+                }
                 retryControllerObject.markReady()
+            }
         }
         onErrorOccurred: function(error, errorString) {
             if (!retryControllerObject.handleFailure(errorString))

@@ -215,6 +215,12 @@ ApplicationWindow {
     property int hoverPreviewProbeStage: 0
     property int hoverPreviewPlaybackCycles: 0
     property bool hoverPreviewIntentGateVerified: false
+    readonly property string hoverPreviewProbeGameId: root.argumentValue("--media-probe-game")
+                                                     || "9697a5eb-e0b4-4f24-8d43-672701414ee7"
+    readonly property bool hoverPreviewExclusiveProbe: root.hoverPreviewUiProbe
+                                                       && root.argumentValue("--media-probe-game").length > 0
+    property bool hoverPreviewDetailsStarted: false
+    property int hoverPreviewDetailsPausedPosition: 0
     readonly property bool hoverPreviewArtworkProbe: root.argumentValue(
                                                            "--preview-artwork-fixture").length > 0
     property var hoverPreviewArtworkTile: null
@@ -1874,7 +1880,7 @@ ApplicationWindow {
         if (probeZoom >= 50 && probeZoom <= 200)
             library.set_presentation_preferences(library.artwork_type, probeZoom)
         library.choose_view_mode("grid")
-        searchField.text = "Super Mario Bros."
+        searchField.text = library.canonical_title_for_game(root.hoverPreviewProbeGameId)
         library.apply_filter(searchField.text,
                              "Nintendo Entertainment System", "")
         hoverPreviewArmProbeTimer.restart()
@@ -2664,13 +2670,25 @@ ApplicationWindow {
         function onController_profile_editor_openChanged() { root.controllerLearnActive = false }
     }
 
+    PreviewPlaybackPolicy {
+        id: previewPlayback
+        desktopActive: !root.couchModeActive
+        detailsVisible: gameDetails.panel_open && detailVideoOutput.visible
+        gridRequested: !!root.hoverPreviewTile
+                       && root.hoverPreviewTile.previewRequested
+                       && root.hoverPreviewTile.previewResolvedVideoUrl.toString().length > 0
+        fullscreenOpen: mediaFullscreen.opened
+        suspended: gameDetails.game_running
+    }
+
     PreviewAudioCompanion {
         id: gameVideoSound
         videoSource: gameVideoPlayer.source
         videoPosition: gameVideoPlayer.position
         previewPlaying: gameVideoPlayer.playbackState === MediaPlayer.PlayingState
         unmuted: !root.videoAudioMuted && !desktopAssistant.audioSuppressedForVoice
-        volume: 0.45
+                 && previewPlayback.detailsAllowed
+        volume: root.hoverPreviewExclusiveProbe ? 0 : 0.45
         onPlaybackError: function(message) {
             root.mediaPlaybackMessage = "Video audio playback failed: " + message
         }
@@ -2678,6 +2696,7 @@ ApplicationWindow {
 
     RetryingMediaPlayer {
         id: gameVideoPlayer
+        playbackAllowed: previewPlayback.detailsAllowed
         property bool resumeApplied: false
         source: mediaFullscreen.opened && root.couchFullscreenVideoUrl.toString().length > 0
                 ? root.couchFullscreenVideoUrl
@@ -2970,10 +2989,12 @@ ApplicationWindow {
 
     PreviewAudioCompanion {
         id: hoverPreviewSound
+        volume: root.hoverPreviewExclusiveProbe ? 0 : 0.34
         videoSource: hoverPreviewPlayer.source
         videoPosition: hoverPreviewPlayer.position
         previewPlaying: root.hoverPreviewPlaying
         unmuted: !root.videoAudioMuted && !desktopAssistant.audioSuppressedForVoice
+                 && previewPlayback.gridAllowed
         onPlaybackError: function(message) {
             console.warn("LUNCHPAIL_HOVER_PREVIEW_AUDIO_FAILED " + message)
         }
@@ -2981,6 +3002,7 @@ ApplicationWindow {
 
     RetryingMediaPlayer {
         id: hoverPreviewPlayer
+        playbackAllowed: previewPlayback.gridAllowed
         property bool positionApplied: false
         source: root.hoverPreviewTile
                 ? root.hoverPreviewTile.previewResolvedVideoUrl : ""
@@ -3037,8 +3059,7 @@ ApplicationWindow {
                 restart()
                 return
             }
-            const row = library.row_for_game(
-                "9697a5eb-e0b4-4f24-8d43-672701414ee7")
+            const row = library.row_for_game(root.hoverPreviewProbeGameId)
             const grid = gameViewLoader.item
             if (!grid || row < 0) {
                 restart()
@@ -3052,6 +3073,20 @@ ApplicationWindow {
                 if (!tile) {
                     hoverPreviewArmProbeTimer.restart()
                     return
+                }
+                if (root.hoverPreviewExclusiveProbe && !root.hoverPreviewDetailsStarted) {
+                    if (gameDetails.game_id !== tile.gameId) {
+                        root.openGame(tile.gameId, tile.gameDatabaseId, tile.gameTitle,
+                                      tile.gamePlatform, tile.gameLocal, tile.gameDownloadable)
+                        searchField.forceActiveFocus()
+                    }
+                    root.disarmGridPreview(null)
+                    if (gameVideoPlayer.playbackState !== MediaPlayer.PlayingState
+                            || gameVideoPlayer.position < 500) {
+                        hoverPreviewArmProbeTimer.restart()
+                        return
+                    }
+                    root.hoverPreviewDetailsStarted = true
                 }
                 if (root.hoverPreviewArtworkProbe
                         && (tile.previewArtworkStatus !== Image.Ready
@@ -3085,7 +3120,7 @@ ApplicationWindow {
             if (!root.hoverPreviewUiProbe || !root.hoverPreviewPlaying
                     || !root.hoverPreviewIntentGateVerified
                     || library.hover_preview_game_id
-                       !== "9697a5eb-e0b4-4f24-8d43-672701414ee7"
+                       !== root.hoverPreviewProbeGameId
                     || library.hover_preview_source.length === 0
                     || !tile
                     || !tile.previewActive
@@ -3119,6 +3154,25 @@ ApplicationWindow {
                 library.report_hover_preview_ui_failure(detail)
                 Qt.exit(2)
                 return
+            }
+            if (root.hoverPreviewExclusiveProbe) {
+                if (!root.hoverPreviewDetailsStarted
+                        || gameVideoPlayer.playbackState !== MediaPlayer.PausedState
+                        || gameVideoSound.audioSource.toString().length > 0
+                        || hoverPreviewSound.audioPlaybackState !== MediaPlayer.PlayingState) {
+                    console.error("LUNCHPAIL_EXCLUSIVE_PREVIEW_FAILED details="
+                                  + gameVideoPlayer.playbackState + " grid="
+                                  + hoverPreviewPlayer.playbackState + " detailsAudio="
+                                  + gameVideoSound.audioPlaybackState + " gridAudio="
+                                  + hoverPreviewSound.audioPlaybackState)
+                    Qt.exit(2)
+                    return
+                }
+                root.hoverPreviewDetailsPausedPosition = gameVideoPlayer.position
+                console.warn("LUNCHPAIL_EXCLUSIVE_PREVIEW_READY cycle="
+                             + root.hoverPreviewPlaybackCycles + " detailsPausedAt="
+                             + gameVideoPlayer.position + " gridPosition="
+                             + hoverPreviewPlayer.position)
             }
             const grid = gameViewLoader.item
             const margin = 8
@@ -3206,6 +3260,14 @@ ApplicationWindow {
                 const detail = "cached replay tile was destroyed before re-entry"
                 console.error("LUNCHPAIL_HOVER_PREVIEW_UI_FAILED " + detail)
                 library.report_hover_preview_ui_failure(detail)
+                Qt.exit(2)
+                return
+            }
+            if (root.hoverPreviewExclusiveProbe
+                    && (gameVideoPlayer.playbackState !== MediaPlayer.PlayingState
+                        || gameVideoPlayer.position < root.hoverPreviewDetailsPausedPosition
+                        || hoverPreviewSound.audioSource.toString().length > 0)) {
+                console.error("LUNCHPAIL_EXCLUSIVE_PREVIEW_FAILED details did not resume")
                 Qt.exit(2)
                 return
             }
