@@ -21,6 +21,7 @@ Item {
     property string backgroundId: ""
     property string browseQuery: ""
     property bool capturing: false
+    property bool finished: false
     property double started: 0
     property double routedMs: 0
     function fail(message) { console.error("LUNCHPAIL_LOCAL_COMMAND_FAILED " + message); Qt.exit(2) }
@@ -36,6 +37,7 @@ Item {
         assistant.clear(); phrase++
         if (phrase < phrases.length) { step = 1; return }
         if (couch) {
+            finished = true
             console.log("LUNCHPAIL_LOCAL_COMMAND_READY modes=normal,couch phrases=12 input=voice,typed inference=none microphone=off speech=off launches=blocked")
             Qt.quit(); return
         }
@@ -79,7 +81,7 @@ Item {
         }
     }
     Timer {
-        interval: 100; repeat: true; running: true
+        interval: 100; repeat: true; running: !probe.finished
         onTriggered: {
             if (probe.speech.listening || probe.voice.speaking) { probe.fail("Unexpected microphone or speech playback"); return }
             if (probe.capturing || !probe.library.ready || probe.library.loading || probe.library.filtering || probe.assistant.busy
@@ -150,5 +152,5 @@ Item {
             }
         }
     }
-    Timer { interval: 120000; running: true; onTriggered: probe.fail("Timed out at step " + probe.step) }
+    Timer { interval: 120000; running: !probe.finished; onTriggered: probe.fail("Timed out at step " + probe.step) }
 }
