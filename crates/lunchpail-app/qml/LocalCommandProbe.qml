@@ -15,7 +15,7 @@ Item {
     property bool couch: false
     property int phrase: 0
     property bool clarified: false
-    property var phrases: ["let's play some super mario brothers", "open up super mario brothers", "play Super Mario Bros. on NES"]
+    property var phrases: ["let's play some super mario brothers", "open up super mario brothers", "play Super Mario Bros. on NES", "SUPER MARIO BROTHERS"]
     property var calls: []
     property string launchId: ""
     property string backgroundId: ""
@@ -26,6 +26,27 @@ Item {
         calls = []; launchId = ""; started = Date.now(); routedMs = 0
         if (couch) view.acceptVoiceRequest(text)
         else desktop.acceptVoiceRequest(text)
+    }
+    function nextPhrase() {
+        assistant.clear(); phrase++
+        if (phrase < phrases.length) { step = 1; return }
+        if (couch) {
+            console.log("LUNCHPAIL_LOCAL_COMMAND_READY modes=normal,couch phrases=8 inference=none microphone=off speech=off launches=blocked")
+            Qt.quit(); return
+        }
+        desktop.close(); app.enterCouchMode()
+        couch = true; phrase = 0; step = 1
+    }
+    function verifyAllGames() {
+        const screen = app.assistantScreenContext()
+        if (screen.shelf || screen.platform || screen.collection_id) {
+            fail("Search did not leave the previous Favorites/platform scope"); return false
+        }
+        const games = JSON.parse(library.conversation_games_json())
+        if (!games.some(game => game.title === "Super Mario Bros." && game.platform === "Nintendo Entertainment System")) {
+            fail("All Games search did not include the NES Mario result"); return false
+        }
+        return true
     }
     Connections {
         target: probe.assistant
@@ -57,7 +78,7 @@ Item {
             } else if (probe.step === 1) {
                 if (probe.couch && !probe.view.inputEnabled) return
                 probe.clarified = false
-                probe.app.assistantBrowse("Faxanadu", "Nintendo Entertainment System", "all")
+                probe.app.assistantBrowse("Faxanadu", "Nintendo Entertainment System", "favorites")
                 probe.step = 2
             } else if (probe.step === 2) {
                 if (probe.couch) probe.view.focusGameById(probe.backgroundId)
@@ -71,15 +92,26 @@ Item {
             } else if (probe.step === 4) {
                 const result = JSON.parse(probe.assistant.result_json)
                 if (result.error || !result.message) { probe.fail("Command failed: " + result.message); return }
+                if (probe.phrase === 3) {
+                    if (probe.launchId || probe.calls.join(",") !== "get_context,browse_library" || !probe.verifyAllGames()) {
+                        probe.fail("Bare title did not search All Games directly"); return
+                    }
+                    const elapsed = Date.now() - probe.started
+                    if (elapsed > 5000) { probe.fail("Search took " + elapsed + " ms"); return }
+                    console.log("LUNCHPAIL_LOCAL_COMMAND_SEARCHED mode=" + (probe.couch ? "couch" : "normal")
+                        + " initial_scope=favorites phrase=" + probe.phrases[probe.phrase] + " all_games=true elapsed_ms=" + elapsed)
+                    probe.nextPhrase(); return
+                }
                 if (!probe.launchId) {
-                    if (probe.clarified || probe.calls.join(",") !== "get_context,resolve_game"
+                    if (probe.clarified || probe.calls.join(",") !== "get_context,resolve_game,browse_library"
                             || result.message.indexOf("More than one game matches:") !== 0) {
                         probe.fail("No grounded resolution: " + result.message); return
                     }
+                    if (!probe.verifyAllGames()) return
                     const elapsed = Date.now() - probe.started
                     if (elapsed > 5000) { probe.fail("Clarification took " + elapsed + " ms"); return }
                     console.log("LUNCHPAIL_LOCAL_COMMAND_CLARIFIED mode=" + (probe.couch ? "couch" : "normal")
-                        + " selected=Faxanadu phrase=" + probe.phrases[probe.phrase] + " elapsed_ms=" + elapsed)
+                        + " initial_selected=Faxanadu phrase=" + probe.phrases[probe.phrase] + " elapsed_ms=" + elapsed)
                     probe.clarified = true
                     probe.request("NES")
                     return
@@ -89,17 +121,9 @@ Item {
                 if (title !== "Super Mario Bros." || probe.launchId === probe.backgroundId) { probe.fail("Wrong game: " + title); return }
                 if (probe.routedMs > 5000) { probe.fail("Simple command took " + probe.routedMs + " ms"); return }
                 console.log("LUNCHPAIL_LOCAL_COMMAND_ROUTED mode=" + (probe.couch ? "couch" : "normal")
-                    + " selected=Faxanadu phrase=" + probe.phrases[probe.phrase] + " title=" + title
+                    + " initial_selected=Faxanadu phrase=" + probe.phrases[probe.phrase] + " title=" + title
                     + " id=" + probe.launchId + " clarified=" + probe.clarified + " elapsed_ms=" + probe.routedMs)
-                probe.assistant.clear()
-                probe.phrase++
-                if (probe.phrase < probe.phrases.length) { probe.step = 1; return }
-                if (probe.couch) {
-                    console.log("LUNCHPAIL_LOCAL_COMMAND_READY modes=normal,couch phrases=6 inference=none microphone=off speech=off launches=blocked")
-                    Qt.quit(); return
-                }
-                probe.desktop.close(); probe.app.enterCouchMode()
-                probe.couch = true; probe.phrase = 0; probe.step = 1
+                probe.nextPhrase()
             }
         }
     }

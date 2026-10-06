@@ -191,9 +191,141 @@ fn request_from_history(history: &[Message]) -> Option<PlayRequest> {
     Some(request)
 }
 
-pub(super) fn try_play(history: &[Message], runtime: &mut Runtime<'_>) -> Result<Option<String>> {
+fn search_request(text: &str) -> Option<String> {
+    let lower = text.trim().trim_matches(['"', '\'']).to_lowercase();
+    let mut query = lower.as_str();
+    for prefix in [
+        "search all games for ",
+        "search for ",
+        "look for ",
+        "look up ",
+        "show me ",
+        "find ",
+        "search ",
+    ] {
+        if let Some(rest) = query.strip_prefix(prefix) {
+            query = rest;
+            break;
+        }
+    }
+    let words: Vec<_> = query.split_whitespace().collect();
+    if query.is_empty() || query.len() > 160 || words.len() > 16 || query.contains('?') {
+        return None;
+    }
+    if words.iter().any(|word| {
+        [
+            "favorites",
+            "favourites",
+            "collection",
+            "collections",
+            "recent",
+            "owned",
+            "installed",
+            "recommend",
+            "recommendations",
+            "best",
+        ]
+        .contains(word)
+    }) {
+        return None; // Preserve an explicitly requested scope or a recommendation question.
+    }
+    if [
+        "i",
+        "i'm",
+        "im",
+        "what",
+        "which",
+        "who",
+        "how",
+        "why",
+        "when",
+        "where",
+        "can",
+        "could",
+        "would",
+        "should",
+        "is",
+        "are",
+        "do",
+        "does",
+        "did",
+        "please",
+        "lets",
+        "let's",
+        "let",
+        "play",
+        "open",
+        "launch",
+        "start",
+        "stop",
+        "cancel",
+        "never",
+        "don't",
+        "dont",
+        "no",
+        "yes",
+        "thanks",
+        "thank",
+        "hello",
+        "hi",
+        "hey",
+        "turn",
+        "enable",
+        "disable",
+        "mute",
+        "unmute",
+        "pause",
+        "resume",
+        "show",
+        "go",
+        "back",
+        "switch",
+        "add",
+        "remove",
+        "delete",
+        "favorite",
+        "unfavorite",
+        "set",
+        "help",
+    ]
+    .contains(&words[0])
+    {
+        return None;
+    }
+    Some(query.trim().to_owned())
+}
+
+fn browse_all(query: &str, runtime: &mut Runtime<'_>) -> Result<String> {
+    let result = runtime.invoke(
+        "browse_library",
+        json!({"query":query,"platform":"","shelf":"all","collection_id":""}),
+    );
+    if let Some(error) = result["error"].as_str() {
+        return Ok(error.into());
+    }
+    let count = result["total_results"]
+        .as_u64()
+        .ok_or_else(|| anyhow::anyhow!("The library search did not return its result count"))?;
+    Ok(if count == 0 {
+        format!("No matches for “{query}” in All Games.")
+    } else {
+        format!("Showing {count} matching games in All Games.")
+    })
+}
+
+pub(super) fn try_command(
+    history: &[Message],
+    runtime: &mut Runtime<'_>,
+) -> Result<Option<String>> {
     let Some(request) = request_from_history(history) else {
-        return Ok(None);
+        let Some(query) = history
+            .last()
+            .and_then(|message| search_request(&message.content))
+        else {
+            return Ok(None);
+        };
+        runtime.invoke("get_context", json!({}));
+        return browse_all(&query, runtime).map(Some);
     };
     runtime.status("Finding the requested game…");
     let context = runtime.invoke("get_context", json!({}));
@@ -229,17 +361,13 @@ pub(super) fn try_play(history: &[Message], runtime: &mut Runtime<'_>) -> Result
     let games = matches["games"].as_array();
     let total = matches["total_matches"].as_u64().unwrap_or(0);
     if total == 0 {
+        let searched = browse_all(&request.title, runtime)?;
         return Ok(Some(format!(
-            "I couldn't find an exact match for “{}”{}. Please give the full title or choose it in the library; I haven't launched anything.",
-            request.title,
-            if request.platform.is_empty() {
-                String::new()
-            } else {
-                format!(" on {}", request.platform)
-            }
+            "I couldn't resolve an exact game to launch. {searched} I haven't launched anything."
         )));
     }
     if total != 1 {
+        let searched = browse_all(&request.title, runtime)?;
         let choices = games
             .into_iter()
             .flatten()
@@ -248,7 +376,7 @@ pub(super) fn try_play(history: &[Message], runtime: &mut Runtime<'_>) -> Result
             .collect::<Vec<_>>()
             .join(", ");
         return Ok(Some(format!(
-            "{AMBIGUOUS}{choices}. Which platform? I haven't launched anything."
+            "{AMBIGUOUS}{choices}. {searched} Which platform? I haven't launched anything."
         )));
     }
     let game = games
@@ -358,6 +486,14 @@ mod tests {
     }
 
     fn run(matches: Value, cancelled: bool) -> (Result<String>, Vec<(String, Value)>) {
+        run_query(matches, cancelled, "let's play some super mario brothers")
+    }
+
+    fn run_query(
+        matches: Value,
+        cancelled: bool,
+        question: &str,
+    ) -> (Result<String>, Vec<(String, Value)>) {
         let (tx, rx) = mpsc::channel();
         let ui = std::thread::spawn(move || {
             let mut calls = Vec::new();
@@ -371,9 +507,12 @@ mod tests {
                 {
                     let result = match name.as_str() {
                         "get_context" => {
-                            json!({"selected_game":{"id":"faxanadu","title":"Faxanadu"},"game_running":false})
+                            json!({"selected_game":{"id":"faxanadu","title":"Faxanadu"},"game_running":false,"screen":{"shelf":"favorites"}})
                         }
                         "resolve_game" => matches.clone(),
+                        "browse_library" => {
+                            json!({"total_results":61,"games":[{"id":"mario","title":"Super Mario Bros."}],"screen":{"shelf":""}})
+                        }
                         "play_game" => json!({"status":"setup_required"}),
                         _ => panic!("Unexpected tool {name}"),
                     };
@@ -389,7 +528,7 @@ mod tests {
             &Settings::default(),
             &[Message {
                 role: "user".into(),
-                content: "let's play some super mario brothers".into(),
+                content: question.into(),
             }],
             &mut runtime,
         );
@@ -398,6 +537,35 @@ mod tests {
         assert!(runtime.catalog.is_none());
         drop(tx);
         (result, ui.join().unwrap())
+    }
+
+    #[test]
+    fn bare_and_search_titles_automatically_leave_favorites_for_all_games() {
+        for question in [
+            "SUPER MARIO BROTHERS",
+            "find Super Mario Brothers",
+            "search all games for Super Mario Brothers",
+        ] {
+            let (reply, calls) = run_query(json!({}), false, question);
+            assert_eq!(reply.unwrap(), "Showing 61 matching games in All Games.");
+            assert_eq!(
+                calls.iter().map(|c| c.0.as_str()).collect::<Vec<_>>(),
+                ["get_context", "browse_library"]
+            );
+            assert_eq!(
+                calls[1].1,
+                json!({"query":"super mario brothers","platform":"","shelf":"all","collection_id":""})
+            );
+        }
+        for question in [
+            "what is Super Mario Brothers?",
+            "show settings",
+            "pause",
+            "find Mario in favorites",
+            "recommend a good game",
+        ] {
+            assert!(search_request(question).is_none(), "{question}");
+        }
     }
 
     #[test]

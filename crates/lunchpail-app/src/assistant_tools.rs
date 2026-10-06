@@ -205,7 +205,7 @@ impl ToolContext {
         let words: Vec<_> = args
             .query
             .split_whitespace()
-            .map(key)
+            .map(spoken_title_key)
             .filter(|s| !s.is_empty())
             .collect();
         let mut cards: Vec<_> = self
@@ -218,7 +218,7 @@ impl ToolContext {
                     && !game.non_retail
                     && (!args.owned_only || game.local)
                     && platform_matches(&game.platform, &args.platform)
-                    && words.iter().all(|word| key(&game.title).contains(word))
+                    && words.iter().all(|word| spoken_title_key(&game.title).contains(word))
             })
             .map(|(i, _)| self.card(i))
             .filter(|card| genre_matches(&card.genre, &args.genre))
@@ -429,5 +429,17 @@ mod tests {
         let many = resolve_game(&catalog, "Super Mario Brothers", "");
         assert_eq!(many["total_matches"], 27);
         assert_eq!(many["games"].as_array().unwrap().len(), 20);
+    }
+    #[test]
+    fn read_only_search_matches_spoken_and_literal_brothers() {
+        let context = ToolContext {catalog: Arc::new(Catalog {games: vec![
+            crate::catalog::Game {id:"mario".into(),title:"Super Mario Bros.".into(),..Default::default()},
+            crate::catalog::Game {id:"arms".into(),title:"Brothers in Arms".into(),..Default::default()},
+        ],..Default::default()})};
+        for (query, expected) in [("SUPER MARIO BROTHERS", "mario"), ("Brothers in Arms", "arms"), ("Bros. in Arms", "arms")] {
+            let result = context.search(&SearchGames {query:query.into(),..Default::default()}).unwrap();
+            assert_eq!(result["total_matches"], 1);
+            assert_eq!(result["games"][0]["id"], expected);
+        }
     }
 }
