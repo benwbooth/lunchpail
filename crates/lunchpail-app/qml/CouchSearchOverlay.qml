@@ -9,6 +9,8 @@ FocusScope {
     property var assistant: null
     property var speechOutput: null
     property bool askMode: false
+    property bool compact: false
+    property bool conversationOnly: false
     property string query: ""
     property int resultCount: 0
     property color panelColor: "#172230"
@@ -27,7 +29,7 @@ FocusScope {
     readonly property var conversation: assistant && assistant.history_json ? JSON.parse(assistant.history_json) : []
     readonly property var resultRows: (answer.games || []).map(g => ({kind: "game", data: g}))
         .concat((answer.patches || []).map(p => ({kind: "patch", data: p})))
-    readonly property int baseActionCount: assistant ? 4 : 3
+    readonly property int baseActionCount: assistant && !conversationOnly ? 4 : 3
     readonly property int actionCount: baseActionCount + (askMode ? resultRows.length : 0)
     readonly property bool microphoneBusy: acceptingVoice && speech.busy
     readonly property bool inputFocused: field.activeFocus
@@ -77,6 +79,7 @@ FocusScope {
         field.forceActiveFocus()
     }
     function toggleMode() {
+        if (conversationOnly) return
         cancelVoice()
         if (assistant && assistant.busy) assistant.cancel()
         askMode = !askMode
@@ -155,25 +158,25 @@ FocusScope {
     Timer { interval: 50; repeat: true; running: search.speech.busy; onTriggered: search.speech.poll() }
     Rectangle {
         anchors.fill: parent
-        color: search.panelColor
+        color: search.compact ? "transparent" : search.panelColor
         radius: 22
-        border.width: 2
+        border.width: search.compact ? 0 : 2
         border.color: search.accentColor
     }
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 26
-        spacing: 14
+        anchors.margins: search.compact ? 16 : 26
+        spacing: search.compact ? 9 : 14
         Text {
             text: search.askMode ? "TALK TO LUNCHPAIL" : "SEARCH GAMES  ·  " + search.resultCount + " RESULTS"
-            color: search.inkColor; font.pixelSize: 20; font.bold: true
+            color: search.inkColor; font.pixelSize: search.compact ? 14 : 20; font.bold: true
         }
         TextField {
             id: field
             objectName: "couchSearchField"
             Layout.fillWidth: true
-            Layout.preferredHeight: 62
-            font.pixelSize: 28
+            Layout.preferredHeight: search.compact ? 44 : 62
+            font.pixelSize: search.compact ? 16 : 28
             color: search.inkColor
             placeholderText: search.askMode ? "Search for Super Mario Bros… or play the game" : "Type or speak a game title"
             placeholderTextColor: search.mutedColor
@@ -185,23 +188,24 @@ FocusScope {
                 if (event.key === Qt.Key_F2) { search.microphone(); event.accepted = true }
             }
             background: Rectangle { color: "#090f19"; radius: 10; border.color: search.accentColor }
-            Accessible.name: search.askMode ? "Ask Lunchpail a game question" : "Search games in Couch Mode"
+            Accessible.name: search.askMode ? "Ask Lunchpail a game question" : "Search games"
         }
         RowLayout {
             Layout.fillWidth: true
-            spacing: 12
+            spacing: search.compact ? 6 : 12
             Repeater {
                 model: [search.speech.hands_free ? "Speak · F2" : search.speech.busy ? (search.acceptingVoice ? (search.speech.listening ? "Stop microphone" : "Cancel transcription") : "Cancel download")
-                        : search.speech.ready ? "Speak · F2" : "Download speech model", search.askMode ? "New conversation" : "Clear search",
+                        : search.speech.ready ? "Speak · F2" : (search.compact ? "Set up voice" : "Download speech model"), search.askMode ? (search.compact ? "New chat" : "New conversation") : "Clear search",
                         search.askMode ? (!search.assistant || !search.assistant.ready ? "Install & ask" : search.assistant.busy ? "Cancel answer" : "Ask") : "Browse results"]
-                        .concat(search.assistant ? [search.askMode ? "Search titles" : "Ask AI"] : [])
+                        .concat(search.assistant && !search.conversationOnly ? [search.askMode ? "Search titles" : "Ask AI"] : [])
                 delegate: Button {
                     id: action
                     required property int index
                     required property string modelData
                     objectName: "couchSearchAction" + index
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 54
+                    Layout.preferredHeight: search.compact ? 40 : 54
+                    Layout.minimumWidth: 0
                     text: modelData
                     font.pixelSize: 18
                     highlighted: search.controllerIndex === index
@@ -214,7 +218,7 @@ FocusScope {
                     contentItem: Text {
                         text: action.text
                         color: action.highlighted ? "#101720" : search.inkColor
-                        font.pixelSize: 18
+                        font.pixelSize: search.compact ? 12 : 18
                         font.bold: true
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -231,7 +235,7 @@ FocusScope {
             Layout.fillWidth: true
             text: (search.speech.listening ? "● " : "") + search.speech.status
             color: search.speech.listening ? "#72e1a0" : search.mutedColor
-            font.pixelSize: 15
+            font.pixelSize: search.compact ? 12 : 15
             wrapMode: Text.WordWrap
             maximumLineCount: 3
             elide: Text.ElideRight
@@ -289,11 +293,11 @@ FocusScope {
                 Text {
                     id: message; anchors { left: parent.left; right: parent.right; top: parent.top; margins: 11 }
                     text: (bubble.modelData.role === "user" ? "You: " : "Lunchpail: ") + bubble.modelData.content
-                    textFormat: Text.PlainText; wrapMode: Text.WordWrap; font.pixelSize: 18
+                    textFormat: Text.PlainText; wrapMode: Text.WordWrap; font.pixelSize: search.compact ? 15 : 18
                     color: bubble.modelData.role === "user" ? search.accentColor : search.inkColor
                 }
             }
-            ScrollBar.vertical: ScrollBar {}
+            ScrollBar.vertical: LbScrollBar { policy: ScrollBar.AsNeeded }
         }
         ListView {
             id: results

@@ -35,7 +35,8 @@ set up controllers, and launch games from one place—at your desk or on the cou
 
 Development builds also include [voice and text conversations](docs/couch-mode.md#assistant-and-voice-setup):
 choose a bundled model, Codex, Claude Code, Ollama or API provider in Settings, then talk to Lunchpail in
-Couch Mode. Bundled CPU/GPU runtimes require no separate Ollama installation.
+normal mode (**Ask AI / Ctrl+J**) or Couch Mode. Both share a conversation and navigate the current
+mode without switching it. Bundled CPU/GPU runtimes require no separate Ollama installation.
 
 Experimental local AI translation is also available for supported RetroArch
 setups. It is opt-in per game, uses OCR and Ollama on a supported GPU, and has a

@@ -228,6 +228,8 @@ fn main() {
                 "qml/AssistantSpeechOutput.qml",
                 "qml/ConversationCaptions.qml",
                 "qml/CouchAssistantController.qml",
+                "qml/DesktopAssistant.qml",
+                "qml/DesktopConversationProbe.qml",
                 "qml/ConversationProbe.qml",
                 "qml/LocalModelInstall.qml",
                 "qml/LocalAiProbe.qml",

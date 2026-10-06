@@ -69,6 +69,23 @@ the controller. If several games could match, it can ask which you mean. Both
 sides of the conversation appear in the transcript and optional floating
 captions. **Search titles** switches to a direct, non-AI title filter.
 
+The same agent is available in **normal mode** from **Ask AI** in the toolbar
+or **Ctrl+J**. Its compact, non-modal panel keeps the library usable and remains
+reachable when the agent opens a settings or management dialog. Provider,
+conversation history, captions and voice preferences are shared across modes;
+changing modes does not start a new chat. Normal browsing stays in normal mode
+unless you explicitly ask to switch. The usual search box still filters titles
+directly, without an AI request.
+
+Ask it to search or select games, browse installed/favorite/recent shelves,
+open game tools and settings, show the download queue, go back, switch between
+grid and list, control previews, or manage favorites and collections. Launches
+use the same card-launch workflow and keep save-sync, setup and download
+decisions in the existing dialogs. Video mute changes affect the current mode
+only. **AI & voice** opens provider and microphone setup; **Speak / F2** in the
+panel uses the same local recognizer as Couch mode. Closing the panel keeps
+the conversation and any pending action; canceling the reply stops further work.
+
 Select **Hands-free · Enable** once. If a model is missing, answer **Yes** to
 **Install a model?** Lunchpail downloads and verifies the recommended 191 MB
 English streaming model, then enables listening automatically. **No** does
@@ -78,7 +95,7 @@ The optional **Require ‘Lunchpail’** preference gates requests behind
 for eight seconds. Without a wake phrase, use a headset to reduce room/preview
 audio being mistaken for a request.
 The visible **Mic on** button turns listening off. Hands-free is off by default;
-its opt-in is saved. It suspends when Couch mode is hidden, the window loses
+its opt-in is saved and applies to normal and Couch browsing. It suspends when the window loses
 focus, another dialog takes input, a game is running, or the assistant is
 thinking/speaking. A short cooldown prevents the spoken reply being heard as a
 new request. A microphone failure

@@ -18,6 +18,8 @@ pub struct Browse {
     pub platform: String,
     /// all, local, downloadable, favorites, or recent.
     pub shelf: String,
+    /// Exact ID from get_collections; when set, browse this collection instead of a shelf.
+    pub collection_id: String,
 }
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
@@ -228,7 +230,7 @@ pub fn parse(name: &str, arguments: Value) -> Result<Call> {
     match &call {
         Call::BrowseLibrary(a) => {
             ensure!(
-                a.query.len() <= 160 && a.platform.len() <= 100,
+                a.query.len() <= 160 && a.platform.len() <= 100 && a.collection_id.len() <= 200,
                 "Search is too long"
             );
             ensure!(
@@ -241,7 +243,7 @@ pub fn parse(name: &str, arguments: Value) -> Result<Call> {
             "view_style" => ensure!(
                 a.value
                     .as_str()
-                    .is_some_and(|v| ["wheel", "shelf", "wall", "album"].contains(&v)),
+                    .is_some_and(|v| ["wheel", "shelf", "wall", "album", "grid", "list"].contains(&v)),
                 "Unknown view style"
             ),
             "navigation_volume" | "voice_volume" => ensure!(
@@ -395,7 +397,7 @@ pub fn definitions() -> Vec<rmcp::model::Tool> {
     );
     add(
         "set_preference",
-        "Save a listed preference. view_style is wheel/shelf/wall/album; navigation_volume and voice_volume are 0..1; voice_rate -1..1; music_volume 0..100; others boolean. Enabling hands_free requires subsequent user confirmation.",
+        "Save a listed preference. view_style is grid/list in normal mode or wheel/shelf/wall/album in Couch mode; video_muted affects only the current mode. Music and navigation sounds are Couch preferences. navigation_volume and voice_volume are 0..1; voice_rate -1..1; music_volume 0..100; others boolean. Enabling hands_free in both modes requires subsequent user confirmation.",
         schemars::schema_for!(Preference).to_value(),
         PREFERENCES,
         false,
@@ -468,6 +470,10 @@ mod tests {
         }
         assert!(parse("play_game", json!({})).is_ok());
         assert!(parse("set_preference", json!({"name":"captions","value":false})).is_ok());
+        for style in ["grid", "list", "wheel", "shelf", "wall", "album"] {
+            assert!(parse("set_preference", json!({"name":"view_style","value":style})).is_ok());
+        }
+        assert!(parse("set_preference", json!({"name":"view_style","value":"desktop"})).is_err());
         assert_eq!(definitions().len(), 21);
     }
 }

@@ -109,6 +109,8 @@ ApplicationWindow {
     property int pendingThemeRemovalIndex: -1
     readonly property bool gridMode: library.view_mode !== "list"
     property bool couchModeActive: false
+    readonly property string assistantQuery: searchField.text
+    readonly property var desktopAssistantPanel: desktopAssistant
     property bool devRestartRequested: false
     property url couchFullscreenVideoUrl: ""
     // Shared management panes stay in the fullscreen couch session. They are
@@ -728,7 +730,7 @@ ApplicationWindow {
     AssistantSpeechOutput {
         id: assistantVoice
         config: JSON.parse(localAssistant.config_json || "{}")
-        allowed: (root.couchModeActive || settingsDialog.visible) && !gameDetails.game_running
+        allowed: root.active && !gameDetails.game_running
         onSpeakingChanged: if (speaking) couchSpeech.cancel()
     }
     CouchAssistantController {
@@ -740,7 +742,7 @@ ApplicationWindow {
     }
     Connections {
         target: localAssistant
-        function onReplied(text) { if (root.couchModeActive || settingsDialog.visible) assistantVoice.say(text) }
+        function onReplied(text) { assistantVoice.say(text) }
         function onConfig_jsonChanged() { if (couchSpeech.hands_free) couchSpeech.cancel() }
     }
     Timer { interval: 60; repeat: true; running: localAssistant.busy || localAssistant.setup_busy; onTriggered: localAssistant.poll() }
@@ -935,25 +937,105 @@ ApplicationWindow {
     // Narrow, non-sensitive view state for the conversational app tools.
     function assistantScreenContext() {
         return {mode: couchModeActive ? "couch" : "normal", settings_open: settingsDialog.visible,
-            game_panel_open: couchGameToolDialog.visible, downloads_open: downloadsDrawer.visible,
+            game_panel_open: couchGameToolDialog.visible || gameDetails.panel_open,
+            game_tool: couchGameToolDialog.visible ? couchGameToolDialog.section : "",
+            platform: selectedPlatform, shelf: effectiveAvailability,
+            collection_id: selectedCollectionId, view_style: couchModeActive ? library.couch_view_style : library.view_mode,
+            downloads_open: downloadsDrawer.visible,
             confirmation_open: saveSyncRemoteDeviceDialog.visible || saveSyncConflictDialog.visible
                 || cloudSyncErrorDialog.visible || firmwareSetupPage.visible,
             launch_pending: pendingCardLaunchGameId.length > 0 || cloudLaunchPending || saveSync.busy,
             filtering: filterDelay.running || library.filtering,
-            input_suspended: couchInputSuspended}
+            input_suspended: couchModeActive ? couchInputSuspended : desktopAssistant.inputBlocked}
     }
-    function assistantBrowse(query, platform, shelf) {
-        if (!couchModeActive) enterCouchMode()
-        selectNavigationShelf(shelf === "all" ? "" : shelf)
+    function assistantBrowse(query, platform, shelf, collectionId) {
+        if (collectionId) {
+            const index = collectionIndex(collectionId)
+            if (index < 0) throw new Error("Collection no longer exists")
+            selectCollection(collectionId, library.collection_name_at(index))
+        } else selectNavigationShelf(shelf === "all" ? "" : shelf)
         if (platform) selectedPlatform = platform
         searchField.text = query
         rememberPlatformSearch(false)
         scheduleFilter()
     }
+    function assistantSelectGame(game) {
+        const row = library.row_for_game(game.id)
+        if (row < 0 || !gameViewLoader.item) return false
+        selectedGameId = game.id
+        selectedDatabaseId = library.database_id_for_game(game.id)
+        selectedMediaId = library.media_id_for_game(game.id)
+        if (gameDetails.panel_open && gameDetails.game_id !== game.id)
+            assistantShowDetails(couchAssistant.selected(game.id))
+        reanchorSelectedGame()
+        return true
+    }
+    function assistantShowDetails(game) {
+        openGame(game.id, library.database_id_for_game(game.id), game.title,
+                 game.platform, game.local, game.downloadable)
+        reanchorSelectedGame()
+    }
+    function assistantLaunchGame(game) {
+        requestCardLaunch(game.id, library.database_id_for_game(game.id), game.title, game.platform, game.local)
+    }
+    function assistantNavigate(action) {
+        if (action === "back") {
+            // Find the topmost actual popup even when the non-modal assistant
+            // owns keyboard focus. Never dismiss a protected review workflow.
+            let top = null
+            function visit(object, depth) {
+                if (!object || depth > 12) return
+                if (object.visible && object.contentItem && typeof object.close === "function"
+                        && (!top || object.z >= top.z)) top = object
+                const children = object.data
+                if (children && typeof children === "object" && typeof children.length === "number")
+                    for (let i = 0; i < children.length; ++i) visit(children[i], depth + 1)
+            }
+            visit(root.contentItem, 0)
+            if (top) {
+                if ((top.closePolicy & Popup.CloseOnEscape) === 0) throw new Error("This review requires your explicit choice in the dialog")
+                top.close()
+            } else if (couchModeActive) couchModeView.handleNavigation("back")
+            else if (gameDetails.panel_open) gameDetails.close_panel()
+            return
+        }
+        if (action === "menu") { openSettingsFor(""); return }
+        if (action === "collections") { manageCollectionsDialog.open(); return }
+        if (action === "platforms") { revealSelectedPlatform(); platformList.forceActiveFocus(); return }
+        if (action === "details") { assistantShowDetails(couchAssistant.selected("")); return }
+        if (desktopAssistant.inputBlocked) throw new Error("A dialog is open. Use its named settings/game section, or go back before moving the library selection")
+        const view = gameViewLoader.item
+        if (filterDelay.running || library.filtering) throw new Error("The library is still filtering; wait before moving the selection")
+        if (!view || view.count < 1) throw new Error("No games are visible")
+        const step = (action === "up" || action === "down") && gridMode ? (view.columnCount || 1) : 1
+        const row = Math.max(0, Math.min(view.count - 1, view.currentIndex + ((action === "up" || action === "left") ? -step : step)))
+        if (!assistantSelectGame({id: library.game_id_for_row(row)})) throw new Error("The selection could not be moved")
+    }
+    function assistantOpenPanel(name) {
+        if (!couchModeActive && name === "details") assistantShowDetails(couchAssistant.selected(""))
+        else if (!couchModeActive && name === "library") { gameDetails.close_panel(); reanchorSelectedGame() }
+        else if (!couchModeActive && name === "attract") throw new Error("Attract mode is a Couch feature; switch modes only if requested")
+        else couchTool(name)
+    }
+    function assistantControlMedia(action) {
+        const player = mediaFullscreen.opened || !hoverPreviewTile ? gameVideoPlayer : hoverPreviewPlayer
+        if (action === "mute" || action === "unmute") {
+            if (videoAudioPreferences.normalMuted !== (action === "mute")) videoAudioPreferences.toggle(false)
+        } else if (action === "fullscreen" || action === "close_fullscreen") assistantFullscreen(action)
+        else {
+            if (!player.source.toString()) throw new Error("No preview video is available")
+            if (action === "pause") player.pause()
+            else player.play()
+        }
+        return {status: "updated", muted: videoAudioPreferences.normalMuted,
+            paused: player.playbackState === MediaPlayer.PausedState, playing: player.playbackState === MediaPlayer.PlayingState}
+    }
     function assistantFullscreen(action) {
         if (action === "close_fullscreen") mediaFullscreen.close()
         else {
-            const source = couchModeView.platformWheelOpen ? couchModeView.systemVideoPreview.source : couchModeView.gameVideoPreview.source
+            const source = couchModeActive
+                ? (couchModeView.platformWheelOpen ? couchModeView.systemVideoPreview.source : couchModeView.gameVideoPreview.source)
+                : (hoverPreviewTile ? hoverPreviewPlayer.source : gameVideoPlayer.source)
             if (!source.toString()) throw new Error("No preview video is available")
             couchFullscreenVideoUrl = source
             mediaFullscreen.open(); gameVideoPlayer.play()
@@ -2587,7 +2669,7 @@ ApplicationWindow {
         videoSource: gameVideoPlayer.source
         videoPosition: gameVideoPlayer.position
         previewPlaying: gameVideoPlayer.playbackState === MediaPlayer.PlayingState
-        unmuted: !root.videoAudioMuted
+        unmuted: !root.videoAudioMuted && !desktopAssistant.audioSuppressedForVoice
         volume: 0.45
         onPlaybackError: function(message) {
             root.mediaPlaybackMessage = "Video audio playback failed: " + message
@@ -2646,7 +2728,7 @@ ApplicationWindow {
 
     AudioOutput {
         id: gameSoundtrackAudio
-        muted: false
+        muted: desktopAssistant.audioSuppressedForVoice || couchModeView.audioSuppressedForVoice
         volume: 0.55
     }
 
@@ -2891,7 +2973,7 @@ ApplicationWindow {
         videoSource: hoverPreviewPlayer.source
         videoPosition: hoverPreviewPlayer.position
         previewPlaying: root.hoverPreviewPlaying
-        unmuted: !root.videoAudioMuted
+        unmuted: !root.videoAudioMuted && !desktopAssistant.audioSuppressedForVoice
         onPlaybackError: function(message) {
             console.warn("LUNCHPAIL_HOVER_PREVIEW_AUDIO_FAILED " + message)
         }
@@ -11792,10 +11874,17 @@ ApplicationWindow {
         }
     }
     Loader {
-        active: root.conversationUiProbe
+        active: root.conversationUiProbe && Qt.application.arguments.indexOf("--conversation-normal-mode") < 0
         sourceComponent: ConversationProbe {
             app: root; view: couchModeView; library: library; assistant: localAssistant
             speech: couchSpeech; settingsDialog: settingsDialog
+        }
+    }
+    Loader {
+        active: root.conversationUiProbe && Qt.application.arguments.indexOf("--conversation-normal-mode") >= 0
+        sourceComponent: DesktopConversationProbe {
+            app: root; library: library; assistant: localAssistant; speech: couchSpeech
+            settingsDialog: settingsDialog; gameToolDialog: couchGameToolDialog
         }
     }
     Loader {
@@ -11803,6 +11892,32 @@ ApplicationWindow {
         sourceComponent: CouchSearchProbe {
             app: root; view: couchModeView; library: library; speech: couchSpeech
         }
+    }
+
+    DesktopAssistant {
+        id: desktopAssistant
+        parent: Overlay.overlay
+        anchors.fill: parent
+        // Above modal workflow content, below the window's resize frame.
+        z: 19000
+        active: !root.couchModeActive
+        windowActive: root.active
+        gameRunning: gameDetails.game_running
+        inputBlocked: {
+            for (let i = 0; i < Overlay.overlay.children.length; ++i) {
+                const item = Overlay.overlay.children[i]
+                if (item !== desktopAssistant && item.visible && item.width > 0 && item.height > 0) return true
+            }
+            return false
+        }
+        assistant: localAssistant; speech: couchSpeech; speechOutput: assistantVoice; ai: localAi
+        onSettingsRequested: root.openSettingsFor("local-ai")
+        onGameChosen: game => root.assistantShowDetails(game)
+    }
+    Shortcut {
+        sequence: "Ctrl+J"
+        enabled: !root.couchModeActive && !gameDetails.game_running
+        onActivated: desktopAssistant.toggle()
     }
 
     CouchModeView {
@@ -11968,11 +12083,11 @@ ApplicationWindow {
             {key:"themes", label:"Themes & systems"},
             {key:"activity", label:"My activity"}, {key:"collections", label:"Collections"},
             {key:"related", label:"Related games"}, {key:"catalog", label:"Catalog & links"}]
-        readonly property real uiScale: root.couchUiScale
+        readonly property real uiScale: root.couchModeActive ? root.couchUiScale : 1
         title: gameDetails.title
         modal: true
-        width: root.width
-        height: root.height
+        width: root.couchModeActive ? root.width : Math.min(root.width - 48, 1200)
+        height: root.couchModeActive ? root.height : Math.min(root.height - 80, 900)
         anchors.centerIn: parent
         padding: 0
         header: Item {}
@@ -12026,7 +12141,7 @@ ApplicationWindow {
             Loader {
                 id: couchGameToolsLoader
                 // Shared forms keep their behavior, with readable TV sizing.
-                scale: ["mods", "achievements", "files"].includes(couchGameToolDialog.section) ? 1.5 : 1
+                scale: root.couchModeActive && ["mods", "achievements", "files"].includes(couchGameToolDialog.section) ? 1.5 : 1
                 transformOrigin: Item.TopLeft
                 width: Math.min(parent.width - 24, 1120) / scale
                 active: couchGameToolDialog.visible
@@ -12051,7 +12166,10 @@ ApplicationWindow {
                     }
                     onRelatedRequested: index => {
                         couchGameToolDialog.close()
-                        couchModeView.openRelatedGame(index)
+                        if (root.couchModeActive) couchModeView.openRelatedGame(index)
+                        else root.openGame(gameDetails.related_game_id_at(index), gameDetails.related_game_database_id_at(index),
+                            gameDetails.related_game_title_at(index), gameDetails.related_game_platform_at(index),
+                            gameDetails.related_game_is_local_at(index), gameDetails.related_game_is_downloadable_at(index))
                     }
                     onBezelPickerRequested: bezelPicker.begin()
                     pickPatchFile: function() { return nativeFileDialog.pick_open_file("Import a translation or mod patch", "ROM/disc patches", "ips,ips32,bps,ups,ppf,xdelta,xdelta3,vcdiff") }
@@ -12333,6 +12451,15 @@ ApplicationWindow {
                 id: headerActions
                 Layout.alignment: Qt.AlignVCenter
                 spacing: 7
+                HeaderButton {
+                    objectName: "desktopAssistantButton"
+                    text: couchSpeech.listening ? "● Mic on" : "Ask AI"
+                    active: desktopAssistant.opened
+                    onClicked: desktopAssistant.toggle()
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Talk to Lunchpail · Ctrl+J" + (localAi.hands_free ? " · Hands-free enabled" : "")
+                    Accessible.name: "Open Lunchpail assistant"
+                }
                 HeaderButton {
                     text: ""
                     implicitWidth: 42

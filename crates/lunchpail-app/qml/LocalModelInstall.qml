@@ -64,7 +64,7 @@ LbDialog {
         Label {
             Layout.fillWidth: true; wrapMode: Text.WordWrap
             text: "The download needs internet. Speech and prompts stay on this device."
-                  + (dialog.microphoneConsent ? " After installation, the microphone will listen locally for requests while you browse Couch mode. You can turn it off at any time." : "")
+                  + (dialog.microphoneConsent ? " After installation, the microphone will listen locally for requests while you browse Lunchpail in normal or Couch mode. You can turn it off at any time. Transcribed requests go to your selected AI provider." : "")
         }
         ProgressBar { Layout.fillWidth: true; visible: dialog.pending; value: dialog.ai ? dialog.ai.progress : 0 }
         Label { Layout.fillWidth: true; wrapMode: Text.WordWrap; visible: dialog.pending || (dialog.ai && !dialog.ai.busy); text: dialog.ai ? dialog.ai.status : "" }

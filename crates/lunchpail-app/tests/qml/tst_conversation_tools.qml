@@ -15,10 +15,20 @@ TestCase {
                 property bool confirmation: false
                 property bool filterPending: false
                 property string opened: ""
+                property string assistantQuery: "Desktop Mario"
+                property int launches: 0
+                property bool canSelect: true
+                property string browsedCollection: ""
+                function assistantSelectGame(game) { if (!canSelect) return false; selectedGameId = game.id; return true }
+                function assistantShowDetails(game) { opened = "details:" + game.id }
+                function assistantLaunchGame(game) { launches++; opened = "launch:" + game.id }
+                function assistantNavigate(action) { opened = "navigate:" + action }
+                function assistantOpenPanel(panel) { opened = "panel:" + panel }
+                function assistantControlMedia(action) { opened = "media:" + action; return {status:"updated"} }
                 function enterCouchMode() { couchModeActive = true }
                 function exitCouchMode() { couchModeActive = false }
                 function assistantScreenContext() { return {confirmation_open: confirmation, filtering: filterPending} }
-                function assistantBrowse(query, platform, shelf) { opened = "browse:" + query + ":" + platform + ":" + shelf }
+                function assistantBrowse(query, platform, shelf, collection) { opened = "browse:" + query + ":" + platform + ":" + shelf; browsedCollection = collection || "" }
                 function openSettingsFor(section) { opened = "settings:" + section }
                 function couchTool(panel) { opened = "panel:" + panel }
                 function openCouchGameTool(section) { opened = "game:" + section }
@@ -56,6 +66,8 @@ TestCase {
                 property bool collectionExists: true
                 property bool member: false
                 property string couch_view_style: "wheel"
+                property string view_mode: "grid"
+                function choose_view_mode(mode) { view_mode = mode }
                 property bool couch_music_enabled: true
                 property int couch_music_volume: 45
                 function conversation_games_json() { return JSON.stringify([{id:"mario",title:"Super Mario Bros.",platform:"NES"}]) }
@@ -202,5 +214,63 @@ TestCase {
         compare(c.library.collectionExists, true)
         c.assistant.turn_number++; call(c, "confirm_action", {approve:true}); finish(c)
         compare(result(c).status, "deleted"); compare(c.library.installed, true)
+    }
+    function test_desktop_search_and_selection_never_enter_couch_mode() {
+        const c = controller(); c.app.couchModeActive = false
+        call(c, "browse_library", {query:"Mario",platform:"NES",shelf:"local"}); finish(c)
+        compare(result(c).query, "Desktop Mario"); compare(c.app.couchModeActive, false)
+        c.app.selectedGameId = ""
+        call(c, "select_game", {game_id:"mario"}); finish(c)
+        compare(result(c).status, "selected"); compare(c.app.selectedGameId, "mario")
+        compare(c.view.closes, 0); compare(c.app.couchModeActive, false)
+    }
+    function test_desktop_hidden_selection_is_not_reported_as_success() {
+        const c = controller(); c.app.couchModeActive = false; c.app.canSelect = false
+        call(c, "select_game", {game_id:"mario"}); finish(c)
+        verify(!!result(c).error)
+    }
+    function test_desktop_launch_uses_card_workflow_and_waits_for_actual_running_state() {
+        const c = controller(); c.app.couchModeActive = false
+        call(c, "play_game"); compare(c.app.launches, 1); compare(c.view.launches, 0)
+        finish(c); compare(c.assistant.replies.length, 0)
+        c.details.game_running = true; c.pollAction()
+        compare(result(c).status, "running"); compare(c.app.couchModeActive, false)
+    }
+    function test_desktop_missing_game_opens_details_without_launch() {
+        const c = controller(); c.app.couchModeActive = false; c.library.installed = false
+        call(c, "play_game"); compare(c.app.opened, "details:mario")
+        compare(result(c).status, "setup_required"); compare(c.app.launches, 0)
+    }
+    function test_desktop_navigation_panels_and_game_tools_use_shared_workflows() {
+        const c = controller(); c.app.couchModeActive = false
+        call(c, "navigate", {name:"back"}); compare(c.app.opened, "navigate:back")
+        call(c, "open_panel", {name:"downloads"}); compare(c.app.opened, "panel:downloads")
+        call(c, "open_game_tool", {name:"display"}); compare(c.app.opened, "details:mario")
+        finish(c); compare(c.app.opened, "game:display"); compare(result(c).status, "opened")
+        compare(c.app.couchModeActive, false)
+    }
+    function test_desktop_media_and_preferences_preserve_couch_mode_values() {
+        const c = controller(); c.app.couchModeActive = false
+        c.videoPreferences.couchMuted = true
+        call(c, "control_media", {name:"pause"}); compare(c.app.opened, "media:pause")
+        call(c, "set_preference", {name:"video_muted",value:false})
+        compare(c.videoPreferences.normalMuted, false); compare(c.videoPreferences.couchMuted, true)
+        call(c, "set_preference", {name:"view_style",value:"list"})
+        compare(c.library.view_mode, "list"); compare(c.library.couch_view_style, "wheel")
+        call(c, "get_preferences"); compare(result(c).mode, "normal"); compare(result(c).view_style, "list")
+        call(c, "set_preference", {name:"view_style",value:"wall"}); verify(!!result(c).error)
+        compare(c.library.view_mode, "list"); compare(c.app.couchModeActive, false)
+    }
+    function test_only_explicit_mode_navigation_switches_modes() {
+        const c = controller(); c.app.couchModeActive = false
+        call(c, "navigate", {name:"couch_mode"}); compare(c.app.couchModeActive, true)
+        call(c, "navigate", {name:"normal_mode"}); compare(c.app.couchModeActive, false)
+    }
+    function test_desktop_browse_collection_uses_real_id_and_rejects_missing_collection() {
+        const c = controller(); c.app.couchModeActive = false
+        call(c, "browse_library", {collection_id:"collection"}); finish(c)
+        compare(c.app.browsedCollection, "collection"); compare(c.app.couchModeActive, false)
+        call(c, "browse_library", {collection_id:"missing"})
+        verify(!!result(c).error); compare(c.app.browsedCollection, "collection")
     }
 }

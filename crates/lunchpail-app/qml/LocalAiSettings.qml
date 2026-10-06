@@ -40,7 +40,7 @@ ColumnLayout {
     LbCheckBox {
         id: handsFreeToggle
         objectName: "handsFreePreference"
-        text: "Hands-free Couch conversation · microphone on"
+        text: "Hands-free conversation in normal & Couch modes · microphone on"
         checked: !!pane.ai.hands_free
         onClicked: {
             if (!checked) pane.ai.enable_hands_free(false)
@@ -49,7 +49,7 @@ ColumnLayout {
     }
     Text {
         Layout.fillWidth: true; wrapMode: Text.WordWrap; color: pane.mutedColor; font.pixelSize: 11
-        text: "When enabled, the microphone listens locally while Couch mode is focused, pauses for games, dialogs and spoken replies, and shows a Mic on indicator. Audio is never saved or uploaded. Transcripts are sent to your chosen AI provider. Use a headset or the optional wake phrase to avoid picking up room/preview audio. F2 still works for push-to-talk."
+        text: "When enabled, the microphone listens locally while Lunchpail is focused in normal or Couch mode, pauses for games, dialogs and spoken replies, and shows a Mic on indicator. Audio is never saved or uploaded. Transcripts are sent to your chosen AI provider. Use a headset or the optional wake phrase to avoid picking up room/preview audio. F2 works for push-to-talk in the conversation panel."
     }
     LocalModelInstall {
         id: installer; ai: pane.ai

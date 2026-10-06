@@ -34,18 +34,24 @@ Item {
         let game = null
         try { game = selected("") } catch (_) {}
         return {screen: app.assistantScreenContext(), selected_game: game, games: JSON.parse(library.conversation_games_json()),
-            total_results: library.filtered_count, filtering: library.filtering, query: view.searchText,
+            total_results: library.filtered_count, filtering: library.filtering, query: app.couchModeActive ? view.searchText : app.assistantQuery,
             game_running: details.game_running, session_title: details.session_title, launch_busy: details.launch_busy,
             launch_status: details.launch_status, pending_confirmation: pendingConfirmation ? pendingConfirmation.question : null}
     }
     function preferences() {
-        return {view_style: library.couch_view_style, video_muted: videoPreferences.couchMuted,
+        return {mode: app.couchModeActive ? "couch" : "normal",
+            view_style: app.couchModeActive ? library.couch_view_style : library.view_mode,
+            video_muted: app.couchModeActive ? videoPreferences.couchMuted : videoPreferences.normalMuted,
             navigation_sounds: feedbackSettings.soundsEnabled, navigation_volume: feedbackSettings.soundVolume,
             music_enabled: library.couch_music_enabled, music_volume: library.couch_music_volume,
             spoken_replies: config.spoken_replies, captions: config.captions, wake_word: config.wake_word,
             hands_free: ai.hands_free, voice_rate: config.voice_rate, voice_volume: config.voice_volume}
     }
-    function complete(id, result) { assistant.complete_tool(id, JSON.stringify(result)) }
+    function complete(id, result) {
+        if (readOnlyProbe) console.log("LUNCHPAIL_CONVERSATION_TOOL_RESULT " + id + " " + JSON.stringify({
+            status: result.status, error: result.error, query: result.query, game: result.game || result.selected_game}))
+        assistant.complete_tool(id, JSON.stringify(result))
+    }
     function defer(id, kind, extra) {
         waiting = Object.assign({id: id, kind: kind, started: Date.now()}, extra || {})
         actionPoll.restart()
@@ -55,21 +61,24 @@ Item {
         complete(id, {status: "confirmation_required", question: question, instruction: "Ask the user and wait for their next reply. Do not call confirm_action in this turn."})
     }
     function focusGame(game) {
-        if (!app.couchModeActive) app.enterCouchMode()
-        view.closeSearch()
+        if (app.couchModeActive) view.closeSearch()
         if (library.row_for_game(game.id) < 0) app.assistantBrowse("", game.platform, "all")
-        view.beginGameHandoff(game.id, game.platform)
-        view.focusGameById(game.id)
+        if (app.couchModeActive) {
+            view.beginGameHandoff(game.id, game.platform)
+            view.focusGameById(game.id)
+        } else app.assistantSelectGame(game)
     }
     function execute(id, name, args, confirmed) {
-        if (readOnlyProbe && ["get_context", "browse_library", "select_game", "get_preferences", "get_collections"].indexOf(name) < 0)
+        if (readOnlyProbe) console.log("LUNCHPAIL_CONVERSATION_TOOL " + name + " " + JSON.stringify(args))
+        if (readOnlyProbe && ["get_context", "browse_library", "select_game", "get_preferences", "get_collections", "open_settings", "navigate"].indexOf(name) < 0)
             throw new Error("This diagnostic only permits read-only navigation, never launch or saved changes")
         if (waiting) throw new Error("Another app action is still pending")
         switch (name) {
         case "get_context": complete(id, context()); break
         case "browse_library":
-            view.closeSearch()
-            app.assistantBrowse(args.query || "", args.platform || "", args.shelf || "all")
+            if (app.couchModeActive) view.closeSearch()
+            if (args.collection_id && !library.collection_exists(args.collection_id)) throw new Error("Collection no longer exists; read get_collections for current IDs")
+            app.assistantBrowse(args.query || "", args.platform || "", args.shelf || "all", args.collection_id || "")
             defer(id, "browse"); break
         case "select_game": {
             const game = selected(args.game_id)
@@ -81,13 +90,16 @@ Item {
             const game = selected(args.game_id)
             focusGame(game)
             if (!game.local) {
-                view.requestDetails()
+                if (app.couchModeActive) view.requestDetails()
+                else app.assistantShowDetails(game)
                 complete(id, {status: "setup_required", game: game, message: "Game is not installed. Opened its details; download/import needs the user's choice."})
             } else {
                 // The normal root workflow handles save-cloud, resume choice,
                 // missing firmware, emulator installation and launch errors.
-                view.launchStatusOverlayOpen = true
-                view.launchRequested()
+                if (app.couchModeActive) {
+                    view.launchStatusOverlayOpen = true
+                    view.launchRequested()
+                } else app.assistantLaunchGame(game)
                 defer(id, "launch", {game: game})
             }
             break
@@ -97,24 +109,30 @@ Item {
             if (!confirmed) { askConfirmation(id, name, args, "Stop the running game? Unsaved progress could be lost."); break }
             details.stop_emulator(); defer(id, "stop"); break
         case "navigate":
-            view.closeSearch()
+            if (app.couchModeActive) view.closeSearch()
             if (args.name === "normal_mode") app.exitCouchMode()
             else if (args.name === "couch_mode") app.enterCouchMode()
+            else if (!app.couchModeActive || args.name === "back") app.assistantNavigate(args.name)
             else if (args.name === "platforms") view.openPlatformWheel()
             else if (args.name === "collections") view.openCollectionWheel()
             else view.handleNavigation(args.name)
             complete(id, {status: "navigated", action: args.name, context: context()}); break
         case "open_settings":
-            view.closeSearch(); app.openSettingsFor(args.name === "general" ? "" : args.name)
+            if (app.couchModeActive) view.closeSearch()
+            app.openSettingsFor(args.name === "general" ? "" : args.name)
             complete(id, {status: "opened", section: args.name, message: "Settings opened. Setup is not yet completed; enter credentials privately in the fields."}); break
         case "open_panel":
-            view.closeSearch(); app.couchTool(args.name)
+            if (app.couchModeActive) view.closeSearch()
+            app.assistantOpenPanel(args.name)
             complete(id, {status: "opened", panel: args.name, message: "Workflow opened; no claim of completion."}); break
         case "open_game_tool": {
-            const game = selected(""); view.closeSearch(); view.requestDetails()
+            const game = selected("")
+            if (app.couchModeActive) { view.closeSearch(); view.requestDetails() }
+            else app.assistantShowDetails(game)
             defer(id, "game_tool", {game: game, section: args.name}); break
         }
         case "control_media": {
+            if (!app.couchModeActive) { complete(id, app.assistantControlMedia(args.name)); break }
             const player = view.platformWheelOpen ? view.systemVideoPreview : view.gameVideoPreview
             if (args.name === "mute" || args.name === "unmute") {
                 const muted = args.name === "mute"
@@ -131,13 +149,20 @@ Item {
         case "get_preferences": complete(id, preferences()); break
         case "set_preference": {
             if (args.name === "hands_free" && args.value && !confirmed) {
-                askConfirmation(id, name, args, "Enable hands-free listening while Couch mode is focused? The microphone will listen locally; transcribed requests go to your chosen AI provider.")
+                askConfirmation(id, name, args, "Enable hands-free listening while Lunchpail is focused, in normal and Couch modes? The microphone will listen locally; transcribed requests go to your chosen AI provider.")
                 break
             }
             if (args.name === "view_style") {
-                if (!library.save_couch_view_style(args.value)) throw new Error("Could not save the view style")
+                if (app.couchModeActive) {
+                    if (["wheel", "shelf", "wall", "album"].indexOf(args.value) < 0) throw new Error("Couch mode supports wheel, shelf, wall or album")
+                    if (!library.save_couch_view_style(args.value)) throw new Error("Could not save the view style")
+                } else {
+                    if (["grid", "list"].indexOf(args.value) < 0) throw new Error("Normal mode supports grid or list")
+                    library.choose_view_mode(args.value)
+                }
             } else if (args.name === "video_muted") {
-                if (videoPreferences.couchMuted !== args.value) videoPreferences.toggle(true)
+                const muted = app.couchModeActive ? videoPreferences.couchMuted : videoPreferences.normalMuted
+                if (muted !== args.value) videoPreferences.toggle(app.couchModeActive)
             } else if (args.name === "navigation_sounds") { feedbackSettings.soundsEnabled = args.value; feedbackSettings.sync() }
             else if (args.name === "navigation_volume") { feedbackSettings.soundVolume = args.value; feedbackSettings.sync() }
             else if (args.name === "music_enabled" || args.name === "music_volume") {
@@ -198,8 +223,8 @@ Item {
         if (elapsed < 180) return
         if (action.kind === "browse" && !library.filtering && !app.assistantScreenContext().filtering) result = context()
         else if (action.kind === "select" && !library.filtering && !app.assistantScreenContext().filtering) {
-            view.focusGameById(action.game.id)
-            result = view.selectedGameId === action.game.id ? {status: "selected", game: action.game} : {error: "Game is hidden by the active filters"}
+            const found = app.couchModeActive ? view.focusGameById(action.game.id) : app.assistantSelectGame(action.game)
+            result = found ? {status: "selected", game: action.game} : {error: "Game is hidden by the active filters"}
         } else if (action.kind === "launch") {
             if (details.game_running) result = {status: "running", game: action.game, session_title: details.session_title}
             else if (app.assistantScreenContext().confirmation_open) result = {status: "user_action_required", message: "A save/resume or setup dialog needs your choice. The game is not running yet."}
