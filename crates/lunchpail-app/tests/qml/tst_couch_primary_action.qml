@@ -22,7 +22,7 @@ TestCase {
     function test_install_changes_to_play_only_when_ready() {
         const action = createTemporaryObject(actionComponent, this, {downloadable: true})
         requested.target = action; requested.clear()
-        compare(action.label, "Install")
+        compare(action.label, "Install & play")
         verify(action.hint.indexOf("confirm the download") >= 0)
         action.activate()
         compare(requested.signalArguments[0][0], "install")
@@ -77,7 +77,7 @@ TestCase {
         action.downloadState = "COMPLETE"
         verify(action.hint.indexOf("import status") >= 0)
         action.downloadState = "CANCELLED"
-        compare(action.label, "Install")
+        compare(action.label, "Install & play")
         action.downloadState = "DOWNLOADING"; action.downloadProgress = 2
         compare(action.progress, 1)
         action.downloadProgress = -1

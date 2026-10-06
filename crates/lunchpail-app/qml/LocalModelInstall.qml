@@ -14,7 +14,7 @@ LbDialog {
     modal: true
     anchors.centerIn: parent
     width: Math.min(540, parent ? parent.width - 40 : 540)
-    closePolicy: Popup.NoAutoClose
+    closePolicy: Popup.CloseOnEscape
     onRejected: decline()
     title: "Install a model?"
     readonly property var modelInfo: {

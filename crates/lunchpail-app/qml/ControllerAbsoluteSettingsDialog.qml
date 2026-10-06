@@ -15,7 +15,7 @@ LbDialog {
     modal: true
     width: Math.min(820, parent ? parent.width : 820)
     height: Math.min(720, parent ? parent.height : 720)
-    closePolicy: Popup.NoAutoClose
+    closePolicy: Popup.CloseOnEscape
     onClosed: stopCapture()
     Component.onDestruction: stopCapture()
 

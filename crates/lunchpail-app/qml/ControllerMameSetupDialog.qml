@@ -43,7 +43,7 @@ LbDialog {
     width: Math.min(900, parent ? parent.width - 40 : 900)
     height: Math.min(720, parent ? parent.height - 40 : 720)
     modal: true
-    closePolicy: Popup.NoAutoClose
+    closePolicy: Popup.CloseOnEscape
     function refresh() {
         try { setups = JSON.parse(settingsModel.mame_controller_setups_json()) }
         catch (error) { statusText = "Cannot read MAME setups: " + error }
@@ -2636,7 +2636,8 @@ LbDialog {
         width: dialog.width - 40
         height: dialog.height - 40
         modal: true
-        closePolicy: Popup.NoAutoClose
+        closePolicy: Popup.CloseOnEscape
+        onRejected: dialog.settingsModel.cancel_mame_inspection()
         contentItem: ColumnLayout {
             RowLayout {
                 Layout.fillWidth: true

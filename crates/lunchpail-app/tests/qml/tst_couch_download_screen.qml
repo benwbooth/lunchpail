@@ -20,6 +20,10 @@ TestCase {
                 property bool torrent_loading: false
                 property string message: "3 candidates ranked"
                 property bool download_busy: false
+                property bool can_launch: false
+                property bool local: false
+                property bool loading: false
+                property bool launch_discovery_busy: false
                 property bool download_preflight_busy: false
                 property bool download_preflight_ready: false
                 property bool download_preflight_terminal: false
@@ -59,10 +63,31 @@ TestCase {
                 }
             }
 
+            QtObject {
+                id: queueState
+                property int revision: 0
+                property string state: ""
+                property real progress: 0
+                property string resumed: ""
+                property string retried: ""
+                function job_index_for_game(id) { return id === "faxanadu" && state ? 2 : -1 }
+                function job_id_at(index) { return index === 2 ? "exact-job" : "wrong-job" }
+                function job_state_at(index) { return state }
+                function job_detail_at(index) { return "Selected download · " + state }
+                function job_progress_at(index) { return progress }
+                function job_can_resume(index) { return state === "PAUSED" }
+                function job_can_retry(index) { return state === "FAILED" }
+                function resume_job(index) { resumed = job_id_at(index) }
+                function retry_job(id) { retried = id }
+                function refresh() { revision++ }
+            }
+
             Lunchpail.CouchDownloadScreen {
                 id: downloadScreen
                 anchors.fill: parent
                 details: detailsState
+                downloadQueue: queueState
+                gameId: "faxanadu"
                 active: true
                 gameTitle: "Faxanadu"
                 platformName: "Nintendo Entertainment System"
@@ -87,12 +112,17 @@ TestCase {
                 target: downloadScreen
                 signalName: "importTorrentRequested"
             }
+            SignalSpy { id: playSpy; target: downloadScreen; signalName: "playRequested" }
+            SignalSpy { id: setupSpy; target: downloadScreen; signalName: "setupRequested" }
 
             property alias detailsState: detailsState
             property alias downloadScreen: downloadScreen
             property alias configureSpy: configureSpy
             property alias closeSpy: closeSpy
             property alias importSpy: importSpy
+            property alias queueState: queueState
+            property alias playSpy: playSpy
+            property alias setupSpy: setupSpy
         }
     }
 
@@ -121,8 +151,86 @@ TestCase {
 
         host.detailsState.download_busy = false
         tryCompare(host.downloadScreen, "phase", "result")
+        host.queueState.state = "DOWNLOADING"
+        host.queueState.progress = 0.42
+        host.queueState.revision++
+        compare(host.downloadScreen.job.index, 2)
+        compare(host.downloadScreen.actionLabel, "Downloading… 42%")
+        verify(!host.downloadScreen.actionEnabled)
         verify(host.downloadScreen.handleNavigation("accept"))
+        compare(host.closeSpy.count, 0)
+        host.queueState.state = "IMPORTED"; host.queueState.revision++
+        host.detailsState.local = true
+        host.detailsState.launch_discovery_busy = true
+        compare(host.downloadScreen.actionLabel, "Checking play setup…")
+        verify(!host.downloadScreen.actionEnabled)
+        host.detailsState.launch_discovery_busy = false
+        compare(host.downloadScreen.actionLabel, "Finish play setup")
+        host.downloadScreen.activateReview()
+        compare(host.setupSpy.count, 1)
+        host.detailsState.can_launch = true
+        compare(host.downloadScreen.actionLabel, "Play now")
+        verify(host.downloadScreen.handleNavigation("accept"))
+        compare(host.playSpy.count, 1)
+        compare(host.closeSpy.count, 0)
+    }
+
+    function test_resume_retry_and_reopen_stay_on_the_selected_game() {
+        const host = createTemporaryObject(hostComponent, testCase)
+        host.queueState.state = "PAUSED"; host.queueState.revision++
+        host.downloadScreen.resetForGame()
+        compare(host.downloadScreen.phase, "result")
+        compare(host.downloadScreen.actionLabel, "Resume download")
+        host.downloadScreen.activateReview()
+        compare(host.queueState.resumed, "exact-job")
+        host.queueState.state = "FAILED"; host.queueState.revision++
+        compare(host.downloadScreen.actionLabel, "Retry installation")
+        host.downloadScreen.activateReview()
+        compare(host.queueState.retried, "exact-job")
+        host.downloadScreen.gameId = "different-game"
+        host.downloadScreen.resetForGame()
+        compare(host.downloadScreen.phase, "candidates")
+        compare(host.downloadScreen.job, null)
+    }
+
+    function test_back_is_available_while_queueing_without_cancelling_download() {
+        const host = createTemporaryObject(hostComponent, testCase)
+        host.downloadScreen.beginReview()
+        host.detailsState.download_preflight_ready = true
+        host.downloadScreen.activateReview()
+        compare(host.downloadScreen.phase, "queue")
+        verify(host.downloadScreen.handleNavigation("back"))
         compare(host.closeSpy.count, 1)
+        verify(host.detailsState.download_busy)
+    }
+
+    function test_manual_download_returns_to_the_same_installation() {
+        const host = createTemporaryObject(hostComponent, testCase)
+        compare(host.downloadScreen.phase, "candidates")
+        host.queueState.state = "DOWNLOADING"; host.queueState.revision++
+        tryCompare(host.downloadScreen, "phase", "result")
+        compare(host.downloadScreen.job.id, "exact-job")
+    }
+
+    function test_missing_imported_files_and_cancelled_jobs_allow_a_new_selection() {
+        const host = createTemporaryObject(hostComponent, testCase)
+        for (const state of ["IMPORTED", "CANCELLED"]) {
+            host.queueState.state = state; host.queueState.revision++
+            host.downloadScreen.resetForGame()
+            compare(host.downloadScreen.phase, "candidates")
+        }
+    }
+
+    function test_reopening_while_adding_download_stays_in_progress() {
+        const host = createTemporaryObject(hostComponent, testCase)
+        host.detailsState.download_busy = true
+        host.downloadScreen.resetForGame()
+        compare(host.downloadScreen.phase, "queue")
+        verify(host.downloadScreen.queuePending)
+        host.downloadScreen.active = false
+        host.detailsState.download_busy = false
+        tryCompare(host.downloadScreen, "phase", "result")
+        verify(!host.downloadScreen.activeFocus)
     }
 
     function test_back_from_review_keeps_the_ranked_list_in_couch_mode() {

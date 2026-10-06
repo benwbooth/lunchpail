@@ -17,13 +17,13 @@ QtObject {
         : details.launch_busy ? "cancel"
         : details.download_busy ? "queueing"
         : details.can_launch ? "play"
-        : local ? "setup"
         : hasDownload ? "download"
+        : local ? "setup"
         : downloadable ? "install" : "files"
     readonly property bool enabled: kind !== "loading" && kind !== "queueing"
         && !(kind === "stop" && details.session_stopping)
     readonly property string label: kind === "play" ? "Play"
-        : kind === "install" ? "Install"
+        : kind === "install" ? "Install & play"
         : kind === "setup" ? "Set up play"
         : kind === "download" ? (downloadState === "FAILED" ? "Fix installation" : "View installation")
         : kind === "files" ? "Add game files"
@@ -41,7 +41,7 @@ QtObject {
         : kind === "stop" ? (details.session_stopping ? "Waiting for the emulator to close" : "The emulator is currently running")
         : kind === "cancel" ? "Launch preparation is in progress"
         : downloadState === "DOWNLOADING" ? "Downloading · " + Math.round(progress * 100) + "% · open progress"
-        : downloadState === "PAUSED" ? "Installation paused · open downloads to resume"
+        : downloadState === "PAUSED" ? "Installation paused · resume this download"
         : downloadState === "FAILED" ? "Installation needs attention · open recovery options"
         : downloadState === "COMPLETE" ? "Files downloaded · open import status"
         : "Installation queued · open progress"

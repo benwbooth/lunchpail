@@ -76,7 +76,7 @@ Item {
         parent: Overlay.overlay
         title: "Set up assistant microphone"
         modal: true
-        closePolicy: Popup.NoAutoClose
+        closePolicy: Popup.CloseOnEscape
         anchors.centerIn: parent
         width: Math.min(520, parent ? parent.width - 40 : 520)
         onRejected: setup.pending = false

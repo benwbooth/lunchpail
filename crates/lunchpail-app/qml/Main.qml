@@ -540,6 +540,7 @@ ApplicationWindow {
 
     onActiveChanged: {
         if (active && couchModeActive && !couchInputSuspended) {
+            if (desktopNavigation.focusOpenPopup()) return
             if (couchModeView.searchOpen) couchModeView.searchPanel.focusInput()
             else couchModeView.forceActiveFocus()
         }
@@ -1973,6 +1974,15 @@ ApplicationWindow {
                                 true, false)
     }
 
+    function couchBack() {
+        if (Qt.application.arguments.indexOf("--couch-journey-ui-probe") >= 0)
+            console.log("LUNCHPAIL_COUCH_JOURNEY_BACK popup=" + desktopNavigation.popupScope)
+        if (fullscreenMedia.opened) { fullscreenMedia.close(); return }
+        if (desktopNavigation.closeFocusedPopup()) return
+        if (root.couchWorkspace.length > 0) { root.closeCouchWorkspace(); return }
+        couchModeView.handleNavigation("back")
+    }
+
     function requestCardLaunch(gameId, databaseId, title, platform, local) {
         if (gameDetails.launch_busy || gameDetails.game_running)
             return
@@ -1993,6 +2003,11 @@ ApplicationWindow {
         root.pendingCardLaunchGameId = ""
         if (gameDetails.firmware_missing_count > 0) {
             root.openFirmwareSetupPage()
+            return
+        }
+        if (root.couchModeActive) {
+            couchModeView.closeLaunchStatus()
+            root.openCouchGameTool("launch")
             return
         }
         if (detailScroll.contentItem)
@@ -2548,6 +2563,7 @@ ApplicationWindow {
         z: 1200
         onOpenedChanged: {
             if (!opened && root.couchModeActive) {
+                if (desktopNavigation.focusOpenPopup()) return
                 if (root.couchWorkspace === "game") closeDetailsButton.forceActiveFocus()
                 else couchModeView.forceActiveFocus()
             }
@@ -2652,6 +2668,10 @@ ApplicationWindow {
                 Qt.callLater(function() {
                     if (!desktopNavigation.popupScope && root.couchModeActive
                             && root.couchWorkspace.length === 0 && !fullscreenMedia.opened) {
+                        // Closing a nested editor can briefly clear focus.
+                        // Restore its still-open parent dialog before the
+                        // wheel, or the parent's native Escape is disabled.
+                        if (desktopNavigation.focusOpenPopup()) return
                         if (couchModeView.searchOpen) couchModeView.searchPanel.focusInput()
                         else couchModeView.forceActiveFocus()
                     }
@@ -2668,6 +2688,7 @@ ApplicationWindow {
                               item.gamePlatform, item.gameLocal, item.gameDownloadable)
         }
         onBackRequested: {
+            if (root.couchModeActive) { root.couchBack(); return }
             if (fullscreenMedia.opened) { fullscreenMedia.close(); return }
             if (desktopNavigation.closeFocusedPopup()) return
             if (root.couchModeActive && root.couchWorkspace.length > 0) root.closeCouchWorkspace()
@@ -4260,7 +4281,8 @@ ApplicationWindow {
         width: Math.min(680, root.width - 64)
         height: Math.min(560, root.height - 64)
         anchors.centerIn: parent
-        closePolicy: Popup.NoAutoClose
+        closePolicy: saveSync.busy ? Popup.NoAutoClose : Popup.CloseOnEscape
+        onRejected: saveSync.cancel_remote_device_selection()
         title: "Choose a remote save history"
 
         background: Rectangle {
@@ -4329,7 +4351,8 @@ ApplicationWindow {
         width: Math.min(900, root.width - 64)
         height: Math.min(720, root.height - 64)
         anchors.centerIn: parent
-        closePolicy: Popup.NoAutoClose
+        closePolicy: saveSync.busy ? Popup.NoAutoClose : Popup.CloseOnEscape
+        onRejected: saveSync.cancel_conflicts()
         title: "Choose which save to keep"
 
         background: Rectangle {
@@ -4459,7 +4482,12 @@ ApplicationWindow {
         dim: true
         width: Math.min(620, root.width - 64)
         anchors.centerIn: parent
-        closePolicy: Popup.NoAutoClose
+        closePolicy: Popup.CloseOnEscape
+        onRejected: {
+            gameDetails.note_launch_timing("launch_cancelled_at_save_sync_error")
+            root.cloudLaunchPending = false
+            root.cloudActiveTarget = null
+        }
         title: "Cloud save synchronization needs attention"
 
         background: Rectangle {
@@ -12128,15 +12156,19 @@ ApplicationWindow {
         }
         onDetailsRequested: function(gameId, databaseId, title, platform,
                                      local, downloadable) {
-            if (gameDetails.game_id !== gameId)
+            if (gameDetails.game_id !== gameId || !gameDetails.panel_open)
                 root.openGame(gameId, databaseId, title, platform, local, downloadable)
         }
+        onDetailsReloadRequested: root.openGame(couchModeView.selectedGameId,
+            couchModeView.selectedDatabaseId, couchModeView.selectedTitle,
+            couchModeView.selectedPlatform, couchModeView.selectedLocal,
+            couchModeView.selectedDownloadable)
         onSettingsRequested: function(section) {
             root.openSettingsFor(section)
         }
         onToolsRequested: couchToolsDialog.open()
         onLaunchRequested: {
-            if (gameDetails.game_id !== couchModeView.selectedGameId)
+            if (gameDetails.game_id !== couchModeView.selectedGameId || !gameDetails.panel_open)
                 root.requestCardLaunch(couchModeView.selectedGameId, couchModeView.selectedDatabaseId,
                                        couchModeView.selectedTitle, couchModeView.selectedPlatform,
                                        couchModeView.selectedLocal)
@@ -12158,6 +12190,14 @@ ApplicationWindow {
     Loader {
         active: root.couchEntryUiProbe
         sourceComponent: CouchEntryProbe { app: root; view: couchModeView; library: library; details: gameDetails }
+    }
+
+    Loader {
+        active: Qt.application.arguments.indexOf("--couch-journey-ui-probe") >= 0
+        sourceComponent: CouchJourneyProbe {
+            app: root; view: couchModeView; library: library; details: gameDetails
+            gameTools: couchGameToolDialog; settings: settingsDialog; downloads: downloadsDrawer
+        }
     }
 
     Loader {
@@ -12209,10 +12249,10 @@ ApplicationWindow {
 
     Shortcut {
         sequence: "Escape"
-        enabled: root.couchModeActive && root.couchWorkspace.length > 0
-                 && !fullscreenMedia.opened
-                 && desktopNavigation.popupScope === null
-        onActivated: root.closeCouchWorkspace()
+        context: Qt.WindowShortcut
+        autoRepeat: false
+        enabled: root.couchModeActive
+        onActivated: root.couchBack()
     }
 
     LbDialog {
@@ -26089,6 +26129,7 @@ ApplicationWindow {
 
     Drawer {
         id: downloadsDrawer
+        focus: true
         edge: Qt.RightEdge
         width: Math.min(480, root.width * 0.42)
         height: root.height
@@ -26796,12 +26837,8 @@ ApplicationWindow {
         height: Math.min(720, root.height - 56)
         modal: true
         padding: 0
-        closePolicy: Popup.NoAutoClose
-        Shortcut {
-            sequence: "Esc"
-            enabled: metadataDialog.visible && !gameDetails.metadata_busy
-            onActivated: gameDetails.close_metadata_editor()
-        }
+        closePolicy: gameDetails.metadata_busy ? Popup.NoAutoClose : Popup.CloseOnEscape
+        onRejected: gameDetails.close_metadata_editor()
 
         background: Rectangle {
             radius: 16

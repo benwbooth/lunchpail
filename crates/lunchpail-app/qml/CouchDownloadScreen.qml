@@ -5,6 +5,8 @@ FocusScope {
     id: screen
 
     required property var details
+    property var downloadQueue: null
+    property string gameId: ""
     property bool active: false
     property string gameTitle: ""
     property string platformName: ""
@@ -25,6 +27,38 @@ FocusScope {
     property int selectedCandidate: 0
     property int reviewIndex: -1
     property bool queuePending: false
+    property string reviewedSource: ""
+    property string reviewedName: ""
+    property string reviewedDetail: ""
+    readonly property var job: {
+        if (!downloadQueue || !gameId) return null
+        downloadQueue.revision
+        const index = downloadQueue.job_index_for_game(gameId)
+        if (index < 0) return null
+        return { index: index, id: downloadQueue.job_id_at(index),
+            state: downloadQueue.job_state_at(index),
+            detail: downloadQueue.job_detail_at(index),
+            progress: downloadQueue.job_progress_at(index),
+            canResume: downloadQueue.job_can_resume(index),
+            canRetry: downloadQueue.job_can_retry(index) }
+    }
+    readonly property bool tracking: phase === "result" || phase === "queue"
+    readonly property bool playReady: !!details.can_launch && !details.loading
+                                          && !details.launch_discovery_busy
+    readonly property bool installed: !!details.local
+    readonly property bool chooseAgain: !job || job.state === "CANCELLED"
+                                       || (job.state === "IMPORTED" && !installed && !details.loading)
+    readonly property bool actionEnabled: phase !== "queue"
+        && (phase !== "result" || playReady || (job && (job.canResume || job.canRetry))
+            || (installed && !details.loading && !details.launch_discovery_busy)
+            || chooseAgain || (job && job.state === "FAILED"))
+        && !(phase === "review" && (details.download_preflight_busy || details.download_preflight_terminal))
+    readonly property string progressTitle: playReady ? "READY TO PLAY"
+        : installed ? "FINISHING PLAY SETUP"
+        : !job ? "DOWNLOAD REQUEST" : job.state === "FAILED" ? "INSTALLATION NEEDS ATTENTION"
+        : job.state === "PAUSED" ? "DOWNLOAD PAUSED"
+        : job.state === "COMPLETE" ? "ADDING TO YOUR LIBRARY"
+        : "INSTALLING YOUR GAME"
 
     readonly property int candidateCount: {
         details.detail_revision
@@ -37,7 +71,13 @@ FocusScope {
             : phase === "queue"
               ? "Adding to downloads…"
               : phase === "result"
-                ? "Return to browsing"
+                ? playReady ? "Play now"
+                  : job && job.canResume ? "Resume download"
+                  : job && job.canRetry ? "Retry installation"
+                  : job && job.state === "FAILED" ? "Open download settings"
+                  : installed ? (details.loading || details.launch_discovery_busy ? "Checking play setup…" : "Finish play setup")
+                  : chooseAgain ? "Choose download again"
+                  : job.state === "COMPLETE" ? "Importing game…" : "Downloading… " + Math.round(job.progress * 100) + "%"
                 : details.download_preflight_busy
                   ? "Checking storage…"
                   : needsSetup
@@ -53,6 +93,8 @@ FocusScope {
     signal closeRequested()
     signal configureRequested()
     signal importTorrentRequested()
+    signal playRequested()
+    signal setupRequested()
 
     visible: active
     focus: active
@@ -62,11 +104,16 @@ FocusScope {
     }
 
     function resetForGame() {
-        phase = "candidates"
+        if (!details) return
+        phase = details.download_busy ? "queue" : !chooseAgain ? "result" : "candidates"
         selectedCandidate = candidateCount > 0 ? 0 : -1
         reviewIndex = -1
-        queuePending = false
+        reviewedSource = ""
+        reviewedName = ""
+        reviewedDetail = ""
+        queuePending = details.download_busy
         Qt.callLater(function() {
+            if (!screen.active) return
             if (candidateList.count > 0 && selectedCandidate >= 0) {
                 candidateList.currentIndex = selectedCandidate
                 candidateList.positionViewAtIndex(selectedCandidate,
@@ -88,6 +135,11 @@ FocusScope {
     function beginReview() {
         if (selectedCandidate < 0 || selectedCandidate >= candidateCount)
             return
+        // More sources may finish ranking while this review is open. Keep
+        // the labels tied to the explicit selection, not its old list row.
+        reviewedSource = details.download_candidate_source_at(selectedCandidate)
+        reviewedName = details.download_candidate_name_at(selectedCandidate)
+        reviewedDetail = details.download_candidate_detail_at(selectedCandidate)
         const selected = details.select_download_candidate(selectedCandidate)
         if (selected < 0)
             return
@@ -100,7 +152,12 @@ FocusScope {
         if (phase === "queue")
             return
         if (phase === "result") {
-            closeRequested()
+            if (playReady) playRequested()
+            else if (job && job.canResume) downloadQueue.resume_job(job.index)
+            else if (job && job.canRetry) downloadQueue.retry_job(job.id)
+            else if (job && job.state === "FAILED") configureRequested()
+            else if (installed && !details.loading && !details.launch_discovery_busy) setupRequested()
+            else if (chooseAgain) phase = "candidates"
             return
         }
         if (needsSetup) {
@@ -161,7 +218,7 @@ FocusScope {
             if (phase === "review") {
                 phase = "candidates"
                 Qt.callLater(function() { candidateList.forceActiveFocus() })
-            } else if (phase !== "queue") {
+            } else {
                 closeRequested()
             }
         } else if (action === "accept") {
@@ -176,6 +233,7 @@ FocusScope {
         if (active)
             resetForGame()
     }
+    onDetailsChanged: if (active && details) resetForGame()
 
     onCandidateCountChanged: {
         if (candidateCount <= 0) {
@@ -187,6 +245,12 @@ FocusScope {
         }
     }
 
+    onJobChanged: {
+        // An imported/manual torrent can enqueue this game while its dialog
+        // is above us. Resume the same journey when that dialog closes.
+        if (active && job && !chooseAgain && phase === "candidates") phase = "result"
+    }
+
     Connections {
         target: screen.details
         ignoreUnknownSignals: true
@@ -195,7 +259,8 @@ FocusScope {
             if (screen.queuePending && !screen.details.download_busy) {
                 screen.queuePending = false
                 screen.phase = "result"
-                screen.forceActiveFocus()
+                if (screen.downloadQueue) screen.downloadQueue.refresh()
+                if (screen.active) screen.forceActiveFocus()
             }
         }
     }
@@ -261,14 +326,15 @@ FocusScope {
         }
 
         Column {
-            width: parent.width - 80
+            width: parent.width - 140
             anchors.verticalCenter: parent.verticalCenter
             spacing: 5
 
             Text {
                 width: parent.width
-                text: screen.phase === "candidates" ? "CHOOSE A DOWNLOAD"
-                                                    : "REVIEW DOWNLOAD"
+                text: screen.tracking ? "2  INSTALL  →  3  PLAY"
+                      : screen.phase === "candidates" ? "1  CHOOSE YOUR VERSION  →  2  INSTALL  →  3  PLAY"
+                                                    : "1  CONFIRM YOUR DOWNLOAD  →  2  INSTALL  →  3  PLAY"
                 color: screen.accentColor
                 font.pixelSize: 12
                 font.weight: Font.Bold
@@ -291,6 +357,16 @@ FocusScope {
                 elide: Text.ElideRight
             }
         }
+    }
+
+    LbToolButton {
+        anchors.right: heading.right
+        anchors.top: heading.top
+        width: 48; height: 48
+        text: "×"
+        font.pixelSize: 28
+        Accessible.name: "Back to games"
+        onClicked: screen.closeRequested()
     }
 
     Item {
@@ -337,6 +413,25 @@ FocusScope {
                 color: screen.mutedColor
                 font.pixelSize: 12
                 wrapMode: Text.WordWrap
+            }
+
+            CouchActionButton {
+                objectName: "couchInstallContinue"
+                width: Math.min(430, parent.width); height: 58
+                visible: screen.candidateCount > 0
+                text: screen.selectedCandidate === 0 ? "Continue with best match" : "Continue with selected version"
+                emphasized: true
+                accentColor: screen.accentColor
+                inkColor: screen.inkColor
+                panelColor: screen.panelColor
+                contentItem: LbButtonLabel { control: parent; pixelSize: 18; color: screen.backgroundColor }
+                background: Rectangle {
+                    radius: 12
+                    color: screen.accentColor
+                    border.color: screen.inkColor
+                    border.width: 2
+                }
+                onClicked: screen.beginReview()
             }
 
             MomentumListView {
@@ -393,7 +488,7 @@ FocusScope {
                             width: parent.width
                             text: screen.details.download_candidate_name_at(candidateRow.index)
                             color: screen.inkColor
-                            font.pixelSize: 14
+                            font.pixelSize: screen.height < 800 ? 17 : 21
                             font.weight: Font.DemiBold
                             elide: Text.ElideMiddle
                         }
@@ -401,7 +496,7 @@ FocusScope {
                             width: parent.width
                             text: screen.details.download_candidate_detail_at(candidateRow.index)
                             color: screen.mutedColor
-                            font.pixelSize: 10
+                            font.pixelSize: screen.height < 800 ? 11 : 13
                             elide: Text.ElideRight
                         }
                     }
@@ -503,9 +598,7 @@ FocusScope {
                     spacing: 6
                     Text {
                         width: parent.width
-                        text: screen.selectedCandidate >= 0
-                              ? screen.details.download_candidate_source_at(screen.selectedCandidate)
-                              : "SELECTED SOURCE"
+                        text: screen.reviewedSource || "YOUR GAME INSTALLATION"
                         color: screen.accentCoolColor
                         font.pixelSize: 10
                         font.weight: Font.Bold
@@ -514,19 +607,15 @@ FocusScope {
                     }
                     Text {
                         width: parent.width
-                        text: screen.selectedCandidate >= 0
-                              ? screen.details.download_candidate_name_at(screen.selectedCandidate)
-                              : ""
+                        text: screen.reviewedName || screen.gameTitle
                         color: screen.inkColor
-                        font.pixelSize: 15
+                        font.pixelSize: screen.height < 800 ? 17 : 21
                         font.weight: Font.DemiBold
                         elide: Text.ElideMiddle
                     }
                     Text {
                         width: parent.width
-                        text: screen.selectedCandidate >= 0
-                              ? screen.details.download_candidate_detail_at(screen.selectedCandidate)
-                              : ""
+                        text: screen.reviewedDetail || screen.platformName
                         color: screen.mutedColor
                         font.pixelSize: 10
                         elide: Text.ElideRight
@@ -551,7 +640,7 @@ FocusScope {
 
                     Text {
                         width: parent.width
-                        text: screen.phase === "result" ? "DOWNLOAD REQUEST"
+                        text: screen.phase === "result" ? screen.progressTitle
                               : screen.phase === "queue" ? "ADDING DOWNLOAD"
                               : screen.details.download_preflight_busy
                                 ? "CHECKING YOUR STORAGE"
@@ -568,7 +657,9 @@ FocusScope {
 
                     Text {
                         width: parent.width
-                        text: screen.phase === "result" ? screen.details.message
+                        text: screen.phase === "result"
+                              ? screen.playReady ? "Your game is installed. Start playing whenever you’re ready."
+                                : screen.job ? screen.job.detail : screen.details.message
                               : screen.phase === "queue"
                                 ? "Lunchpail is adding only this reviewed selection to qBittorrent."
                                 : screen.details.download_preflight_status
@@ -610,30 +701,51 @@ FocusScope {
                         }
                     }
 
+                    InlineProgressBar {
+                        width: parent.width
+                        height: 10
+                        visible: screen.tracking && !!screen.job && !screen.playReady
+                        from: 0; to: 1
+                        value: screen.job ? screen.job.progress : 0
+                        indeterminate: screen.installed || (screen.job && screen.job.state === "COMPLETE")
+                        fillColor: screen.accentCoolColor
+                        trackColor: screen.withAlpha(screen.mutedColor, 0.2)
+                    }
+                    Text {
+                        width: parent.width
+                        visible: screen.tracking
+                        text: screen.playReady ? "Ready when you are — select Play now"
+                              : "Stay here for Play when installation finishes, or press Escape to browse. Your download will keep running."
+                        color: screen.accentCoolColor
+                        font.pixelSize: 14
+                        wrapMode: Text.WordWrap
+                    }
+
                     Item { width: 1; height: 1 }
 
                     Rectangle {
+                        objectName: "couchInstallPrimary"
                         width: Math.min(430, parent.width)
                         height: 58
                         radius: Math.max(10, screen.cardRadius - 5)
-                        color: screen.phase === "queue"
+                        color: !screen.actionEnabled
                                ? screen.withAlpha(screen.mutedColor, 0.28)
-                               : screen.withAlpha(screen.accentColor, 0.92)
+                               : screen.playReady ? screen.accentCoolColor : screen.accentColor
                         border.color: screen.inkColor
-                        border.width: screen.phase === "queue" ? 0 : 2
+                        border.width: screen.actionEnabled ? 2 : 0
                         opacity: screen.phase === "review"
                                  && screen.details.download_preflight_busy ? 0.72 : 1
 
                         Text {
                             anchors.centerIn: parent
                             text: screen.actionLabel
-                            color: screen.inkColor
-                            font.pixelSize: 13
+                            color: screen.actionEnabled ? screen.backgroundColor : screen.mutedColor
+                            font.pixelSize: 18
                             font.weight: Font.Black
                             font.letterSpacing: 0.9
                         }
                         TapHandler {
-                            enabled: screen.phase !== "queue"
+                            enabled: screen.actionEnabled
                             onTapped: screen.activateReview()
                         }
                     }

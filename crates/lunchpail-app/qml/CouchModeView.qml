@@ -266,27 +266,46 @@ Item {
     }
     readonly property bool detailsCurrent: selectedGameId.length > 0
                                            && details.game_id === selectedGameId
+                                           && details.panel_open
+    property string pendingPrimaryGameId: ""
+    property bool detailsTimedOut: false
+    readonly property bool detailsRetryAvailable: detailsTimedOut || (detailsCurrent && !details.loading
+        && (details.message.indexOf("Could not load game details:") === 0
+            || details.message.indexOf("Could not start details worker:") === 0))
+    signal detailsReloadRequested()
+    function continuePrimaryAction() {
+        if (!active || !overlayOpen || pendingPrimaryGameId !== selectedGameId
+                || !detailsCurrent || details.loading) return
+        pendingPrimaryGameId = ""
+        if (details.can_launch || details.local) {
+            closeOverlay()
+            activateAction(0)
+        } else openDownloadOverlay()
+    }
+    Timer {
+        id: detailsLoadingTimeout
+        interval: 20000
+        running: view.overlayOpen && (!view.detailsCurrent || view.details.loading)
+        onTriggered: view.detailsTimedOut = true
+    }
+    onDetailsCurrentChanged: Qt.callLater(continuePrimaryAction)
     readonly property int downloadJobIndex: {
         downloadQueue.revision
         return selectedGameId.length > 0
                 ? downloadQueue.job_index_for_game(selectedGameId) : -1
     }
-    readonly property string downloadJobState: downloadJobIndex >= 0
-                                                  ? downloadQueue.job_state_at(downloadJobIndex)
-                                                  : ""
+    readonly property string downloadJobState: {
+        downloadQueue.revision
+        return downloadJobIndex >= 0 ? downloadQueue.job_state_at(downloadJobIndex) : ""
+    }
     readonly property bool downloadInProgress: downloadJobIndex >= 0
                                                && downloadJobState !== "IMPORTED"
+                                               && downloadJobState !== "CANCELLED"
     readonly property string primaryAction: details.game_running
             ? details.session_stopping ? "Stopping…" : "Stop emulator"
             : details.launch_busy ? "Cancel preparation"
-            : !detailsCurrent ? selectedLocal ? "Play" : selectedDownloadable ? "Download options" : "View details"
-            : details.loading ? "Loading…"
-            : details.download_busy ? "Adding download…"
-            : details.can_launch ? "Play"
-            : selectedLocal ? "Set up play"
-            : downloadInProgress ? "View download"
-            : selectedDownloadable ? "Download options"
-            : "View details"
+            : !detailsCurrent ? selectedLocal ? "Play" : selectedDownloadable ? "Install & play" : "View details"
+            : detailsPrimary.label
 
     CouchPrimaryAction {
         id: detailsPrimary
@@ -301,7 +320,7 @@ Item {
         }
         onRequested: function(kind) {
             if (kind === "install") view.openDownloadOverlay()
-            else if (kind === "download") view.downloadsRequested()
+            else if (kind === "download") view.openDownloadOverlay()
             else if (kind === "setup") view.manageGameRequested("launch")
             else if (kind === "files") view.manageGameRequested("files")
             else {
@@ -866,13 +885,11 @@ Item {
     function requestDetails() {
         if (selectedGameId.length === 0)
             return
-        detailsRequested(selectedGameId, selectedDatabaseId, selectedTitle,
-                         selectedPlatform, selectedLocal, selectedDownloadable)
         openOverlay("details")
     }
 
     function openDownloadOverlay() {
-        if (!detailsCurrent || details.loading || !details.downloadable)
+        if (!detailsCurrent || details.loading)
             return
         attractOpen = false
         platformWheelOpen = false
@@ -880,11 +897,11 @@ Item {
         variantWheelOpen = false
         overlayOpen = false
         downloadOverlayOpen = true
-        downloadScreen.resetForGame()
         forceActiveFocus()
     }
 
     function closeDownloadOverlay() {
+        pendingPrimaryGameId = ""
         downloadOverlayOpen = false
         if (active)
             forceActiveFocus()
@@ -908,22 +925,30 @@ Item {
                     feedback.play("launch")
                     launchStatusOverlayOpen = true
                     launchRequested()
-                } else requestDetails()
+                } else {
+                    pendingPrimaryGameId = selectedGameId
+                    requestDetails()
+                }
                 return
             }
-            if (details.loading)
+            if (details.loading) {
+                pendingPrimaryGameId = selectedGameId
+                openOverlay("details")
                 return
+            }
             if (details.can_launch && !details.launch_busy
                     && !details.game_running) {
                 feedback.play("launch")
                 launchStatusOverlayOpen = true
                 launchRequested()
             } else if (downloadInProgress) {
-                downloadsRequested()
+                openDownloadOverlay()
+            } else if (details.local) {
+                manageGameRequested("launch")
             } else if (selectedDownloadable) {
                 openDownloadOverlay()
             } else {
-                requestDetails()
+                manageGameRequested("files")
             }
         } else if (index === 1) {
             requestDetails()
@@ -933,6 +958,7 @@ Item {
     }
 
     function openOverlay(mode) {
+        detailsTimedOut = false
         feedback.play("confirm")
         if (!detailsCurrent && selectedGameId.length > 0)
             detailsRequested(selectedGameId, selectedDatabaseId, selectedTitle,
@@ -950,6 +976,7 @@ Item {
     }
 
     function closeOverlay() {
+        pendingPrimaryGameId = ""
         feedback.play("back")
         overlayOpen = false
         loadedGameId = ""
@@ -1182,7 +1209,7 @@ Item {
             return downloadScreen.handleNavigation(action)
         if (platformWheelOpen) {
             if (action === "back") {
-                closePlatformWheel()
+                exitRequested()
             } else if (action === "details") {
                 systemMediaRequested(library.platform_name_at(platformWheelIndex))
             } else if (action === "menu" || action === "cycle_zone") {
@@ -1301,7 +1328,7 @@ Item {
         }
         if (action === "back") {
             if (searchText.length > 0) searchRequested("")
-            else exitRequested()
+            else openPlatformWheel()
         } else if (action === "up") {
             if (wallView && navigationZone === 2 && shelf.currentIndex >= shelf.columns)
                 moveShelf(-shelf.columns)
@@ -1406,6 +1433,7 @@ Item {
     }
 
     onSelectedGameIdChanged: {
+        if (pendingPrimaryGameId !== selectedGameId) pendingPrimaryGameId = ""
         if (active && selectedGameId) selectionReveal.restart()
         if (selectedGameId.length === 0 || !detailsCurrent) {
             downloadOverlayOpen = false
@@ -1417,6 +1445,12 @@ Item {
 
     Connections {
         target: view.details
+        function onLoadingChanged() {
+            if (!view.details.loading) {
+                view.detailsTimedOut = false
+                Qt.callLater(view.continuePrimaryAction)
+            }
+        }
         function onLaunch_busyChanged() {
             if (view.details.launch_busy) {
                 view.launchSessionObserved = false
@@ -2208,8 +2242,8 @@ Item {
         Item { width: Math.max(0, parent.width - 760); height: 1 }
         Text {
             text: view.gamepad.connected_count > 0
-                  ? view.gamepad.button_label("back") + "  DESKTOP MODE"
-                  : "ESC  DESKTOP MODE"
+                  ? view.gamepad.button_label("back") + "  PLATFORMS"
+                  : "ESC  PLATFORMS"
             color: view.muted
             font.pixelSize: 9
             font.weight: Font.Bold
@@ -2569,6 +2603,8 @@ Item {
         z: 58
         active: view.downloadOverlayOpen && view.detailsCurrent
         details: view.details
+        downloadQueue: view.downloadQueue
+        gameId: view.selectedGameId
         gameTitle: view.selectedTitle
         platformName: view.selectedPlatform
         coverUrl: view.coverUrl
@@ -2588,11 +2624,14 @@ Item {
                    : "ENTER  SELECT   ·   ESC  RETURN"
         onCloseRequested: view.closeDownloadOverlay()
         onConfigureRequested: {
-            view.downloadOverlayOpen = false
             view.settingsRequested("qbittorrent")
         }
+        onPlayRequested: {
+            view.closeDownloadOverlay()
+            view.activateAction(0)
+        }
+        onSetupRequested: view.manageGameRequested("launch")
         onImportTorrentRequested: {
-            view.downloadOverlayOpen = false
             view.torrentImportRequested(view.selectedGameId,
                                         view.selectedDatabaseId,
                                         view.selectedTitle,
@@ -2771,7 +2810,7 @@ Item {
                         font.pixelSize: 23
                     }
                     HoverHandler { id: platformCloseHover; onHoveredChanged: if (hovered) feedback.play("focus") }
-                    TapHandler { onTapped: view.closePlatformWheel() }
+                    TapHandler { onTapped: view.exitRequested() }
                 }
             }
 
@@ -3581,17 +3620,23 @@ Item {
                 coverUrl: view.coverUrl
                 backgroundUrl: view.heroUrl
                 logoUrl: { view.library.media_revision; return view.library.exact_artwork_url(view.selectedMediaId, "clear-logo") }
-                primaryAction: detailsPrimary.label
-                primaryHint: detailsPrimary.hint
+                primaryAction: view.detailsRetryAvailable ? "Retry loading" : detailsPrimary.label
+                primaryHint: view.detailsRetryAvailable ? "Loading could not finish. Retry, or press Escape to go back." : detailsPrimary.hint
                 primaryKind: detailsPrimary.kind
-                primaryEnabled: detailsPrimary.enabled
+                primaryEnabled: view.detailsRetryAvailable || detailsPrimary.enabled
                 primaryProgress: detailsPrimary.progress
                 favorite: view.favorite
                 ready: view.detailsCurrent && !view.details.loading
                 background: view.background; panel: view.panel
                 ink: view.ink; muted: view.muted; accent: view.accentCool
                 onCloseRequested: view.closeOverlay()
-                onPrimaryRequested: detailsPrimary.activate()
+                onPrimaryRequested: {
+                    if (view.detailsRetryAvailable) {
+                        view.detailsTimedOut = false
+                        view.detailsReloadRequested()
+                        detailsLoadingTimeout.restart()
+                    } else detailsPrimary.activate()
+                }
                 onFavoriteRequested: view.activateAction(2)
                 onVersionsRequested: view.openVariantWheel()
                 onManageRequested: section => view.manageGameRequested(section)

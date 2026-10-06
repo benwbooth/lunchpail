@@ -4,6 +4,10 @@ import QtQuick.Controls as Controls
 Controls.Dialog {
     id: control
 
+    // Popup.CloseOnEscape only works when the popup owns active focus.
+    // Every dialog has a close button, so opening one must also move keyboard
+    // focus into it (including dialogs whose content has no text field).
+    focus: true
     padding: 20
     font.family: Qt.application.font.family
     font.pixelSize: 13
@@ -49,6 +53,7 @@ Controls.Dialog {
             text: "×"
             font.pixelSize: 20
             Accessible.name: "Close " + control.title
+            enabled: (control.closePolicy & Controls.Popup.CloseOnEscape) !== 0
             onClicked: control.reject()
         }
     }

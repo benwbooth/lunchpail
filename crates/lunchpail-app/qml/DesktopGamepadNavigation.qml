@@ -173,16 +173,19 @@ Item {
         return popupScope || focusScope
     }
 
-    function closeFocusedPopup() {
+    function findOpenPopup() {
         // QQuickPopup's visual item exposes its owner as parent on contentItem.
         // Escape is also handled natively for keyboard users. Find the owner
         // through the window's QObject children for controller Back.
         const scope = popupScope
-        if (!scope) return false
+        let fallback = null
         function findPopup(object, depth) {
             if (!object || depth > 12) return null
             if (object.visible && object.contentItem && typeof object.close === "function"
-                    && within(object.contentItem, scope)) return object
+                    && typeof object.closePolicy === "number") {
+                if (scope && within(object.contentItem, scope)) return object
+                if (!fallback || object.z >= fallback.z) fallback = object
+            }
             // C++ models also expose a data() method. Only traverse QML's
             // list-valued data property, never a model method or scalar.
             const children = object.data
@@ -194,11 +197,25 @@ Item {
             }
             return null
         }
-        const popup = findPopup(applicationWindow.contentItem, 0)
+        return findPopup(applicationWindow.contentItem, 0) || fallback
+    }
+
+    function focusOpenPopup() {
+        const popup = findOpenPopup()
         if (!popup) return false
+        popup.contentItem.forceActiveFocus(Qt.OtherFocusReason)
+        return true
+    }
+
+    function closeFocusedPopup() {
+        const popup = findOpenPopup()
+        if (!popup) return false
+        if (Qt.application.arguments.indexOf("--couch-journey-ui-probe") >= 0)
+            console.log("LUNCHPAIL_COUCH_JOURNEY_POPUP " + popup)
         // Busy/unsaved workflows deliberately require their explicit buttons.
         if ((popup.closePolicy & Popup.CloseOnEscape) === 0) return true
-        popup.close()
+        if (typeof popup.reject === "function") popup.reject()
+        else popup.close()
         return true
     }
 

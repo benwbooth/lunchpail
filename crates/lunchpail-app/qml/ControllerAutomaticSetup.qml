@@ -1644,7 +1644,7 @@ ColumnLayout {
         modal: true
         width: 780
         height: 540
-        closePolicy: Popup.NoAutoClose
+        closePolicy: Popup.CloseOnEscape
         contentItem: ColumnLayout {
             Label {
                 Layout.fillWidth: true

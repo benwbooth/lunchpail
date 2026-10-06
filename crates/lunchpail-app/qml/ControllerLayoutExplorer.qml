@@ -16,7 +16,8 @@ LbDialog {
                      parent ? parent.height - 40 : 900)
     padding: 24
     modal: true
-    closePolicy: Popup.NoAutoClose
+    closePolicy: Popup.CloseOnEscape
+    onRejected: workflow.loadMapping()
     title: "Controller setup"
     function reviewCalibrationFont() {
         if (settingsModel.controller_count() > 0)

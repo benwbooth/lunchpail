@@ -82,7 +82,7 @@ LbDialog {
     width: Math.min(900, parent ? parent.width - 40 : 900)
     height: Math.min(760, parent ? parent.height - 40 : 760)
     modal: true
-    closePolicy: Popup.NoAutoClose
+    closePolicy: Popup.CloseOnEscape
     onClosed: { relativeSelection.close(); replaceController.close(); assignmentEditor.close(); removal.close(); reportImport.close(); mouseDestination.close(); keyboardConsent.close(); absoluteSelection.close() }
 
     function refresh() {

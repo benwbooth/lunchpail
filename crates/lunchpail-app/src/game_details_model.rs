@@ -2025,33 +2025,15 @@ impl qobject::GameDetailsModel {
                         ),
                     }
                 }
-                // Discover emulators on this loader thread so the pane's
-                // first render already carries the final emulator layout.
-                let pending_discovery = loaded.as_ref().ok().and_then(|details| {
-                    let preparable = crate::exo_install::is_preparable_archive(
-                        &details.platform,
-                        &details.local_file_path,
-                    );
-                    if !(details.prepared_install.is_some()
-                        || (!details.local_file_paths.is_empty() && !preparable))
-                    {
-                        return None;
-                    }
-                    let catalog_database = crate::catalog::requested_database_path()?;
-                    build_emulator_discovery(
-                        details.prepared_install.as_ref(),
-                        &catalog_database,
-                        &game_id_string,
-                        &details.platform,
-                        Some(details.local_file_path.as_path()),
-                    )
-                    .map(|result| (game_id_string.clone(), result))
-                    .ok()
-                });
+                // Render game information immediately. Emulator discovery can
+                // inspect installed runtimes and must not hold the entire
+                // details/download page behind its loading spinner. The
+                // completion handler starts its separate, generation-guarded
+                // discovery worker (or applies a matching cached result).
                 let queued = qt_thread.queue(move |mut model| {
                     model
                         .as_mut()
-                        .finish_game_details(generation, loaded, pending_discovery);
+                        .finish_game_details(generation, loaded, None);
                 });
                 if download_review_probe {
                     match queued {

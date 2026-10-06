@@ -77,8 +77,14 @@ Choose a shelf such as My Collection, Favorites, or Recent. The platform and
 collection pickers narrow the same library used by normal mode.
 
 Use up/down through the wheel, left/right through cover flow or the shelf, and
-both directions through the wall. Select a game to see its actions, then choose
-Play or download options.
+both directions through the wall. The highlighted **Install & play** action opens
+that game's ranked download choices directly. Choose the recommended version,
+review its exact files and storage, and confirm **Download**. The same page follows
+installation and turns into **Play now** when ready; paused and failed downloads
+offer **Resume** or **Retry** for that game. No trip through the global queue is
+needed. If an emulator or BIOS needs attention, **Finish play setup** opens the
+game's launch setup. Leaving the page does not cancel the download, and returning
+to its main action restores that installation's status.
 
 The Game Menu includes favorite, release, view, and attract-mode choices.
 
@@ -275,11 +281,11 @@ installed-status metadata.
 ## Game details and tools
 
 **Game details & tools** opens a full-screen page with five tabs: Overview,
-Play & setup, Media, Activity, and Library. A large green **Install / Play** button
-stays at the top of every tab and is the default controller action. **Install**
+Play & setup, Media, Activity, and Library. A prominent **Install & play / Play** button
+stays at the top of every tab and is the default controller action. **Install & play**
 opens the version and download review before anything is queued; installed games
 show **Play** when ready. If setup is needed, the button opens launch settings.
-Downloads in progress show installation status and open the queue, including
+Downloads in progress open the same game's installation page, including
 paused or failed installs. Favorites and other releases stay beside the cover.
 Use the bumpers to switch tabs, then the D-pad to choose a tool.
 
@@ -362,6 +368,8 @@ not execution of raw HyperSpin theme packages. EmuMovies also publishes
 - D-pad or left stick: move.
 - South face button: select.
 - East face button: back or close the current panel.
+- **Escape**: close the top section, then return from games to platforms; at the
+  platform wheel, exit Couch Mode. Keyboard and controller Back use the same order.
 - Bumpers: page through the focused list.
 - **F3**: search. **F2**: voice search/setup.
 - **Ctrl+F**: favorite. **Ctrl+D**: details. **Ctrl+M**: game menu.
@@ -369,7 +377,15 @@ not execution of raw HyperSpin theme packages. EmuMovies also publishes
 - **Ctrl+A**: attract mode. **Ctrl+P**: pause/resume background music.
 
 When a dialog is open, controller navigation stays with that dialog rather
-than moving the game list behind it.
+than moving the game list behind it. Dialogs take keyboard focus on opening;
+protected busy operations disable dismissal until their operation finishes.
+
+The opt-in `--couch-journey-ui-probe` uses the real Action 52 NES catalog entry,
+reloads it after closing details, presses actual Escape keys through the shared
+game tools/settings/downloads, checks the install shortcut and wheel hierarchy,
+and captures the details and installation pages. Use an isolated state/media
+profile with QtTest available. This probe never queues a game download or launches
+an emulator; QML lifecycle tests separately cover progress, resume/retry and Play.
 
 ## Attract mode, music, and themes
 
