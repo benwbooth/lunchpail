@@ -15,6 +15,7 @@ mod couch_speech_model;
 mod local_ai;
 mod local_ai_model;
 mod assistant_tools;
+mod title_match;
 mod assistant;
 mod assistant_model;
 mod conversation;

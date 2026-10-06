@@ -38,6 +38,7 @@ pub struct Runtime<'a> {
     pub events: &'a mpsc::Sender<Event>,
     calls: usize,
     resolved_ids: std::collections::HashSet<String>,
+    uncertain_ids: std::collections::HashSet<String>,
     catalog: Option<crate::assistant_tools::ToolContext>,
     started: Instant,
 }
@@ -48,6 +49,7 @@ impl<'a> Runtime<'a> {
             events,
             calls: 0,
             resolved_ids: Default::default(),
+            uncertain_ids: Default::default(),
             catalog: None,
             started: Instant::now(),
         }
@@ -69,6 +71,13 @@ impl<'a> Runtime<'a> {
     pub fn invoke(&mut self, name: &str, arguments: Value) -> Value {
         self.invoke_checked(name, arguments)
             .unwrap_or_else(|e| json!({"error":format!("{e:#}")}))
+    }
+    fn remember_resolution(&mut self, result: &Value) {
+        if result["match_kind"] == "ambiguous" {
+            if let Some(games) = result["games"].as_array() {
+                self.uncertain_ids.extend(games.iter().filter_map(|g| g["id"].as_str().map(str::to_owned)));
+            }
+        }
     }
     fn invoke_checked(&mut self, name: &str, arguments: Value) -> Result<Value> {
         self.check()?;
@@ -92,7 +101,9 @@ impl<'a> Runtime<'a> {
             if self.catalog.is_none() {
                 self.catalog = Some(crate::assistant_tools::ToolContext::load()?);
             }
-            return self.catalog.as_ref().unwrap().call(&read, self.cancel);
+            let result = self.catalog.as_ref().unwrap().call(&read, self.cancel)?;
+            self.remember_resolution(&result["resolution"]);
+            return Ok(result);
         }
         ensure!(
             !matches!(call, Call::Answer(_)),
@@ -104,6 +115,10 @@ impl<'a> Runtime<'a> {
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
         {
+            ensure!(
+                !matches!(call, Call::PlayGame(_) | Call::SelectGame(_)) || self.uncertain_ids.is_empty(),
+                "That title match is ambiguous. Ask the user which game they meant and wait for their next turn; nothing was selected or launched."
+            );
             if !self.resolved_ids.contains(id) {
                 if self.catalog.is_none() {
                     self.catalog = Some(crate::assistant_tools::ToolContext::load()?);
@@ -131,6 +146,7 @@ impl<'a> Runtime<'a> {
                     // loaded catalog. Do not reload the entire database merely
                     // to revalidate an ID it just returned.
                     if name == "resolve_game" && value.get("error").is_none() {
+                        self.remember_resolution(&value);
                         if let Some(games) = value["games"].as_array() {
                             self.resolved_ids.extend(games.iter().filter_map(|g| g["id"].as_str().map(str::to_owned)));
                         }
@@ -243,6 +259,23 @@ fn local_messages(history: &[Message], observations: &[Value]) -> Vec<lunchpail_
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn provider_cannot_launch_or_select_an_unconfirmed_approximate_suggestion() {
+        let cancel = AtomicBool::new(false);
+        let (tx, _rx) = mpsc::channel();
+        let mut runtime = Runtime::new(&cancel, &tx);
+        runtime.remember_resolution(&json!({"match_kind":"ambiguous","games":[{"id":"candidate"}]}));
+        // Even resolving the provider's own guess exactly does not clear the
+        // ambiguity. A new user turn creates a fresh Runtime.
+        runtime.remember_resolution(&json!({"match_kind":"exact","games":[{"id":"candidate"}]}));
+        for name in ["play_game", "select_game"] {
+            for id in ["candidate", "another-platform-copy"] {
+                let result = runtime.invoke(name, json!({"game_id":id}));
+                assert!(result["error"].as_str().unwrap().contains("ambiguous"), "{result}");
+            }
+        }
+        assert!(runtime.catalog.is_none());
+    }
     #[test]
     fn unsearched_background_games_do_not_bias_local_title_resolution() {
         let context = json!({"query":"","games":[{"platform":"Nintendo Wii","title":"Unrelated"}],

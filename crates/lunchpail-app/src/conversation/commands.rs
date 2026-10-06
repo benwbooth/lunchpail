@@ -152,6 +152,29 @@ fn play_request(text: &str) -> Option<PlayRequest> {
 
 const AMBIGUOUS: &str = "More than one game matches: ";
 
+fn correction_text(text: &str) -> (String, bool) {
+    let normalized = text.to_lowercase().replace(['\u{2019}', '\''], "")
+        .split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" ");
+    for prefix in ["no i said ", "no i meant ", "no i mean ", "no its ", "no it is ",
+                   "i said ", "i meant ", "i mean ", "its called ", "no "] {
+        if let Some(rest) = normalized.strip_prefix(prefix) { return (rest.into(), true); }
+    }
+    (normalized, false)
+}
+
+fn confirmed_title(answer: &str, clarification: &Message, prior: &PlayRequest) -> Option<PlayRequest> {
+    if !matches!(answer, "yes" | "yes please" | "correct" | "thats right" | "that is right") { return None; }
+    let proposal = clarification.content.strip_prefix("Did you mean ")?.strip_suffix('?')?;
+    if proposal.contains(", or ") { return None; } // "yes" cannot choose between titles.
+    let candidate = title_request(proposal);
+    if crate::title_match::similarity(&candidate.title, &prior.title).score < 0.72
+        || !crate::catalog::is_platform_query(&candidate.platform) { return None; }
+    if !prior.platform.is_empty()
+        && crate::catalog::canonical_platform_query(&prior.platform)
+            != crate::catalog::canonical_platform_query(&candidate.platform) { return None; }
+    Some(candidate)
+}
+
 fn request_from_history(history: &[Message]) -> Option<PlayRequest> {
     let current = history.last()?;
     if current.role != "user" {
@@ -170,10 +193,9 @@ fn request_from_history(history: &[Message]) -> Option<PlayRequest> {
         return None;
     }
     let mut request = request_from_history(&history[..history.len() - 2])?;
-    let answer = current
-        .content
-        .to_lowercase()
-        .replace(['\u{2019}', '\''], "");
+    let (answer, correction) = correction_text(&current.content);
+    if let Some(confirmed) = confirmed_title(&answer, clarification, &request) { return Some(confirmed); }
+    if correction && search_request(&answer).is_none() { return None; }
     let words: Vec<_> = answer
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| !w.is_empty())
@@ -185,6 +207,8 @@ fn request_from_history(history: &[Message]) -> Option<PlayRequest> {
                 "no", "not", "dont", "never", "cancel", "stop", "instead", "yes", "what", "why",
                 "how", "which", "can", "could", "would", "is", "are", "and", "or", "it", "this",
                 "that",
+                "play", "launch", "start", "open", "find", "search",
+                "delete", "remove", "enable", "disable", "help", "settings", "preferences",
             ]
             .contains(w)
         })
@@ -209,7 +233,46 @@ fn request_from_history(history: &[Message]) -> Option<PlayRequest> {
         request.platform.clear();
         return Some(request);
     }
+    // Different ASR spellings of the same name are still the same request.
+    // An explicit "no, I meant TITLE" may replace the title, but never turns
+    // a negation, compound instruction or question into a launch command.
+    if correction || crate::title_match::similarity(&repeated.title, &request.title).score >= 0.72 {
+        request.title = repeated.title;
+        if !repeated.platform.is_empty() { request.platform = repeated.platform; }
+        return Some(request);
+    }
     None
+}
+
+fn search_from_history(history: &[Message]) -> Option<PlayRequest> {
+    let current = history.last()?;
+    if current.role != "user" { return None; }
+    let (corrected, correction) = correction_text(&current.content);
+    if history.len() >= 3 {
+        if let Some(prior) = search_from_history(&history[..history.len() - 2]) {
+            if let Some(confirmed) = confirmed_title(&corrected, &history[history.len() - 2], &prior) {
+                return Some(confirmed);
+            }
+        }
+    }
+    if correction {
+        // Preserve a prior search's platform; do not invent an intent from a
+        // correction to unrelated conversation or an abandoned play request.
+        let prior = search_from_history(&history[..history.len().checked_sub(2)?])?;
+        let title = search_request(&corrected)?;
+        let mut request = title_request(&title);
+        if request.platform.is_empty() { request.platform = prior.platform; }
+        return Some(request);
+    }
+    let query = search_request(&current.content)?;
+    let mut request = title_request(&query);
+    if history.len() >= 3 {
+        if let Some(prior) = search_from_history(&history[..history.len() - 2]) {
+            if crate::title_match::similarity(&prior.title, &request.title).score >= 0.72
+                && request.platform.is_empty() { request.platform = prior.platform; }
+        }
+    }
+    Some(request)
 }
 
 fn search_request(text: &str) -> Option<String> {
@@ -347,6 +410,19 @@ fn search_request(text: &str) -> Option<String> {
 }
 
 fn browse_all(query: &str, platform: &str, runtime: &mut Runtime<'_>) -> Result<String> {
+    browse_title(query, platform, runtime, false)
+}
+
+fn clarification(matches: &Value) -> Option<String> {
+    if matches["match_kind"] != "ambiguous" { return None; }
+    let names: Vec<_> = matches["games"].as_array()?.iter().take(3).filter_map(|game| {
+        let title = game["title"].as_str()?;
+        Some(format!("{title} for {}", game["platform"].as_str().unwrap_or("an unknown platform")))
+    }).collect();
+    (!names.is_empty()).then(|| format!("Did you mean {}?", names.join(", or ")))
+}
+
+fn browse_title(query: &str, platform: &str, runtime: &mut Runtime<'_>, recover: bool) -> Result<String> {
     let platform = crate::catalog::canonical_platform_query(platform).unwrap_or(platform);
     let result = runtime.invoke(
         "browse_library",
@@ -358,7 +434,17 @@ fn browse_all(query: &str, platform: &str, runtime: &mut Runtime<'_>) -> Result<
     let count = result["total_results"]
         .as_u64()
         .ok_or_else(|| anyhow::anyhow!("The library search did not return its result count"))?;
-    Ok(if count == 0 {
+    Ok(if count == 0 && recover {
+        let matched = runtime.invoke("resolve_game", json!({"title":query,"platform":platform}));
+        if let Some(question) = clarification(&matched) { return Ok(question); }
+        if matched["auto_resolved"] == true {
+            if let Some(title) = matched["resolved_title"].as_str().filter(|t| *t != query) {
+                let reply = browse_title(title, platform, runtime, false)?;
+                return Ok(format!("I matched that to {title}. {reply}"));
+            }
+        }
+        format!("I couldn't find a close catalog match for “{query}”. Which game or platform did you mean?")
+    } else if count == 0 {
         format!("No matches for “{query}” in All Games.")
     } else {
         format!("Showing {count} matching games in All Games.")
@@ -370,15 +456,12 @@ pub(super) fn try_command(
     runtime: &mut Runtime<'_>,
 ) -> Result<Option<String>> {
     let Some(request) = request_from_history(history) else {
-        let Some(query) = history
-            .last()
-            .and_then(|message| search_request(&message.content))
+        let Some(query) = search_from_history(history)
         else {
             return Ok(None);
         };
         runtime.invoke("get_context", json!({}));
-        let query = title_request(&query);
-        return browse_all(&query.title, &query.platform, runtime).map(Some);
+        return browse_title(&query.title, &query.platform, runtime, true).map(Some);
     };
     runtime.status("Finding the requested game…");
     let context = runtime.invoke("get_context", json!({}));
@@ -411,6 +494,7 @@ pub(super) fn try_command(
     if let Some(error) = matches["error"].as_str() {
         return Ok(Some(error.into()));
     }
+    if let Some(question) = clarification(&matches) { return Ok(Some(question)); }
     let games = matches["games"].as_array();
     let total = matches["total_matches"].as_u64().unwrap_or(0);
     if total == 0 {
@@ -436,9 +520,13 @@ pub(super) fn try_command(
     }
     let game = preferred.or_else(|| games.and_then(|g| g.first()))
         .ok_or_else(|| anyhow::anyhow!("The catalog returned an incomplete match"))?;
+    let resolved_title = game["title"].as_str().unwrap_or("");
+    let recovered = matches["match_kind"] == "approximate" && matches["auto_resolved"] == true
+        && matches["resolved_title"] == resolved_title
+        && crate::title_match::similarity(&request.title, resolved_title).score >= 0.74;
     ensure!(
-        crate::assistant_tools::spoken_title_key(game["title"].as_str().unwrap_or(""))
-            == crate::assistant_tools::spoken_title_key(&request.title),
+        crate::assistant_tools::spoken_title_key(resolved_title)
+            == crate::assistant_tools::spoken_title_key(&request.title) || recovered,
         "The resolved game does not match the requested title; nothing was launched"
     );
     let id = game["id"].as_str().unwrap_or("");
@@ -446,7 +534,9 @@ pub(super) fn try_command(
     runtime.check()?;
     let result = runtime.invoke("play_game", json!({"game_id":id}));
     let reply = launch_reply(game, &result);
-    Ok(Some(if total > 1 {
+    Ok(Some(if recovered {
+        format!("{resolved_title} for {}. {reply}", game["platform"].as_str().unwrap_or("the matching platform"))
+    } else if total > 1 {
         format!("I picked {} for {}. {reply}", game["title"].as_str().unwrap_or("the matching game"),
             game["platform"].as_str().unwrap_or("the matching platform"))
     } else { reply }))
@@ -469,6 +559,62 @@ mod tests {
     use super::*;
     use crate::conversation::{Event, Message, ask, settings::Settings};
     use std::sync::{atomic::AtomicBool, mpsc};
+
+    #[test]
+    fn repeated_mishearings_and_explicit_corrections_preserve_play_intent() {
+        let mut history = vec![Message { role:"user".into(), content:"play facsinidu for NES".into() }];
+        for text in ["no, I said faxanadoo", "fax in a do", "Faxanadu"] {
+            history.push(Message {role:"assistant".into(), content:"Which game did you mean?".into()});
+            history.push(Message {role:"user".into(), content:text.into()});
+            let request = request_from_history(&history).unwrap();
+            assert_eq!(request.platform, "nes");
+            assert!(crate::title_match::similarity(&request.title, "Faxanadu").score >= 0.8);
+        }
+        for text in ["no, don't play it", "no, stop", "no, what is Faxanadu", "no thanks", "no, open settings", "cancel", "no"] {
+            history.last_mut().unwrap().content = text.into();
+            assert!(request_from_history(&history).is_none(), "{text}");
+        }
+    }
+    #[test]
+    fn corrections_keep_search_intent_without_launching() {
+        let mut history = vec![Message {role:"user".into(), content:"find facsinidu for NES".into()},
+            Message {role:"assistant".into(), content:"Which title?".into()},
+            Message {role:"user".into(), content:"no, I meant Faxanadu".into()}];
+        assert!(request_from_history(&history).is_none());
+        assert_eq!(search_from_history(&history).unwrap(), PlayRequest { title:"faxanadu".into(), platform:"nes".into() });
+        history[0].content = "how are you".into();
+        assert!(search_from_history(&history).is_none());
+    }
+    #[test]
+    fn one_targeted_confirmation_is_enough_but_yes_cannot_choose_between_titles() {
+        let mut history = vec![Message {role:"user".into(), content:"play facsinidu for NES".into()},
+            Message {role:"assistant".into(), content:"Did you mean Faxanadu for Nintendo Entertainment System?".into()},
+            Message {role:"user".into(), content:"yes".into()}];
+        assert_eq!(request_from_history(&history).unwrap().title, "faxanadu");
+        history[0].content = "find facsinidu for NES".into();
+        assert_eq!(search_from_history(&history).unwrap().title, "faxanadu");
+        assert!(request_from_history(&history).is_none());
+        history[1].content = "Did you mean Faxanadu for NES, or Faksinadu for NES?".into();
+        assert!(search_from_history(&history).is_none());
+        history[1].content = "Did you mean Sonic for NES?".into();
+        assert!(search_from_history(&history).is_none());
+    }
+    #[test]
+    fn recovered_commands_use_canonical_ids_and_ambiguity_never_launches() {
+        let resolved = json!({"games":[{"id":"fax","title":"Faxanadu","platform":"NES"}],
+            "total_matches":1,"preferred_game_id":"fax","match_kind":"approximate",
+            "auto_resolved":true,"resolved_title":"Faxanadu"});
+        let (reply, calls) = run_query(resolved.clone(), false, "play facsinidu");
+        assert!(reply.unwrap().starts_with("Faxanadu for NES."));
+        assert_eq!(calls.last().unwrap().1, json!({"game_id":"fax"}));
+        let mut ambiguous = resolved;
+        ambiguous["match_kind"] = json!("ambiguous");
+        ambiguous["auto_resolved"] = json!(false);
+        ambiguous["preferred_game_id"] = Value::Null;
+        let (reply, calls) = run_query(ambiguous, false, "play facsinidu");
+        assert_eq!(reply.unwrap(), "Did you mean Faxanadu for NES?");
+        assert!(calls.iter().all(|c| c.0 != "play_game" && c.0 != "browse_library"));
+    }
 
     #[test]
     fn a_platform_clarification_keeps_the_requested_title_not_the_selection() {

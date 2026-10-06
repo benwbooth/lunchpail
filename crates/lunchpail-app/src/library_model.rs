@@ -466,6 +466,10 @@ pub mod qobject {
         fn conversation_games_json(self: &LibraryModel) -> QString;
         #[qinvokable]
         fn conversation_resolve_game_json(self: &LibraryModel, title: QString, platform: QString) -> QString;
+        #[qinvokable]
+        fn conversation_match_game_json(self: &LibraryModel, title: QString, platform: QString, history: QString, selected_id: QString) -> QString;
+        #[qinvokable]
+        fn conversation_speech_hints_json(self: &LibraryModel, history: QString, selected_id: QString) -> QString;
 
         #[qinvokable]
         fn database_id_for_game(self: &LibraryModel, game_uid: QString) -> i32;
@@ -5204,6 +5208,35 @@ impl qobject::LibraryModel {
     pub fn conversation_resolve_game_json(&self, title: QString, platform: QString) -> QString {
         qstring(crate::assistant_tools::resolve_game(
             &self.rust().catalog, &title.to_string(), &platform.to_string()).to_string())
+    }
+
+    fn conversation_title_context(&self, history: QString, selected_id: QString) -> crate::assistant_tools::TitleContext {
+        let history = history.to_string();
+        let utterances = if history.len() <= 32000 {
+            serde_json::from_str::<Vec<crate::conversation::Message>>(&history).unwrap_or_default()
+                .into_iter().filter(|m| m.role == "user").map(|m| m.content).collect()
+        } else { Vec::new() };
+        let mut recent: Vec<_> = self.rust().recent_game_order.iter().collect();
+        recent.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        crate::assistant_tools::TitleContext {
+            utterances, selected_id: selected_id.to_string(),
+            recent_ids: recent.into_iter().take(12).map(|(id, _)| id.clone()).collect(),
+        }
+    }
+
+    pub fn conversation_match_game_json(&self, title: QString, platform: QString, history: QString, selected_id: QString) -> QString {
+        let context = self.conversation_title_context(history, selected_id);
+        qstring(crate::assistant_tools::match_game(
+            &self.rust().catalog, &title.to_string(), &platform.to_string(), &context).to_string())
+    }
+
+    pub fn conversation_speech_hints_json(&self, history: QString, selected_id: QString) -> QString {
+        let context = self.conversation_title_context(history, selected_id);
+        // Don't fill the decoder with an arbitrary alphabetic slice of All Games.
+        let visible = if self.rust().current_search.is_empty() { &[][..] }
+            else { &self.rust().filtered_indices[..] };
+        qstring(serde_json::to_string(&crate::assistant_tools::speech_titles(
+            &self.rust().catalog, &context, visible)).unwrap_or_else(|_| "[]".into()))
     }
 
     pub fn game_id_for_row(&self, row: i32) -> QString {

@@ -63,13 +63,17 @@ fn deliver(gate: &mut WakeGate, text: &str, wake_word: bool, tx: &mpsc::Sender<E
 }
 
 pub fn listen_hands_free(control: Arc<AtomicU8>, tx: &mpsc::Sender<Event>) -> Result<String> {
+    listen_hands_free_with_vocabulary(control, tx, &[])
+}
+
+pub fn listen_hands_free_with_vocabulary(control: Arc<AtomicU8>, tx: &mpsc::Sender<Event>, vocabulary: &[String]) -> Result<String> {
     use lunchpail_ai::{Request, models, worker};
     let settings = crate::local_ai::settings()?;
     let wake_word = crate::conversation::settings::load()?.wake_word;
     let model = models::find(&settings.speech)?;
     let whisper = model.engine == models::Engine::Whisper;
     // Load/verify before opening the microphone. No hidden secondary model.
-    let recognizer = if whisper { None } else { Some(recognizer()?) };
+    let recognizer = if whisper { None } else { Some(recognizer_with_vocabulary(vocabulary)?) };
     let mut stream = recognizer.as_ref().map(|r| r.create_stream());
     let model_path = if whisper {
         Some(crate::local_ai::with_cancel(&control, |cancel| {
@@ -174,6 +178,7 @@ pub fn listen_hands_free(control: Arc<AtomicU8>, tx: &mpsc::Sender<Event>) -> Re
                         "en"
                     }
                     .into(),
+                    vocabulary: vocabulary.to_vec(),
                 };
                 let reply = crate::local_ai::with_cancel(&control, |cancel| {
                     session.as_mut().unwrap().request(&request, cancel)

@@ -27,6 +27,7 @@ pub mod qobject {
         #[qproperty(bool, faulted)]
         #[qproperty(QString, status)]
         #[qproperty(QString, transcript)]
+        #[qproperty(QString, vocabulary_json)]
         type CouchSpeechModel = super::CouchSpeechModelRust;
         #[qinvokable]
         fn prepare(self: Pin<&mut CouchSpeechModel>);
@@ -46,6 +47,8 @@ pub mod qobject {
         fn completed(self: Pin<&mut CouchSpeechModel>, text: QString);
         #[qsignal]
         fn search_requested(self: Pin<&mut CouchSpeechModel>, text: QString);
+        #[qsignal]
+        fn vocabulary_requested(self: Pin<&mut CouchSpeechModel>);
     }
 }
 
@@ -58,6 +61,7 @@ pub struct CouchSpeechModelRust {
     faulted: bool,
     status: QString,
     transcript: QString,
+    vocabulary_json: QString,
     backend: String,
     control: Arc<AtomicU8>,
     receiver: Option<mpsc::Receiver<Event>>,
@@ -78,6 +82,7 @@ impl Default for CouchSpeechModelRust {
                 "Enable voice and choose Yes to install its model automatically."
             }),
             transcript: QString::default(),
+            vocabulary_json: QString::from("[]"),
             backend: String::new(),
             control: Arc::new(AtomicU8::new(0)),
             receiver: None,
@@ -105,6 +110,12 @@ impl qobject::CouchSpeechModel {
         if *self.busy() {
             return;
         }
+        // The UI snapshots live catalog/context only when opening a session,
+        // not on every wheel movement. Hints never enable the microphone.
+        self.as_mut().vocabulary_requested();
+        let vocabulary = serde_json::from_str::<Vec<String>>(&self.vocabulary_json.to_string())
+            .unwrap_or_default().into_iter().filter(|s| s.len() <= 100 && !s.contains('\0'))
+            .take(32).collect::<Vec<_>>();
         let control = Arc::new(AtomicU8::new(0));
         let (tx, rx) = mpsc::channel();
         self.as_mut().rust_mut().control = control.clone();
@@ -124,9 +135,9 @@ impl qobject::CouchSpeechModel {
             let result = if prepare {
                 couch_speech::prepare(&control, &tx).map(|()| Event::Ready)
             } else if hands_free {
-                couch_speech::listen_hands_free(control, &tx).map(Event::Finished)
+                couch_speech::listen_hands_free_with_vocabulary(control, &tx, &vocabulary).map(Event::Finished)
             } else {
-                couch_speech::listen(control, &tx).map(Event::Finished)
+                couch_speech::listen_with_vocabulary(control, &tx, &vocabulary).map(Event::Finished)
             };
             let _ = tx.send(result.unwrap_or_else(|error| {
                 Event::Error(format!("{error:#}"), couch_speech::model_is_valid())

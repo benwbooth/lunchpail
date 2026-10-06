@@ -30,7 +30,7 @@ pub struct GameRef {
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ResolveGame {
-    /// Exact spoken game title. Punctuation and Brothers/Bros are normalized.
+    /// Game title as heard or typed. Recovers close spellings/pronunciations against the catalog.
     pub title: String,
     /// Explicitly requested platform or alias; empty searches all platforms.
     #[serde(default)]
@@ -343,7 +343,7 @@ pub fn definitions() -> Vec<rmcp::model::Tool> {
     );
     add(
         "resolve_game",
-        "Resolve an exact named title across the entire current catalog, independently of the highlighted game and active filters. Returns all-match count, preferred_game_id, selection_reason and up to 20 ranked matching games. Prefers early documented retail releases, then installed/available copies; never sequels or differently named remakes. Use the preferred ID for a reasonable default without asking which platform. An explicit platform always restricts the matches. Does not change selection or launch anything.",
+        "Resolve a named title across the entire catalog, including speech mishearings and typos. Exact titles win; approximate matches use spelling, pronunciation and recent conversation/play context, never an arbitrary highlighted-game fallback. Explicit platforms and sequel/edition distinctions are preserved. Returns match_kind, auto_resolved, requested_title, resolved_title, preferred_game_id and games. If auto_resolved is true, briefly name the canonical title/platform and continue the user's original intent. If match_kind is ambiguous, ask one targeted title question and wait for the user's next turn; do NOT select/launch candidates or resolve your own guess to bypass ambiguity. Repeated corrected spellings refine the same request, not a new unrelated search. Does not itself change selection or launch anything.",
         schemars::schema_for!(ResolveGame).to_value(),
         &["title"],
         true,

@@ -5,6 +5,19 @@ terms of its provider; the code license does not replace those terms.
 
 ## Currently imported redistributable sources
 
+- **Zipformer English speech vocabulary** — the 500 SentencePiece symbols and
+  scores in `crates/lunchpail-app/src/couch_speech/zipformer-en.vocab` were
+  exported from `csukuangfj/sherpa-onnx-zipformer-en-2023-04-01`, revision
+  `34735501afc894bcee0123f4d05842ebdde30b27`, `bpe.model` (SHA-256
+  `c53433de083c4a6ad12d034550ef22de68cec62c4f58932a7b6b8b2f1e743fa5`).
+  The upstream model card declares Apache-2.0 and credits
+  `WeijiZhuang/icefall-asr-librispeech-pruned-transducer-stateless8-2022-12-02`.
+  This is a text-format export only, with scores rounded to nine significant
+  digits; no acoustic model is embedded. The symbols match the streaming
+  English recognizer's pinned token table. Upstream:
+  <https://huggingface.co/csukuangfj/sherpa-onnx-zipformer-en-2023-04-01/tree/34735501afc894bcee0123f4d05842ebdde30b27>.
+  License text: `packaging/inference-licenses/zipformer-vocabulary-LICENSE.txt`.
+
 - **MAME CHD core (linked)** — `libchdman-rs` 0.289.0 wraps MAME's
   `chd_file` implementation (`src/lib/util/chd.cpp` plus the CD/DVD/HD format
   readers) and is statically linked into the application so that compressed

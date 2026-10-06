@@ -18,6 +18,8 @@ pub const STOP: u8 = 1;
 pub const CANCEL: u8 = 2;
 mod hands_free;
 pub use hands_free::listen_hands_free;
+pub use hands_free::listen_hands_free_with_vocabulary;
+mod hotwords;
 const FILES: [(&str, &str, u64); 4] = [
     (
         "encoder-epoch-99-avg-1.int8.onnx",
@@ -113,6 +115,10 @@ pub fn prepare(control: &AtomicU8, tx: &mpsc::Sender<Event>) -> Result<()> {
 }
 
 fn recognizer() -> Result<OnlineRecognizer> {
+    recognizer_with_vocabulary(&[])
+}
+
+fn recognizer_with_vocabulary(vocabulary: &[String]) -> Result<OnlineRecognizer> {
     let dir = model_dir()?;
     for (name, digest, size) in FILES {
         ensure!(
@@ -131,11 +137,32 @@ fn recognizer() -> Result<OnlineRecognizer> {
     config.model_config.provider = Some("cpu".into());
     config.model_config.num_threads = 2;
     config.decoding_method = Some("greedy_search".into());
+    let phrases = hotwords::phrases(vocabulary);
+    let mut bpe_file = None;
+    if !phrases.is_empty() {
+        // sherpa-onnx contextual biasing requires transducer beam search.
+        // Use the actual model vocabulary: the native C API defaults to a CJK
+        // tokenizer, which splits pre-tokenized English pieces incorrectly.
+        // The native encoder reads this tiny bundled file during create().
+        use std::io::Write;
+        let mut file = tempfile::NamedTempFile::new()?;
+        file.write_all(hotwords::BPE_VOCAB.as_bytes())?;
+        file.flush()?;
+        config.model_config.modeling_unit = Some("bpe".into());
+        config.model_config.bpe_vocab = Some(file.path().to_string_lossy().into_owned());
+        bpe_file = Some(file);
+        config.decoding_method = Some("modified_beam_search".into());
+        config.max_active_paths = 4;
+        config.hotwords_score = 1.5;
+        config.hotwords_buf = Some(phrases.into_bytes());
+    }
     config.enable_endpoint = true;
     config.rule1_min_trailing_silence = 4.0;
     config.rule2_min_trailing_silence = 1.2;
     config.rule3_min_utterance_length = 15.0;
-    OnlineRecognizer::create(&config).context("Could not load the local speech recognizer")
+    let recognizer = OnlineRecognizer::create(&config).context("Could not load the local speech recognizer");
+    drop(bpe_file);
+    recognizer
 }
 
 fn mono<T: cpal::Sample + Copy>(data: &[T], channels: usize) -> Vec<f32>
@@ -177,13 +204,17 @@ where
 }
 
 pub fn listen(control: Arc<AtomicU8>, tx: &mpsc::Sender<Event>) -> Result<String> {
+    listen_with_vocabulary(control, tx, &[])
+}
+
+pub fn listen_with_vocabulary(control: Arc<AtomicU8>, tx: &mpsc::Sender<Event>, vocabulary: &[String]) -> Result<String> {
     let settings = crate::local_ai::settings()?;
     let model = lunchpail_ai::models::find(&settings.speech)
         .context("Choose a speech model in Settings → Local AI & voice")?;
     if model.engine == lunchpail_ai::models::Engine::Whisper {
-        return listen_whisper(control, tx, &settings, model);
+        return listen_whisper(control, tx, &settings, model, vocabulary);
     }
-    let recognizer = recognizer()?;
+    let recognizer = recognizer_with_vocabulary(vocabulary)?;
     ensure!(
         control.load(Ordering::Relaxed) == 0,
         "Voice search cancelled"
@@ -257,6 +288,7 @@ fn listen_whisper(
     tx: &mpsc::Sender<Event>,
     settings: &lunchpail_ai::settings::Settings,
     model: &lunchpail_ai::models::Model,
+    vocabulary: &[String],
 ) -> Result<String> {
     use lunchpail_ai::{
         Request, models,
@@ -343,6 +375,7 @@ fn listen_whisper(
             "en"
         }
         .into(),
+        vocabulary: vocabulary.to_vec(),
     };
     let reply = crate::local_ai::with_cancel(&control, |cancel| {
         worker::one_shot(&runtime, Kind::Speech, &settings.compute, &request, cancel)
@@ -452,7 +485,9 @@ mod tests {
         }
         let (tx, _) = mpsc::channel();
         prepare(&AtomicU8::new(0), &tx).unwrap();
-        let recognizer = recognizer().unwrap();
+        let vocabulary: Vec<String> = std::env::var("LUNCHPAIL_SPEECH_TEST_VOCABULARY")
+            .ok().and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_default();
+        let recognizer = recognizer_with_vocabulary(&vocabulary).unwrap();
         let file = std::env::var("LUNCHPAIL_SPEECH_TEST_WAV").expect("fixture path");
         let wave = sherpa_onnx::Wave::read(&file).unwrap();
         let stream = recognizer.create_stream();

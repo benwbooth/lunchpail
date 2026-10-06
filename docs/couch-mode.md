@@ -166,7 +166,38 @@ your selected AI provider**, which may be a cloud service. Voice requests can
 launch games when asked, but do not bypass save-sync, download or setup dialogs.
 Stopping a game, deleting a collection, and enabling hands-free via chat require
 confirmation on a subsequent turn. Search accepts spoken “Brothers” for titles
-written “Bros.” too. Unusual titles may need a keyboard correction.
+written “Bros.” too. The assistant also compares misheard names with actual
+catalog titles using spelling and pronunciation. Exact titles win; a clear
+match is named before continuing the requested search or play action. Close
+competing names get one targeted clarification instead of a guessed launch.
+Recent conversation and recently played games help rank candidates without
+restricting searches to the highlighted game. Repeating a title or saying
+“no, I meant …” retains the original play/search intent and explicit platform.
+Sequel numbers, editions and platform restrictions are not silently discarded.
+
+At capture time, up to 32 relevant catalog names (selected, recent, mentioned,
+and current search results) are supplied as spelling hints. Zipformer uses
+bounded [contextual biasing](https://k2-fsa.github.io/sherpa/onnx/hotwords/index.html)
+with a bundled matching SentencePiece vocabulary; Whisper receives an initial
+vocabulary prompt. Numeric/non-English titles are omitted from Zipformer hints
+because that English model has no corresponding tokens (catalog recovery still
+applies to them).
+These are hints, not forced transcripts, and do not enable the microphone or
+save audio. Unusual or genuinely ambiguous titles can still require a correction.
+
+`src/couch_speech/zipformer-en.vocab` is exported from the Apache-2.0 upstream
+[Zipformer English SentencePiece model](https://huggingface.co/csukuangfj/sherpa-onnx-zipformer-en-2023-04-01/blob/34735501afc894bcee0123f4d05842ebdde30b27/bpe.model)
+(SHA-256 `c53433de083c4a6ad12d034550ef22de68cec62c4f58932a7b6b8b2f1e743fa5`).
+All 500 symbols match the installed streaming model's pinned `tokens.txt` in
+order, excluding its two trailing disambiguation symbols. The small vocabulary
+is embedded in the app; there is no additional model download.
+
+The opt-in `--title-recovery-ui-probe` exercises real-catalog post-transcription
+routing in normal and Couch modes, including repeated Faxanadu mishearings,
+canonical searches, unrelated selection, sequel/platform guards and vocabulary
+snapshots. Use an isolated silent profile with a bundled assistant model. It
+never opens a microphone or actually starts a download/emulator. Separate
+opt-in speech fixture tests exercise the installed recognizer on supplied WAVs.
 
 Navigation uses quiet movement, confirm, and back sounds. Their saved toggle and
 volume are in **Settings → Couch Mode**, separately from video and music settings.

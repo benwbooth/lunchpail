@@ -50,6 +50,9 @@ pub enum Request {
         /// Mono 16 kHz samples, kept in memory and never written as audio files.
         samples: Vec<f32>,
         language: String,
+        /// Bounded game-title spelling hints, never conversation instructions.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        vocabulary: Vec<String>,
     },
 }
 
@@ -115,6 +118,17 @@ pub fn serve(mut handle: impl FnMut(Request) -> anyhow::Result<Reply>) -> anyhow
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn speech_vocabulary_is_optional_and_round_trips() {
+        let mut value = serde_json::json!({"operation":"transcribe","model":"speech.bin","device":null,
+            "samples":[0.0],"language":"en"});
+        let request: Request = serde_json::from_value(value.clone()).unwrap();
+        assert!(matches!(&request, Request::Transcribe { vocabulary, .. } if vocabulary.is_empty()));
+        assert!(serde_json::to_value(request).unwrap().get("vocabulary").is_none());
+        value["vocabulary"] = serde_json::json!(["Faxanadu", "Metroid"]);
+        let request: Request = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(request).unwrap(), value);
+    }
     #[test]
     fn generation_messages_are_optional_and_round_trip_on_the_wire() {
         let mut value = serde_json::json!({"operation":"generate","model":"model.gguf","device":null,

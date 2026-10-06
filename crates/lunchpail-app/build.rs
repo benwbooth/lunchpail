@@ -231,6 +231,7 @@ fn main() {
                 "qml/DesktopAssistant.qml",
                 "qml/DesktopConversationProbe.qml",
                 "qml/LocalCommandProbe.qml",
+                "qml/TitleRecoveryProbe.qml",
                 "qml/ConversationProbe.qml",
                 "qml/LocalModelInstall.qml",
                 "qml/LocalAiProbe.qml",

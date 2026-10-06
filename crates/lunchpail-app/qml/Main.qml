@@ -738,7 +738,11 @@ ApplicationWindow {
         property bool soundsEnabled: true
         property real soundVolume: 0.22
     }
-    CouchSpeechModel { id: couchSpeech }
+    CouchSpeechModel {
+        id: couchSpeech
+        onVocabulary_requested: vocabulary_json = library.conversation_speech_hints_json(
+            localAssistant.history_json, root.couchModeActive ? couchModeView.selectedGameId : root.selectedGameId)
+    }
     LocalAiModel { id: localAi }
     AssistantModel { id: localAssistant }
     AssistantSpeechOutput {
@@ -752,6 +756,7 @@ ApplicationWindow {
         app: root; view: couchModeView; library: library; details: gameDetails
         assistant: localAssistant; ai: localAi
         readOnlyProbe: root.conversationUiProbe || Qt.application.arguments.indexOf("--local-command-ui-probe") >= 0
+            || Qt.application.arguments.indexOf("--title-recovery-ui-probe") >= 0
         feedbackSettings: couchFeedbackSettings; videoPreferences: videoAudioPreferences
     }
     Connections {
@@ -12039,6 +12044,13 @@ ApplicationWindow {
     Loader {
         active: Qt.application.arguments.indexOf("--local-command-ui-probe") >= 0
         sourceComponent: LocalCommandProbe {
+            app: root; desktop: desktopAssistant; view: couchModeView; library: library
+            assistant: localAssistant; speech: couchSpeech; voice: assistantVoice
+        }
+    }
+    Loader {
+        active: Qt.application.arguments.indexOf("--title-recovery-ui-probe") >= 0
+        sourceComponent: TitleRecoveryProbe {
             app: root; desktop: desktopAssistant; view: couchModeView; library: library
             assistant: localAssistant; speech: couchSpeech; voice: assistantVoice
         }

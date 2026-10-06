@@ -73,7 +73,11 @@ TestCase {
                 property bool couch_music_enabled: true
                 property int couch_music_volume: 45
                 function conversation_games_json() { return JSON.stringify([{id:"mario",title:"Super Mario Bros.",platform:"NES"}]) }
-                function conversation_resolve_game_json(title, platform) { return JSON.stringify({games:[{id:"mario",title:"Super Mario Bros.",platform:"NES"}],total_matches:1}) }
+                property var matchArguments: []
+                function conversation_match_game_json(title, platform, history, selectedId) {
+                    matchArguments = [title, platform, history, selectedId]
+                    return JSON.stringify({games:[{id:"mario",title:"Super Mario Bros.",platform:"NES"}],total_matches:1,match_kind:"exact",auto_resolved:true})
+                }
                 function display_title_for_game(id) { return id === "mario" ? "Super Mario Bros." : "" }
                 function platform_for_game(id) { return "NES" }
                 function local_for_game(id) { return installed }
@@ -146,6 +150,18 @@ TestCase {
         compare(result(c).selected_game.id, "mario")
         compare(result(c).games[0].title, "Super Mario Bros.")
         compare(result(c).game_running, false)
+    }
+    function test_title_recovery_receives_shared_history_and_current_mode_selection() {
+        const c = controller()
+        c.assistant.history_json = JSON.stringify([{role:"user",content:"Faxanadu for NES"}])
+        c.view.selectedGameId = "couch-selection"
+        c.app.selectedGameId = "desktop-selection"
+        call(c, "resolve_game", {title:"facsinidu",platform:"NES"})
+        compare(c.library.matchArguments, ["facsinidu", "NES", c.assistant.history_json, "couch-selection"])
+        c.app.couchModeActive = false
+        call(c, "resolve_game", {title:"facsinidu",platform:""})
+        compare(c.library.matchArguments, ["facsinidu", "", c.assistant.history_json, "desktop-selection"])
+        compare(c.app.launches, 0); compare(c.view.launches, 0)
     }
     function test_natural_search_tool_waits_for_debounced_filter() {
         const c = controller(); c.app.filterPending = true

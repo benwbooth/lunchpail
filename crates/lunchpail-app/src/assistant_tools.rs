@@ -98,8 +98,110 @@ fn key(text: &str) -> String {
 }
 
 pub(crate) fn spoken_title_key(title: &str) -> String {
-    title.to_lowercase().split(|c: char| !c.is_alphanumeric())
-        .map(|word| if word == "brothers" { "bros" } else { word }).collect()
+    crate::title_match::key(title)
+}
+
+#[derive(Default)]
+pub(crate) struct TitleContext {
+    /// Recent user utterances, not instructions or provider-generated facts.
+    pub utterances: Vec<String>,
+    pub selected_id: String,
+    pub recent_ids: Vec<String>,
+}
+
+/// The exact resolver remains the source of IDs and release/platform ordering.
+/// Approximate recovery only chooses a *title*, never a different sequel or
+/// an arbitrary currently selected game. Scores are heuristics, not ASR odds.
+pub(crate) fn match_game(catalog: &Catalog, title: &str, platform: &str, context: &TitleContext) -> Value {
+    let mut exact = resolve_game(catalog, title, platform);
+    if exact["total_matches"].as_u64().unwrap_or(0) > 0 {
+        exact["match_kind"] = json!("exact");
+        exact["auto_resolved"] = json!(true);
+        exact["requested_title"] = json!(title);
+        exact["resolved_title"] = exact["games"][0]["title"].clone();
+        return exact;
+    }
+    let query_key = spoken_title_key(title);
+    let utterances: Vec<_> = context.utterances.iter().rev().take(8)
+        .map(|text| spoken_title_key(&text.chars().take(1000).collect::<String>())).collect();
+    struct Candidate<'a> { title: &'a str, key: String, score: f64, mentioned: bool, base: crate::title_match::Similarity }
+    let mut candidates: HashMap<String, Candidate<'_>> = HashMap::new();
+    for game in &catalog.games {
+        if game.adult || game.non_retail || !platform_matches(&game.platform, platform)
+            || game.title.len() > title.len().saturating_mul(2) + 16
+            || !crate::title_match::compatible_initial(title, &game.title) { continue; }
+        let game_key = spoken_title_key(&game.title);
+        // Only compute edit distances once per title, even for large port catalogs.
+        let base = candidates.get(&game_key).map(|c| c.base)
+            .unwrap_or_else(|| crate::title_match::similarity(title, &game.title));
+        if base.score == 0.0 { continue; }
+        let mentioned = game_key.len() >= 5 && utterances.iter().any(|u| u.contains(&game_key));
+        let boost = if mentioned { 0.065 } else { 0.0 }
+            + if context.recent_ids.contains(&game.id) { 0.025 } else { 0.0 }
+            + if context.selected_id == game.id { 0.01 } else { 0.0 }
+            + if game.local { 0.01 } else { 0.0 };
+        let score = base.score + boost;
+        let entry = candidates.entry(game_key.clone()).or_insert(Candidate {
+            title: &game.title, key: game_key, score, mentioned, base,
+        });
+        entry.score = entry.score.max(score);
+    }
+    let mut candidates: Vec<_> = candidates.into_values().collect();
+    candidates.sort_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.key.cmp(&b.key)));
+    let Some(best) = candidates.first() else {
+        return json!({"games":[],"total_matches":0,"preferred_game_id":null,
+            "match_kind":"none","auto_resolved":false,"requested_title":title});
+    };
+    let margin = best.score - candidates.get(1).map_or(0.0, |c| c.score);
+    let strong_base = best.base.spelling >= 0.55 && best.base.score >= 0.80;
+    let contextual_recovery = best.mentioned && best.base.spelling >= 0.5
+        && best.base.phonetic >= 0.85 && best.base.score >= 0.74;
+    let confident = query_key.len() >= 5 && (strong_base || contextual_recovery)
+        && best.base.phonetic >= 0.82
+        && best.score >= 0.84 && margin >= 0.075;
+    if confident {
+        let mut result = resolve_game(catalog, best.title, platform);
+        result["match_kind"] = json!("approximate");
+        result["auto_resolved"] = json!(true);
+        result["requested_title"] = json!(title);
+        result["resolved_title"] = json!(best.title);
+        result["similarity"] = json!(best.base.score);
+        result["candidate_margin"] = json!(margin);
+        return result;
+    }
+    let mut games = Vec::new();
+    for candidate in candidates.iter().take(3) {
+        let result = resolve_game(catalog, candidate.title, platform);
+        if let Some(game) = result["games"].as_array().and_then(|games| games.first()) {
+            games.push(game.clone());
+        }
+    }
+    json!({"total_matches":games.len(),"games":games,"preferred_game_id":null,
+        "match_kind":"ambiguous","auto_resolved":false,"requested_title":title,
+        "instruction":"These are suggestions, not a resolved request. Ask the user which title they meant before selecting or launching anything."})
+}
+
+/// Small, bounded vocabulary for speech decoding. Recent/selected titles are
+/// hints only; they never limit catalog matching or become launch defaults.
+pub(crate) fn speech_titles(catalog: &Catalog, context: &TitleContext, visible: &[usize]) -> Vec<String> {
+    let utterances: Vec<_> = context.utterances.iter().rev().take(8)
+        .map(|text| spoken_title_key(&text.chars().take(1000).collect::<String>())).collect();
+    let mut ranked = Vec::new();
+    for (index, game) in catalog.games.iter().enumerate() {
+        if game.adult || game.non_retail || game.title.len() > 100 { continue; }
+        let priority = if game.id == context.selected_id { 0 }
+            else if let Some(rank) = context.recent_ids.iter().take(12).position(|id| id == &game.id) { 2 + rank }
+            else if visible.iter().take(16).any(|i| *i == index) { 20 }
+            else if !utterances.is_empty() {
+                let title = spoken_title_key(&game.title);
+                if title.len() >= 5 && utterances.iter().any(|u| u.contains(&title)) { 1 } else { continue; }
+            } else { continue; };
+        ranked.push((priority, &game.title));
+    }
+    ranked.sort();
+    let mut seen = std::collections::HashSet::new();
+    ranked.into_iter().filter_map(|(_, title)| seen.insert(spoken_title_key(title)).then(|| title.clone()))
+        .take(32).collect()
 }
 
 /// Resolve against the already-loaded catalog, not the selected game or a
@@ -238,6 +340,19 @@ impl ToolContext {
             .map(|(i, _)| self.card(i))
             .filter(|card| genre_matches(&card.genre, &args.genre))
             .collect();
+        let mut resolution = Value::Null;
+        if cards.is_empty() && !words.is_empty() {
+            resolution = match_game(&self.catalog, &args.query, &args.platform, &TitleContext::default());
+            if let Some(games) = resolution["games"].as_array() {
+                cards = games.iter().filter_map(|candidate| {
+                    let id = candidate["id"].as_str()?;
+                    let index = self.catalog.games.iter().position(|game| game.id == id)?;
+                    let card = self.card(index);
+                    ((!args.owned_only || card.local) && genre_matches(&card.genre, &args.genre)).then_some(card)
+                }).collect();
+            }
+            if cards.is_empty() { resolution = Value::Null; }
+        }
         cards.sort_by(|a, b| {
             let rating = |card: &GameCard| card.rating.parse::<f32>().unwrap_or(0.0);
             rating(b)
@@ -252,7 +367,7 @@ impl ToolContext {
             card.description = card.description.chars().take(220).collect();
         }
         Ok(
-            json!({"games":cards,"total_matches":total,"note":"Ratings are catalog metadata, not a guarantee. JRPG maps to Role-Playing; region/origin is not inferred. Adult and non-retail entries are excluded."}),
+            json!({"games":cards,"total_matches":total,"resolution":resolution,"note":"Ratings are catalog metadata, not a guarantee. JRPG maps to Role-Playing; region/origin is not inferred. Adult and non-retail entries are excluded. Approximate suggestions marked ambiguous require a user clarification before selection or launch."}),
         )
     }
     pub fn patches(&self, args: &TranslationPatches, cancel: &AtomicBool) -> Result<Value> {
@@ -335,6 +450,84 @@ pub fn parse_call(name: &str, arguments: Value) -> Result<ToolCall> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn voice_catalog() -> Catalog {
+        Catalog { games: [
+            ("fax", "Faxanadu", "Nintendo Entertainment System", true),
+            ("mario", "Super Mario Bros.", "Nintendo Entertainment System", false),
+            ("metroid", "Metroid", "Nintendo Entertainment System", false),
+            ("sequel", "Metroid II", "Nintendo Game Boy", false),
+            ("castle", "Castlevania", "Nintendo Entertainment System", false),
+        ].into_iter().map(|(id, title, platform, local)| crate::catalog::Game {
+            id:id.into(), title:title.into(), platform:platform.into(), local, ..Default::default()
+        }).collect(), ..Default::default() }
+    }
+    #[test]
+    fn recovers_spoken_titles_from_catalog_not_the_unrelated_selection() {
+        let catalog = voice_catalog();
+        let context = TitleContext { selected_id: "mario".into(), ..Default::default() };
+        for heard in ["facsinidu", "faxanadoo", "fax in a do"] {
+            let result = match_game(&catalog, heard, "NES", &context);
+            assert_eq!(result["match_kind"], "approximate", "{heard}: {result}");
+            assert_eq!(result["auto_resolved"], true, "{heard}: {result}");
+            assert_eq!(result["preferred_game_id"], "fax");
+            assert_eq!(result["resolved_title"], "Faxanadu");
+        }
+        for (heard, platform) in [("facsinidu", "SNES"), ("Faxanadu 2", ""), ("unrelated gibberish", "")] {
+            let result = match_game(&catalog, heard, platform, &context);
+            assert_eq!(result["total_matches"], 0, "{heard}: {result}");
+            assert_eq!(result["auto_resolved"], false);
+        }
+        assert_eq!(match_game(&catalog, "Super Mario Brothers", "", &context)["preferred_game_id"], "mario");
+    }
+    #[test]
+    fn close_competing_titles_ask_once_and_exact_spelling_wins() {
+        let mut catalog = voice_catalog();
+        catalog.games.push(crate::catalog::Game { id:"near".into(), title:"Faksinadu".into(),
+            platform:"Nintendo Entertainment System".into(), ..Default::default() });
+        let context = TitleContext { selected_id:"fax".into(), recent_ids:vec!["fax".into()], ..Default::default() };
+        let result = match_game(&catalog, "facsinidu", "NES", &context);
+        assert_eq!(result["match_kind"], "ambiguous", "{result}");
+        assert_eq!(result["auto_resolved"], false);
+        assert!(result["preferred_game_id"].is_null());
+        assert_eq!(result["games"].as_array().unwrap().len(), 2);
+        assert_eq!(match_game(&catalog, "Faxanadu", "NES", &context)["preferred_game_id"], "fax");
+        catalog.games[0].adult = true;
+        catalog.games.last_mut().unwrap().non_retail = true;
+        assert_eq!(match_game(&catalog, "facsinidu", "NES", &context)["total_matches"], 0);
+    }
+    #[test]
+    fn prior_named_title_can_resolve_a_weaker_mishearing_but_selection_alone_cannot() {
+        let mut catalog = voice_catalog();
+        catalog.games.push(crate::catalog::Game { id:"other".into(), title:"Fascination".into(),
+            platform:"Nintendo Entertainment System".into(), ..Default::default() });
+        let mut context = TitleContext {selected_id:"fax".into(), ..Default::default()};
+        assert_eq!(match_game(&catalog, "fascinado", "NES", &context)["auto_resolved"], false);
+        context.utterances.push("I want to play Faxanadu for NES".into());
+        let result = match_game(&catalog, "fascinado", "NES", &context);
+        assert_eq!(result["auto_resolved"], true, "{result}");
+        assert_eq!(result["preferred_game_id"], "fax");
+    }
+    #[test]
+    fn vocabulary_is_bounded_deduplicated_and_uses_real_context() {
+        let mut catalog = voice_catalog();
+        catalog.games.push(catalog.games[0].clone());
+        let context = TitleContext { selected_id:"mario".into(), recent_ids:vec!["fax".into()],
+            utterances:vec!["I was talking about Castlevania".into()] };
+        let titles = speech_titles(&catalog, &context, &[]);
+        assert_eq!(titles, ["Super Mario Bros.", "Castlevania", "Faxanadu"]);
+        assert_eq!(speech_titles(&catalog, &TitleContext::default(), &[]).len(), 0);
+        assert_eq!(speech_titles(&catalog, &TitleContext::default(), &[2]), ["Metroid"]);
+    }
+    #[test]
+    fn read_only_search_recovery_preserves_platform_and_owned_filters() {
+        let context = ToolContext { catalog:Arc::new(voice_catalog()) };
+        let result = context.search(&SearchGames { query:"facsinidu".into(), platform:"NES".into(),
+            owned_only:true, limit:12, ..Default::default() }).unwrap();
+        assert_eq!(result["resolution"]["auto_resolved"], true);
+        assert_eq!(result["games"][0]["id"], "fax");
+        let result = context.search(&SearchGames {query:"metrod".into(), owned_only:true, limit:12, ..Default::default()}).unwrap();
+        assert_eq!(result["total_matches"], 0);
+    }
     #[test]
     fn conversation_context_prioritizes_exact_spoken_titles_without_reordering_the_library() {
         use crate::catalog::Game;

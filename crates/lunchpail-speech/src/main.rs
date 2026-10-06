@@ -94,6 +94,7 @@ fn main() -> Result<()> {
             device,
             samples,
             language,
+            vocabulary,
         } => {
             ensure!(
                 (1600..=240000).contains(&samples.len()),
@@ -107,6 +108,8 @@ fn main() -> Result<()> {
                 matches!(language.as_str(), "en" | "auto"),
                 "Unsupported speech language preference"
             );
+            ensure!(vocabulary.len() <= 32 && vocabulary.iter().all(|s| s.len() <= 100 && !s.contains('\0')),
+                "Invalid speech vocabulary");
             let available = devices();
             let selected = if GPU_BUILD {
                 Some(
@@ -140,6 +143,9 @@ fn main() -> Result<()> {
             params.set_language(if language == "auto" { None } else { Some("en") });
             params.set_translate(false);
             params.set_no_context(true);
+            if !vocabulary.is_empty() {
+                params.set_initial_prompt(&vocabulary.join(", "));
+            }
             params.set_print_special(false);
             params.set_print_progress(false);
             params.set_print_realtime(false);

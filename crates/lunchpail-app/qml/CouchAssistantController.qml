@@ -78,7 +78,8 @@ Item {
         switch (name) {
         case "get_context": complete(id, context()); break
         case "resolve_game":
-            complete(id, JSON.parse(library.conversation_resolve_game_json(args.title, args.platform || ""))); break
+            complete(id, JSON.parse(library.conversation_match_game_json(args.title, args.platform || "",
+                assistant.history_json || "[]", app.couchModeActive ? view.selectedGameId : app.selectedGameId))); break
         case "browse_library":
             if (app.couchModeActive) view.closeSearch()
             if (args.collection_id && !library.collection_exists(args.collection_id)) throw new Error("Collection no longer exists; read get_collections for current IDs")
