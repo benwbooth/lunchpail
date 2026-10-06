@@ -85,6 +85,7 @@ Item {
             Label {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
+                color: providerSetup.palette.windowText
                 text: "Choose an assistant provider and model in AI & voice settings before enabling hands-free. The microphone is off. Any saved request stays in the conversation box until you send it."
             }
             RowLayout {

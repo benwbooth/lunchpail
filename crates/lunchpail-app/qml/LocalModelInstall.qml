@@ -57,11 +57,13 @@ LbDialog {
         spacing: 16
         Label {
             Layout.fillWidth: true; wrapMode: Text.WordWrap
+            color: dialog.palette.windowText
             visible: dialog.purpose.length > 0
             text: dialog.purpose
         }
         Label {
             Layout.fillWidth: true; wrapMode: Text.WordWrap
+            color: dialog.palette.windowText
             text: (dialog.assistantModel ? "Install the local assistant model" : "Install the local voice model")
                   + (dialog.modelInfo.name ? " (" + dialog.modelInfo.name + ")" : "") + "?"
                   + (dialog.modelInfo.bytes ? " Download: " + (dialog.modelInfo.bytes / 1e9 < 1 ? Math.ceil(dialog.modelInfo.bytes / 1e6) + " MB" : (dialog.modelInfo.bytes / 1e9).toFixed(1) + " GB") + "." : "")
@@ -69,11 +71,12 @@ LbDialog {
         }
         Label {
             Layout.fillWidth: true; wrapMode: Text.WordWrap
+            color: dialog.palette.windowText
             text: "The download needs internet. Bundled models process audio and prompts on this device."
                   + (dialog.microphoneConsent ? " Once both the assistant and speech recognition are ready, hands-free will be enabled while you browse Lunchpail. You can turn it off at any time. Transcribed requests go to your selected AI provider." : "")
         }
         ProgressBar { Layout.fillWidth: true; visible: dialog.pending; value: dialog.ai ? dialog.ai.progress : 0 }
-        Label { Layout.fillWidth: true; wrapMode: Text.WordWrap; visible: dialog.pending || (dialog.ai && !dialog.ai.busy); text: dialog.ai ? dialog.ai.status : "" }
+        Label { Layout.fillWidth: true; wrapMode: Text.WordWrap; color: dialog.palette.windowText; visible: dialog.pending || (dialog.ai && !dialog.ai.busy); text: dialog.ai ? dialog.ai.status : "" }
         RowLayout {
             Layout.alignment: Qt.AlignRight
             LbButton { objectName: "installModelNo"; text: dialog.pending ? "Cancel" : "No"; onClicked: dialog.decline() }

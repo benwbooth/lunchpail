@@ -57,7 +57,7 @@ Item {
                 if (!dialog.visible || !dialog.assistantModel || probe.ai.hands_free) {
                     probe.fail("normal mode did not require assistant consent"); return
                 }
-                probe.capture(dialog.contentItem, "normal-setup")
+                probe.capture(dialog.contentItem.parent, "normal-setup")
             } else if (probe.step === 4) {
                 probe.desktop.handsFreeSetupController.cancel()
                 probe.desktop.acceptVoiceRequest(probe.request)
@@ -84,7 +84,7 @@ Item {
                 if (!dialog.visible || !dialog.assistantModel || probe.ai.hands_free) {
                     probe.fail("Couch mode did not require assistant consent"); return
                 }
-                probe.capture(dialog.contentItem, "couch-setup")
+                probe.capture(dialog.contentItem.parent, "couch-setup")
             } else if (probe.step === 9) {
                 probe.view.handsFreeSetupController.cancel()
                 probe.step++

@@ -429,7 +429,12 @@ Item {
     onInputEnabledChanged: {
         if (!inputEnabled && searchOpen && !modelInstall.visible) closeSearch()
         else if (inputEnabled && active && searchOverlay.preservedRequest)
-            openSearch(searchOverlay.preservedRequest, false)
+            Qt.callLater(function() {
+                // Restoring focus synchronously would feed back into the
+                // popupScope binding that determines inputEnabled.
+                if (view.inputEnabled && view.active && !view.searchOpen && searchOverlay.preservedRequest)
+                    view.openSearch(searchOverlay.preservedRequest, false)
+            })
     }
 
     function accentFor(value) {
