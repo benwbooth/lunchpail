@@ -343,7 +343,7 @@ pub fn definitions() -> Vec<rmcp::model::Tool> {
     );
     add(
         "resolve_game",
-        "Resolve an exact named title across the entire current catalog, independently of the highlighted game and active filters. Returns all-match count and up to 20 matching games, never sequels or remakes with different titles. Multiple matches require clarification. Does not change selection or launch anything.",
+        "Resolve an exact named title across the entire current catalog, independently of the highlighted game and active filters. Returns all-match count, preferred_game_id, selection_reason and up to 20 ranked matching games. Prefers early documented retail releases, then installed/available copies; never sequels or differently named remakes. Use the preferred ID for a reasonable default without asking which platform. An explicit platform always restricts the matches. Does not change selection or launch anything.",
         schemars::schema_for!(ResolveGame).to_value(),
         &["title"],
         true,

@@ -1,5 +1,5 @@
-//! Short, explicit play commands do not need model inference. Resolve a unique
-//! exact catalog title, then use the same guarded launch workflow as every UI.
+//! Short play commands use a grounded catalog preference without inference,
+//! then the same guarded launch workflow as every UI.
 use super::{Message, Runtime};
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
@@ -8,6 +8,36 @@ use serde_json::{Value, json};
 struct PlayRequest {
     title: String,
     platform: String,
+}
+
+fn title_request(text: &str) -> PlayRequest {
+    let lower = text.to_lowercase();
+    let mut words: Vec<_> = lower.split_whitespace().collect();
+    if words.first() == Some(&"just") { words.remove(0); }
+    if words.starts_with(&["the", "original"]) { words.drain(..2); }
+    else if words.first() == Some(&"original") { words.remove(0); }
+    let mut platform = String::new();
+    if let Some(position) = words.iter().rposition(|w| *w == "on" || *w == "for") {
+        let candidate = platform_answer(&words[position + 1..].join(" "));
+        if position > 0 && crate::catalog::is_platform_query(&candidate) {
+            platform = candidate;
+            words.truncate(position);
+        }
+    }
+    PlayRequest { title: words.join(" "), platform }
+}
+
+fn platform_answer(text: &str) -> String {
+    let lower = text.to_lowercase();
+    let mut words: Vec<_> = lower.split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty()).collect();
+    while words.first().is_some_and(|w| ["just", "the", "original", "on", "for"].contains(w)) {
+        words.remove(0);
+    }
+    while words.last().is_some_and(|w| ["version", "one", "please"].contains(w)) {
+        words.pop();
+    }
+    words.join(" ")
 }
 
 fn play_request(text: &str) -> Option<PlayRequest> {
@@ -67,14 +97,7 @@ fn play_request(text: &str) -> Option<PlayRequest> {
     if words.is_empty() || words.len() > 24 {
         return None;
     }
-    let mut platform = String::new();
-    if let Some(position) = words.iter().rposition(|w| *w == "on" || *w == "for") {
-        if position > 0 && position + 1 < words.len() {
-            platform = words[position + 1..].join(" ");
-            words.truncate(position);
-        }
-    }
-    let title = words.join(" ");
+    let PlayRequest { title, platform } = title_request(&words.join(" "));
     if verb == "open"
         && words.iter().any(|w| {
             [
@@ -137,30 +160,26 @@ fn request_from_history(history: &[Message]) -> Option<PlayRequest> {
     if let Some(request) = play_request(&current.content) {
         return Some(request);
     }
-    // A short platform answer to our immediately preceding clarification is
-    // still a launch instruction, not a new expensive model conversation.
+    // A platform or repeated-title refinement keeps the immediately preceding
+    // play intent. Do not depend on the assistant using one exact sentence.
     let previous = history.get(history.len().checked_sub(3)?)?;
     let clarification = &history[history.len() - 2];
     if previous.role != "user"
         || clarification.role != "assistant"
-        || !clarification.content.starts_with(AMBIGUOUS)
-        || !clarification
-            .content
-            .ends_with("I haven't launched anything.")
     {
         return None;
     }
-    let mut request = play_request(&previous.content)?;
+    let mut request = request_from_history(&history[..history.len() - 2])?;
     let answer = current
         .content
         .to_lowercase()
         .replace(['\u{2019}', '\''], "");
-    let mut words: Vec<_> = answer
+    let words: Vec<_> = answer
         .split(|c: char| !c.is_alphanumeric())
         .filter(|w| !w.is_empty())
         .collect();
     if words.is_empty()
-        || words.len() > 8
+        || words.len() > 24
         || words.iter().any(|w| {
             [
                 "no", "not", "dont", "never", "cancel", "stop", "instead", "yes", "what", "why",
@@ -172,23 +191,25 @@ fn request_from_history(history: &[Message]) -> Option<PlayRequest> {
     {
         return None;
     }
-    while words
-        .first()
-        .is_some_and(|w| ["the", "original", "on"].contains(w))
+    let repeated = title_request(&answer);
+    if crate::assistant_tools::spoken_title_key(&repeated.title)
+        == crate::assistant_tools::spoken_title_key(&request.title)
     {
-        words.remove(0);
+        if !repeated.platform.is_empty() { request.platform = repeated.platform; }
+        return Some(request);
     }
-    while words
-        .last()
-        .is_some_and(|w| ["version", "one", "please"].contains(w))
-    {
-        words.pop();
+    let platform = platform_answer(&answer);
+    if crate::catalog::is_platform_query(&platform) {
+        request.platform = platform;
+        return Some(request);
     }
-    request.platform = words.join(" ");
-    if request.platform.is_empty() || request.platform.len() > 100 {
-        return None;
+    // "Just the original" is useful context, not a literal search query.
+    if matches!(words.as_slice(), ["original"] | ["the", "original"] | ["just", "the", "original"]
+        | ["the", "original", "one"] | ["just", "the", "original", "one"]) {
+        request.platform.clear();
+        return Some(request);
     }
-    Some(request)
+    None
 }
 
 fn search_request(text: &str) -> Option<String> {
@@ -325,10 +346,11 @@ fn search_request(text: &str) -> Option<String> {
     Some(query.trim().to_owned())
 }
 
-fn browse_all(query: &str, runtime: &mut Runtime<'_>) -> Result<String> {
+fn browse_all(query: &str, platform: &str, runtime: &mut Runtime<'_>) -> Result<String> {
+    let platform = crate::catalog::canonical_platform_query(platform).unwrap_or(platform);
     let result = runtime.invoke(
         "browse_library",
-        json!({"query":query,"platform":"","shelf":"all","collection_id":""}),
+        json!({"query":query,"platform":platform,"shelf":"all","collection_id":""}),
     );
     if let Some(error) = result["error"].as_str() {
         return Ok(error.into());
@@ -355,7 +377,8 @@ pub(super) fn try_command(
             return Ok(None);
         };
         runtime.invoke("get_context", json!({}));
-        return browse_all(&query, runtime).map(Some);
+        let query = title_request(&query);
+        return browse_all(&query.title, &query.platform, runtime).map(Some);
     };
     runtime.status("Finding the requested game…");
     let context = runtime.invoke("get_context", json!({}));
@@ -391,13 +414,15 @@ pub(super) fn try_command(
     let games = matches["games"].as_array();
     let total = matches["total_matches"].as_u64().unwrap_or(0);
     if total == 0 {
-        let searched = browse_all(&request.title, runtime)?;
+        let searched = browse_all(&request.title, &request.platform, runtime)?;
         return Ok(Some(format!(
             "I couldn't resolve an exact game to launch. {searched} I haven't launched anything."
         )));
     }
-    if total != 1 {
-        let searched = browse_all(&request.title, runtime)?;
+    let preferred = matches["preferred_game_id"].as_str().and_then(|id|
+        games?.iter().find(|game| game["id"].as_str() == Some(id)));
+    if total != 1 && preferred.is_none() {
+        let searched = browse_all(&request.title, &request.platform, runtime)?;
         let choices = games
             .into_iter()
             .flatten()
@@ -409,8 +434,7 @@ pub(super) fn try_command(
             "{AMBIGUOUS}{choices}. {searched} Which platform? I haven't launched anything."
         )));
     }
-    let game = games
-        .and_then(|g| g.first())
+    let game = preferred.or_else(|| games.and_then(|g| g.first()))
         .ok_or_else(|| anyhow::anyhow!("The catalog returned an incomplete match"))?;
     ensure!(
         crate::assistant_tools::spoken_title_key(game["title"].as_str().unwrap_or(""))
@@ -421,7 +445,11 @@ pub(super) fn try_command(
     ensure!(!id.is_empty(), "The catalog match has no game ID");
     runtime.check()?;
     let result = runtime.invoke("play_game", json!({"game_id":id}));
-    Ok(Some(launch_reply(game, &result)))
+    let reply = launch_reply(game, &result);
+    Ok(Some(if total > 1 {
+        format!("I picked {} for {}. {reply}", game["title"].as_str().unwrap_or("the matching game"),
+            game["platform"].as_str().unwrap_or("the matching platform"))
+    } else { reply }))
 }
 
 fn launch_reply(game: &Value, result: &Value) -> String {
@@ -472,8 +500,60 @@ mod tests {
         history[2].content = "what is NES?".into();
         assert!(request_from_history(&history).is_none());
         history[2].content = "NES".into();
-        history[1].content = "Do you want to play this game?".into();
+        history[0].content = "tell me about Mario".into();
         assert!(request_from_history(&history).is_none());
+    }
+
+    #[test]
+    fn original_title_and_platform_refinements_keep_the_play_intent() {
+        for answer in ["just the original super mario bros for nes", "the original Super Mario Brothers on the N ES please", "Super Mario Bros. for Nintendo Entertainment System", "just the original NES version"] {
+            let history = vec![
+                Message {role:"user".into(), content:"let's play Super Mario Bros".into()},
+                Message {role:"assistant".into(), content:"Which system?".into()},
+                Message {role:"user".into(), content:answer.into()},
+            ];
+            let request = request_from_history(&history).unwrap();
+            assert_eq!(request.title, "super mario bros", "{answer}");
+            assert!(crate::catalog::is_platform_query(&request.platform), "{answer}");
+        }
+        let mut history = vec![
+            Message {role:"user".into(), content:"play Super Mario Bros".into()},
+            Message {role:"assistant".into(), content:"Which system?".into()},
+            Message {role:"user".into(), content:"just the original".into()},
+        ];
+        assert_eq!(request_from_history(&history).unwrap().title, "super mario bros");
+        history.push(Message {role:"assistant".into(), content:"Which platform?".into()});
+        history.push(Message {role:"user".into(), content:"n es".into()});
+        assert_eq!(request_from_history(&history).unwrap().platform, "n es");
+        for answer in ["cancel", "don't play it", "what is NES?", "Sonic for NES"] {
+            history.last_mut().unwrap().content = answer.into();
+            assert!(request_from_history(&history).is_none(), "{answer}");
+        }
+    }
+
+    #[test]
+    fn platform_qualifiers_do_not_leak_into_title_searches() {
+        for question in ["just the original Super Mario Brothers for NES", "take me to Super Mario Brothers on the n es", "find Super Mario Brothers for the NES version"] {
+            let (reply, calls) = run_query(json!({}), false, question);
+            assert!(reply.is_ok());
+            assert_eq!(calls[1].1["query"], "super mario brothers", "{question}");
+            assert!(crate::catalog::is_platform_query(calls[1].1["platform"].as_str().unwrap()));
+            assert_eq!(calls[1].0, "browse_library");
+        }
+        assert_eq!(title_request("Need for Speed").title, "need for speed");
+        assert_eq!(play_request("play the original Super Mario Bros for NES").unwrap().title, "super mario bros");
+    }
+
+    #[test]
+    fn ranked_catalog_preference_avoids_a_platform_question() {
+        let (reply, calls) = run(json!({"total_matches":25,"preferred_game_id":"nes",
+            "games":[{"id":"nes","title":"Super Mario Bros.","platform":"NES"},
+                     {"id":"port","title":"Super Mario Bros.","platform":"C64"}]}), false);
+        let reply = reply.unwrap();
+        assert!(reply.contains("I picked Super Mario Bros. for NES."));
+        assert!(!reply.contains("Which platform"));
+        assert_eq!(calls.last().unwrap().1, json!({"game_id":"nes"}));
+        assert!(calls.iter().all(|c| c.0 != "browse_library"));
     }
 
     #[test]

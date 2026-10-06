@@ -954,64 +954,89 @@ fn platform_search_key(name: &str, database_aliases: Option<&str>) -> String {
     key
 }
 
+const PLATFORM_SEARCH_ALIASES: &[(&str, &str)] = &[
+    ("Nintendo Entertainment System", "NES,Famicom,FC"),
+    ("Super Nintendo Entertainment System", "SNES,Super Famicom,SFC,snesna"),
+    ("Nintendo 64", "N64"),
+    ("Nintendo GameCube", "GC,NGC,GameCube"),
+    ("Nintendo Game Boy", "GB,Game Boy"),
+    ("Nintendo Game Boy Color", "GBC,Game Boy Color"),
+    ("Nintendo Game Boy Advance", "GBA,Game Boy Advance"),
+    ("Nintendo DS", "NDS,DS"),
+    ("Nintendo 3DS", "3DS,N3DS"),
+    ("Nintendo Wii U", "Wii U,WiiU"),
+    ("Nintendo Switch", "Switch,NS"),
+    ("Nintendo Virtual Boy", "VB,Virtual Boy,virtualboy"),
+    ("Sega Master System", "SMS,Master System,mastersystem"),
+    ("Sega Genesis", "MD,Mega Drive,Genesis,megadrive"),
+    ("Sega CD", "SCD,Mega CD,Sega CD,segacd,megacd"),
+    ("Sega 32X", "32X,sega32x"),
+    ("Sega Saturn", "SS,Saturn"),
+    ("Sega Dreamcast", "DC,Dreamcast"),
+    ("Sega Game Gear", "GG,Game Gear,gamegear"),
+    ("Sony Playstation", "PS1,PSX,PS,PlayStation"),
+    ("Sony Playstation 2", "PS2,PlayStation 2"),
+    ("Sony Playstation 3", "PS3,PlayStation 3"),
+    ("Sony PSP", "PSP,PlayStation Portable"),
+    ("Sony Playstation Vita", "PSV,Vita,PS Vita,psvita"),
+    ("NEC TurboGrafx-16", "PCE,PC Engine,TG16,TurboGrafx-16,pcengine"),
+    ("NEC TurboGrafx-CD", "PCECD,PC Engine CD,TG-CD,TurboGrafx-CD,pcenginecd"),
+    ("NEC PC-98", "PC98,PC-98"),
+    ("SNK Neo Geo Pocket", "NGP,Neo Geo Pocket"),
+    ("SNK Neo Geo Pocket Color", "NGPC,Neo Geo Pocket Color"),
+    ("SNK Neo Geo AES", "AES,MVS,Neo Geo,neogeo"),
+    ("SNK Neo Geo CD", "Neo Geo CD,neogeocd,neogeocdjp"),
+    ("Atari 2600", "2600,VCS,atari2600"),
+    ("Atari 5200", "5200,atari5200"),
+    ("Atari 7800", "7800,atari7800"),
+    ("Atari Jaguar", "Jaguar,Jag,atarijaguar"),
+    ("Atari Jaguar CD", "Jaguar CD,atarijaguarcd"),
+    ("Commodore 64", "C64"),
+    ("Commodore VIC-20", "VIC-20,VIC20"),
+    ("Commodore 16", "C16"),
+    ("MS-DOS", "DOS"),
+    ("Microsoft Xbox 360", "X360,360,Xbox 360,xbox360"),
+    ("Sinclair ZX Spectrum", "ZX,ZX Spectrum,zxspectrum"),
+    ("Amstrad CPC", "CPC,amstradcpc"),
+    ("Arcade", "MAME,arcade,fbneo"),
+    ("Arcade Laserdisc", "Laserdisc,Daphne,Singe,arcade laserdisc"),
+    ("Arcade Pinball", "Pinball,arcade pinball,MAME pinball"),
+    ("Panasonic 3DO", "3DO"),
+    ("Philips CD-i", "CD-i,CDi,cdimono1"),
+    ("Bandai WonderSwan", "WS,WonderSwan"),
+    ("Bandai WonderSwan Color", "WSC,WonderSwan Color,wonderswancolor"),
+    ("Coleco ColecoVision", "Coleco,ColecoVision"),
+    ("GCE Vectrex", "Vectrex"),
+    ("Sharp X68000", "X68000"),
+    ("ScummVM", "ScummVM"),
+    ("Nintendo Famicom Disk System", "FDS,Famicom Disk System"),
+    ("Nintendo Wii", "Wii"),
+    ("Microsoft Xbox", "Xbox"),
+    ("Windows", "PC,Windows PC"),
+    ("Linux", "Linux"),
+    ("Apple Mac OS", "Mac,macOS,Mac OS"),
+    ("Commodore Amiga", "Amiga"),
+    ("Atari 800", "Atari 8-bit"),
+    ("Atari ST", "Atari ST"),
+];
+
 pub(crate) fn legacy_platform_search_aliases(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "Nintendo Entertainment System" => "NES,Famicom,FC",
-        "Super Nintendo Entertainment System" => "SNES,Super Famicom,SFC,snesna",
-        "Nintendo 64" => "N64",
-        "Nintendo GameCube" => "GC,NGC,GameCube",
-        "Nintendo Game Boy" => "GB,Game Boy",
-        "Nintendo Game Boy Color" => "GBC,Game Boy Color",
-        "Nintendo Game Boy Advance" => "GBA,Game Boy Advance",
-        "Nintendo DS" => "NDS,DS",
-        "Nintendo 3DS" => "3DS,N3DS",
-        "Nintendo Wii U" => "Wii U,WiiU",
-        "Nintendo Switch" => "Switch,NS",
-        "Nintendo Virtual Boy" => "VB,Virtual Boy,virtualboy",
-        "Sega Master System" => "SMS,Master System,mastersystem",
-        "Sega Genesis" => "MD,Mega Drive,Genesis,megadrive",
-        "Sega CD" => "SCD,Mega CD,Sega CD,segacd,megacd",
-        "Sega 32X" => "32X,sega32x",
-        "Sega Saturn" => "SS,Saturn",
-        "Sega Dreamcast" => "DC,Dreamcast",
-        "Sega Game Gear" => "GG,Game Gear,gamegear",
-        "Sony Playstation" => "PS1,PSX,PS,PlayStation",
-        "Sony Playstation 2" => "PS2,PlayStation 2",
-        "Sony Playstation 3" => "PS3,PlayStation 3",
-        "Sony PSP" => "PSP,PlayStation Portable",
-        "Sony Playstation Vita" => "PSV,Vita,PS Vita,psvita",
-        "NEC TurboGrafx-16" => "PCE,PC Engine,TG16,TurboGrafx-16,pcengine",
-        "NEC TurboGrafx-CD" => "PCECD,PC Engine CD,TG-CD,TurboGrafx-CD,pcenginecd",
-        "NEC PC-98" => "PC98,PC-98",
-        "SNK Neo Geo Pocket" => "NGP,Neo Geo Pocket",
-        "SNK Neo Geo Pocket Color" => "NGPC,Neo Geo Pocket Color",
-        "SNK Neo Geo AES" => "AES,MVS,Neo Geo,neogeo",
-        "SNK Neo Geo CD" => "Neo Geo CD,neogeocd,neogeocdjp",
-        "Atari 2600" => "2600,VCS,atari2600",
-        "Atari 5200" => "5200,atari5200",
-        "Atari 7800" => "7800,atari7800",
-        "Atari Jaguar" => "Jaguar,Jag,atarijaguar",
-        "Atari Jaguar CD" => "Jaguar CD,atarijaguarcd",
-        "Commodore 64" => "C64",
-        "Commodore VIC-20" => "VIC-20,VIC20",
-        "Commodore 16" => "C16",
-        "MS-DOS" => "DOS",
-        "Microsoft Xbox 360" => "X360,360,Xbox 360,xbox360",
-        "Sinclair ZX Spectrum" => "ZX,ZX Spectrum,zxspectrum",
-        "Amstrad CPC" => "CPC,amstradcpc",
-        "Arcade" => "MAME,arcade,fbneo",
-        "Arcade Laserdisc" => "Laserdisc,Daphne,Singe,arcade laserdisc",
-        "Arcade Pinball" => "Pinball,arcade pinball,MAME pinball",
-        "Panasonic 3DO" => "3DO",
-        "Philips CD-i" => "CD-i,CDi,cdimono1",
-        "Bandai WonderSwan" => "WS,WonderSwan",
-        "Bandai WonderSwan Color" => "WSC,WonderSwan Color,wonderswancolor",
-        "Coleco ColecoVision" => "Coleco,ColecoVision",
-        "GCE Vectrex" => "Vectrex",
-        "Sharp X68000" => "X68000",
-        "ScummVM" => "ScummVM",
-        _ => return None,
-    })
+    PLATFORM_SEARCH_ALIASES.iter().find(|(platform, _)| *platform == name).map(|(_, aliases)| *aliases)
+}
+
+/// Recognize qualifiers without splitting titles such as Need for Speed.
+/// Ignore spacing so speech transcriptions such as "n es" still mean NES.
+pub(crate) fn is_platform_query(query: &str) -> bool {
+    canonical_platform_query(query).is_some()
+}
+
+pub(crate) fn canonical_platform_query(query: &str) -> Option<&'static str> {
+    let key = |value: &str| normalize_platform_key(value).replace('-', "");
+    let query = key(query);
+    if query.is_empty() { return None; }
+    PLATFORM_SEARCH_ALIASES.iter().find(|(name, aliases)| {
+        key(name) == query || aliases.split(',').any(|alias| key(alias) == query)
+    }).map(|(name, _)| *name)
 }
 
 fn validate_discovery_schema(connection: &Connection) -> Result<()> {

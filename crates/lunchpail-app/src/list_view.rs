@@ -484,6 +484,15 @@ impl ListMetadataBuilder {
 }
 
 impl ListMetadata {
+    /// Catalog chronology for assistant ranking, before display formatting.
+    pub(crate) fn release_chronology(&self, index: usize) -> (Option<i32>, Option<&str>) {
+        let Some(row) = self.rows.get(index) else { return (None, None); };
+        let date = self.text(row.release_date);
+        let year = (row.release_year != 0).then_some(row.release_year)
+            .or_else(|| date.and_then(parse_year));
+        (year, date)
+    }
+
     pub(crate) fn retain_rows(&mut self, indices: &[usize]) {
         self.rows = indices
             .iter()

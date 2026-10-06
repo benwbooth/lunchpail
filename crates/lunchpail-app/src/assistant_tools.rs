@@ -103,19 +103,34 @@ pub(crate) fn spoken_title_key(title: &str) -> String {
 }
 
 /// Resolve against the already-loaded catalog, not the selected game or a
-/// truncated search sample. Keep the full count so ambiguity cannot disappear.
+/// truncated search sample. Rank the full set before bounding the tool context.
+/// Prefer an early, well-documented retail release, then installed/available
+/// copies. No title or platform is hard-coded as the winner.
 pub(crate) fn resolve_game(catalog: &Catalog, title: &str, platform: &str) -> Value {
     let title = spoken_title_key(title);
-    let matches: Vec<_> = catalog.games.iter().filter(|game| {
+    let mut matches: Vec<_> = catalog.games.iter().enumerate().filter(|(_, game)| {
         !title.is_empty() && !game.adult && !game.non_retail
             && platform_matches(&game.platform, platform)
             && spoken_title_key(&game.title) == title
+    }).map(|(index, game)| {
+        let (year, date) = catalog.list_metadata.release_chronology(index);
+        (game, year.filter(|year| (1900..=2200).contains(year)), date.unwrap_or(""))
     }).collect();
-    let rows: Vec<_> = matches.iter().take(20).map(|game| json!({
+    matches.sort_by_key(|(game, year, date)| (
+        year.unwrap_or(i32::MAX), date.len() < 10, *date,
+        !game.local, !game.downloadable, game.platform.clone(), game.id.clone(),
+    ));
+    let rows: Vec<_> = matches.iter().take(20).map(|(game, year, date)| json!({
         "id":game.id,"title":game.title,"platform":game.platform,
         "local":game.local,"downloadable":game.downloadable,
+        "year":year,"release_date":date,
     })).collect();
-    json!({"games":rows,"total_matches":matches.len()})
+    let reason = if matches.first().is_some_and(|(_, year, _)| year.is_some()) {
+        "earliest documented release year, preferring a complete date; availability breaks ties"
+    } else { "release dates unavailable; prefer installed, then downloadable copies" };
+    json!({"preferred_game_id":matches.first().map(|(game, _, _)| &game.id),
+        "selection_reason":reason,
+        "games":rows,"total_matches":matches.len()})
 }
 
 /// Keep exact title matches in the bounded assistant context even when a
@@ -402,6 +417,37 @@ mod tests {
                 .is_err()
         );
     }
+    #[test]
+    fn defaults_use_chronology_and_availability_but_respect_explicit_platforms() {
+        use crate::list_view::{ListMetadataBuilder, MetadataInput};
+        let mut catalog = Catalog::default();
+        let mut metadata = ListMetadataBuilder::with_capacity(5);
+        for (id, platform, year, date, local) in [
+            ("port", "Commodore 64", Some(2019), None, true),
+            ("coarse", "Arcade", Some(1985), None, false),
+            ("original", "Nintendo Entertainment System", None, Some("1985-09-13"), false),
+            ("disk", "Nintendo Famicom Disk System", None, Some("1986-02-21"), true),
+            ("unknown", "Unknown", None, None, true),
+        ] {
+            catalog.games.push(crate::catalog::Game {id:id.into(), title:"Example Game".into(),
+                platform:platform.into(), local, ..Default::default()});
+            metadata.push(MetadataInput {release_year:year, release_date:date.map(str::to_owned), ..Default::default()}).unwrap();
+        }
+        catalog.list_metadata = metadata.finish();
+        let result = resolve_game(&catalog, "Example Game", "");
+        assert_eq!(result["preferred_game_id"], "original");
+        assert_eq!(result["games"][0]["year"], 1985);
+        assert_eq!(resolve_game(&catalog, "Example Game", "C64")["preferred_game_id"], "port");
+        assert_eq!(resolve_game(&catalog, "Example Game", "n es")["preferred_game_id"], "original");
+        assert_eq!(resolve_game(&catalog, "Example Game", "FDS")["preferred_game_id"], "disk");
+
+        // Same chronology (or no chronology): prefer a copy already installed.
+        catalog.list_metadata = Default::default();
+        catalog.games[0].local = false;
+        catalog.games[3].local = false;
+        assert_eq!(resolve_game(&catalog, "Example Game", "")["preferred_game_id"], "unknown");
+    }
+
     #[test]
     fn exact_resolution_ignores_selection_sequels_and_hidden_entries_and_keeps_ambiguity() {
         let mut catalog = Catalog::default();
