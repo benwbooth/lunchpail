@@ -49,7 +49,7 @@ ColumnLayout {
     }
     Text {
         Layout.fillWidth: true; wrapMode: Text.WordWrap; color: pane.mutedColor; font.pixelSize: 11
-        text: "When enabled, the microphone listens locally while Lunchpail is focused in normal or Couch mode, pauses for games, dialogs and spoken replies, and shows a Mic on indicator. In normal mode, unmuted previews also pause hands-free listening unless the wake phrase is enabled; muting or leaving the preview resumes it. Audio is never saved or uploaded. Transcripts are sent to your chosen AI provider. Use a headset or the optional wake phrase to avoid picking up room/preview audio. F2 works for push-to-talk in the conversation panel."
+        text: "Use the Hands-free button or F4 to toggle listening in normal or Couch mode. When enabled, the microphone listens locally while Lunchpail is focused, pauses for games, dialogs and spoken replies, and shows whether it is on or paused. In normal mode, unmuted previews also pause hands-free listening unless the wake phrase is enabled; muting or leaving the preview resumes it. Audio is never saved or uploaded. Transcripts are sent to your chosen AI provider. Use a headset or the optional wake phrase to avoid picking up room/preview audio. F2 works for push-to-talk in the conversation panel."
     }
     LocalModelInstall {
         id: installer; ai: pane.ai

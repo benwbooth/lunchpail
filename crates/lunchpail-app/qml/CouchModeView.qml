@@ -60,6 +60,7 @@ Item {
     function toggleHandsFree() {
         if (!ai) return
         if (ai.hands_free) { ai.enable_hands_free(false); speech.cancel(); return }
+        if (modelInstall.visible && installAction === "hands-free") { modelInstall.decline(); return }
         installAction = "hands-free"
         modelInstall.request(false, true)
     }
@@ -1713,12 +1714,14 @@ Item {
             width: 144
             text: view.speech.faulted && view.ai && view.ai.hands_free ? "Mic error · Off"
                   : view.speech.hands_free && view.speech.listening ? (view.speech.awake ? "Listening…" : "Hands-free · On")
-                  : view.ai && view.ai.hands_free ? "Voice suspended" : "Hands-free · Off"
+                  : view.ai && view.ai.hands_free ? "Hands-free · Paused" : "Hands-free · Off"
             emphasized: !!view.ai && view.ai.hands_free
             inkColor: view.ink; panelColor: view.panel; accentColor: view.accentCool
             onClicked: view.toggleHandsFree()
             ToolTip.visible: hovered
-            ToolTip.text: view.speech.status + " Say Lunchpail to search. Click to turn hands-free " + (view.ai && view.ai.hands_free ? "off." : "on.")
+            ToolTip.text: "Toggle hands-free listening · F4. " + view.speech.status
+                + (view.conversationConfig.wake_word ? " Say Lunchpail before a request." : " Speak naturally while the microphone is on.")
+            Accessible.name: (view.ai && view.ai.hands_free ? "Turn hands-free listening off" : "Turn hands-free listening on") + " · F4"
         }
         CouchActionButton {
             text: view.viewLabel + "  ▾"
@@ -2163,7 +2166,7 @@ Item {
         }
         Text {
             visible: view.gamepad.connected_count === 0
-            text: "TYPE TO SEARCH · F2 MIC · CTRL+A ATTRACT · CTRL+V VIEW · CTRL+P MUSIC"
+            text: "TYPE TO SEARCH · F2 MIC · F4 HANDS-FREE · CTRL+A ATTRACT · CTRL+V VIEW · CTRL+P MUSIC"
             color: view.muted
             font.pixelSize: 9
             font.weight: Font.Bold

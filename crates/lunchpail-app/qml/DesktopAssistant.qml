@@ -22,6 +22,12 @@ Item {
     property bool coolingDown: false
     readonly property var config: JSON.parse(assistant.config_json || "{}")
     readonly property var searchPanel: conversation
+    readonly property var handsFreeInstallDialog: handsFreeInstall
+    readonly property string handsFreeLabel: !ai.hands_free ? "Hands-free · Off"
+        : speech.faulted ? "Hands-free · Error"
+        : speech.hands_free && speech.listening ? "Hands-free · On" : "Hands-free · Paused"
+    readonly property string handsFreeHint: (ai.hands_free ? "Turn hands-free listening off" : "Turn hands-free listening on")
+        + " · F4" + (ai.hands_free && handsFreePausedForPreview ? " · Paused for preview audio" : "")
     readonly property bool handsFreePausedForPreview: previewAudioRequested && !config.wake_word
     readonly property bool handsFreeAllowed: active && windowActive && !gameRunning && !inputBlocked
         && ai.hands_free && !assistant.busy && !speechOutput.speaking && !coolingDown
@@ -37,10 +43,25 @@ Item {
     }
     function close() { opened = false; conversation.cancelVoice() }
     function toggle() { if (opened) close(); else open("") }
+    function toggleHandsFree() {
+        if (ai.hands_free) { ai.enable_hands_free(false); speech.cancel(); return }
+        if (handsFreeInstall.visible) { handsFreeInstall.decline(); return }
+        handsFreeInstall.request(false, true)
+    }
     onActiveChanged: { if (!active) conversation.cancelVoice() }
     onWindowActiveChanged: { if (!windowActive) conversation.cancelVoice() }
     onGameRunningChanged: { if (gameRunning) conversation.cancelVoice() }
     visible: active
+    LocalModelInstall {
+        id: handsFreeInstall
+        ai: desktop.ai
+        onReady: {
+            desktop.speech.refresh()
+            desktop.speech.faulted = false
+            desktop.ai.enable_hands_free(true)
+            handsFree.reconcile()
+        }
+    }
     CouchHandsFreeController {
         id: handsFree
         speech: desktop.speech
@@ -88,10 +109,13 @@ Item {
                 font.pixelSize: 12; font.bold: true
             }
             LbButton {
-                objectName: "desktopHandsFreeOff"
-                visible: desktop.ai.hands_free
-                text: "Turn mic off"
-                onClicked: { desktop.ai.enable_hands_free(false); desktop.speech.cancel() }
+                objectName: "desktopHandsFreeToggle"
+                text: desktop.handsFreeLabel
+                highlighted: desktop.ai.hands_free
+                onClicked: desktop.toggleHandsFree()
+                ToolTip.visible: hovered
+                ToolTip.text: desktop.handsFreeHint
+                Accessible.name: desktop.handsFreeHint
             }
             LbButton { text: "AI & voice"; onClicked: desktop.settingsRequested() }
             LbButton { text: "Close"; Accessible.name: "Close assistant"; onClicked: desktop.close() }

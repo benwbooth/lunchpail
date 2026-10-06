@@ -11923,6 +11923,12 @@ ApplicationWindow {
         enabled: !root.couchModeActive && !gameDetails.game_running
         onActivated: desktopAssistant.toggle()
     }
+    HandsFreeShortcut {
+        objectName: "handsFreeShortcut"
+        desktopController: desktopAssistant
+        couchController: couchModeView
+        couchModeActive: root.couchModeActive
+    }
 
     CouchModeView {
         id: couchModeView
@@ -12378,6 +12384,9 @@ ApplicationWindow {
                 }
                 Column {
                     anchors.verticalCenter: parent.verticalCenter
+                    // Leave room for search and the microphone toggle at the
+                    // minimum window width; the app icon remains visible.
+                    visible: root.width >= 1180
                     spacing: -2
                     Text {
                         text: "LUNCHPAIL"
@@ -12457,12 +12466,21 @@ ApplicationWindow {
                 spacing: 7
                 HeaderButton {
                     objectName: "desktopAssistantButton"
-                    text: couchSpeech.listening ? "● Mic on" : "Ask AI"
+                    text: "Ask AI"
                     active: desktopAssistant.opened
                     onClicked: desktopAssistant.toggle()
                     ToolTip.visible: hovered
                     ToolTip.text: "Talk to Lunchpail · Ctrl+J" + (localAi.hands_free ? " · Hands-free enabled" : "")
                     Accessible.name: "Open Lunchpail assistant"
+                }
+                HeaderButton {
+                    objectName: "headerHandsFreeToggle"
+                    text: desktopAssistant.handsFreeLabel
+                    active: localAi.hands_free
+                    onClicked: desktopAssistant.toggleHandsFree()
+                    ToolTip.visible: hovered
+                    ToolTip.text: desktopAssistant.handsFreeHint
+                    Accessible.name: desktopAssistant.handsFreeHint
                 }
                 HeaderButton {
                     text: ""

@@ -287,6 +287,7 @@ fn main() {
                 "qml/GameWindowBehavior.qml",
                 "qml/GridHoverFocusState.qml",
                 "qml/HeaderButton.qml",
+                "qml/HandsFreeShortcut.qml",
                 "qml/RandomGameButton.qml",
                 "qml/HorizontalWheelHandler.qml",
                 "qml/HoverPreviewPresentation.qml",

@@ -70,6 +70,7 @@ TestCase {
                 function cancel() { busy = false; hands_free = false; listening = false }
                 function stop() { listening = false }
                 function poll() {}
+                function refresh() { ready = true }
             }
             speechOutput: QtObject {
                 property bool speaking: false
@@ -77,7 +78,19 @@ TestCase {
             }
             ai: QtObject {
                 property bool hands_free: false
+                property bool speech_ready: true
+                property bool assistant_ready: false
+                property bool busy: false
+                property string speech_model: "sherpa-zipformer-en"
+                property string assistant_model: ""
+                property string models_json: "[]"
+                property string status: "Ready"
+                property real progress: 0
+                property int installs: 0
+                signal operation_finished(bool success)
                 function enable_hands_free(value) { hands_free = value }
+                function install_for(assistant) { installs++; busy = true }
+                function cancel() { busy = false }
             }
         }
     }
@@ -186,10 +199,42 @@ TestCase {
         compare(p.speech.listening, true)
         compare(p.ai.hands_free, true)
     }
-    function test_visible_mic_off_control_stops_listening_without_settings() {
-        const p = pane(); p.open(""); p.ai.hands_free = true
-        const off = findChild(p, "desktopHandsFreeOff"); verify(off.visible)
-        off.clicked(); compare(p.ai.hands_free, false); compare(p.speech.listening, false)
+    function test_visible_hands_free_button_toggles_both_directions_without_settings() {
+        const p = pane(); p.open("")
+        const button = findChild(p, "desktopHandsFreeToggle"); verify(button.visible)
+        compare(button.text, "Hands-free · Off")
+        button.clicked(); compare(p.ai.hands_free, true); compare(p.speech.listening, true)
+        compare(button.text, "Hands-free · On"); compare(p.ai.installs, 0)
+        p.previewAudioRequested = true
+        compare(button.text, "Hands-free · Paused"); verify(button.highlighted)
+        button.clicked(); compare(p.ai.hands_free, false); compare(p.speech.listening, false)
+        compare(button.text, "Hands-free · Off"); verify(!button.highlighted)
+    }
+    function test_missing_model_requires_consent_and_repeat_toggle_cancels_it() {
+        const p = pane(); p.ai.speech_ready = false
+        p.toggleHandsFree()
+        verify(p.handsFreeInstallDialog.visible)
+        compare(p.ai.hands_free, false); compare(p.ai.installs, 0)
+        p.toggleHandsFree()
+        verify(!p.handsFreeInstallDialog.visible)
+        compare(p.ai.hands_free, false); compare(p.speech.listening, false)
+    }
+    function test_cancel_pending_hands_free_install_cannot_enable_mic_later() {
+        const p = pane(); p.ai.speech_ready = false
+        p.toggleHandsFree(); p.handsFreeInstallDialog.install()
+        compare(p.ai.installs, 1)
+        p.toggleHandsFree()
+        compare(p.ai.busy, false); compare(p.ai.hands_free, false)
+        p.ai.speech_ready = true; p.ai.operation_finished(true)
+        compare(p.ai.hands_free, false); compare(p.speech.listening, false)
+    }
+    function test_verified_voice_install_enables_hands_free_after_consent() {
+        const p = pane(); p.ai.speech_ready = false; p.speech.faulted = true
+        p.toggleHandsFree(); p.handsFreeInstallDialog.install()
+        compare(p.ai.hands_free, false)
+        p.ai.speech_ready = true; p.ai.busy = false; p.ai.operation_finished(true)
+        compare(p.speech.faulted, false)
+        compare(p.ai.hands_free, true); compare(p.speech.listening, true)
     }
     function test_captions_and_transcript_keep_literal_text() {
         const p = pane(); p.open("")
