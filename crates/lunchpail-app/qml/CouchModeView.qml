@@ -2770,7 +2770,12 @@ Item {
               Column {
                 id: platformPresentation
                 width: parent.width
-                property string platform: view.library.platform_name_at(view.platformWheelIndex)
+                property string platform: {
+                    // The first index can remain zero while the async catalog
+                    // arrives; invokable calls do not track that data change.
+                    view.library.platform_count
+                    return view.library.platform_name_at(view.platformWheelIndex)
+                }
                 onPlatformChanged: if (view.active && view.platformWheelOpen) platformReveal.restart()
                 property url videoUrl: { view.mediaRevision; return view.library.platform_media_url(platform, "video") }
                 readonly property bool compact: view.height < 850
