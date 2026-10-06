@@ -362,6 +362,9 @@ fn load_internal(
             &details.title,
             &details.alternate_titles,
         )?);
+    // Keep achievement-specific sets behind ordinary and personal sources,
+    // including when providers were resolved separately above.
+    details.bundles.sort_by_key(is_retroachievements_bundle);
     details.downloadable = !details.local && !details.bundles.is_empty();
     let identities = details
         .variants
@@ -1624,6 +1627,13 @@ fn resolve_registered_torrent_bundles_for_game(
     Ok(bundles)
 }
 
+pub(crate) fn is_retroachievements_bundle(bundle: &MinervaBundle) -> bool {
+    bundle
+        .collection
+        .trim()
+        .eq_ignore_ascii_case("RetroAchievements")
+}
+
 fn bundle_source_priority(bundle: &MinervaBundle) -> u8 {
     let collection = bundle.collection.trim().to_ascii_lowercase();
     let platform = bundle.provider_platform.trim().to_ascii_lowercase();
@@ -1653,7 +1663,7 @@ fn bundle_source_priority(bundle: &MinervaBundle) -> u8 {
     match collection.as_str() {
         "redump" => 0,
         "tosec" => 10,
-        "retroachievements" => 20,
+        "retroachievements" => u8::MAX,
         "finalburn neo" => 30,
         _ => 15,
     }
@@ -4388,6 +4398,37 @@ mod tests {
                 "No-Intro",
                 "Nintendo - Nintendo Entertainment System (Headered) (Private)",
             ))
+        );
+
+        let achievements = bundle(4, " RetroAchievements ", "nes");
+        assert!(is_retroachievements_bundle(&achievements));
+        for (collection, platform) in [
+            (
+                "No-Intro",
+                "Nintendo - Nintendo Entertainment System (Headered)",
+            ),
+            (
+                "No-Intro",
+                "Nintendo - Nintendo Entertainment System (Headerless)",
+            ),
+            ("Redump", "Sony - PlayStation"),
+            ("TOSEC", "nes"),
+            ("FinalBurn Neo", "nes"),
+            ("Personal source", "nes"),
+        ] {
+            let standard = bundle(5, collection, platform);
+            assert!(!is_retroachievements_bundle(&standard));
+            assert!(bundle_source_priority(&standard) < bundle_source_priority(&achievements));
+        }
+        let mut combined = vec![
+            achievements,
+            bundle(6, "Personal source", "nes"),
+            bundle(7, "No-Intro", "nes"),
+        ];
+        combined.sort_by_key(is_retroachievements_bundle);
+        assert_eq!(
+            combined.iter().map(|bundle| bundle.torrent_id).collect::<Vec<_>>(),
+            [6, 7, 4]
         );
     }
 

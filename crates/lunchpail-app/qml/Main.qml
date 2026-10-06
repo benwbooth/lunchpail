@@ -5531,7 +5531,9 @@ ApplicationWindow {
                 return
             const count = gameDetails.download_candidate_count()
             if (root.couchDownloadProbeStage === 0) {
-                if (count <= 0)
+                // Verify the final recommendation, not whichever metadata
+                // worker happened to return its first candidate fastest.
+                if (count <= 0 || gameDetails.torrent_loading)
                     return
                 couchModeView.openDownloadOverlay()
                 root.couchDownloadProbeStage = 1

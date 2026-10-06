@@ -23,6 +23,11 @@ Do not expose an unauthenticated Web UI to the internet.
 Select a game and open its download options. Choose the correct region and
 revision, then review the selected files and their size before queuing.
 
+For equally good game matches, ordinary and personal sources rank ahead of
+RetroAchievements collections, even if the achievement-specific archive is
+larger. RetroAchievements remains available as a fallback or an explicit choice;
+an exact game match still ranks ahead of a weaker title match from another source.
+
 Minerva groups files into larger collections. Lunchpail normally selects the
 reviewed game and any required companion files, not every game in the collection.
 Check the whole-torrent setting if the proposed download is larger than expected.
@@ -66,4 +71,3 @@ than an arbitrary similarly named file.
 
 You can also [register your own source](custom-sources.md) or import a local
 game. Repeating the same search will not repair an incomplete source index.
-

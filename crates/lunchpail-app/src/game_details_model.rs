@@ -707,6 +707,7 @@ struct BundleCandidateGroup {
     files: Vec<TorrentFileCandidate>,
     error: String,
     prefer_self_contained: bool,
+    is_retroachievements: bool,
 }
 
 pub struct GameDetailsModelRust {
@@ -3844,6 +3845,12 @@ impl qobject::GameDetailsModel {
                     .bundles
                     .get(bundle_index)
                     .is_some_and(game_details::is_non_merged_arcade_bundle);
+                let is_retroachievements = self
+                    .as_ref()
+                    .rust()
+                    .bundles
+                    .get(bundle_index)
+                    .is_some_and(game_details::is_retroachievements_bundle);
                 if let Some(group) = self
                     .as_mut()
                     .rust_mut()
@@ -3854,6 +3861,7 @@ impl qobject::GameDetailsModel {
                     group.files = files.clone();
                     group.error.clear();
                     group.prefer_self_contained = prefer_self_contained;
+                    group.is_retroachievements = is_retroachievements;
                 }
                 self.as_mut().rust_mut().files = files;
                 self.as_mut().set_file_count(count_i32(count));
@@ -4000,12 +4008,19 @@ impl qobject::GameDetailsModel {
                     .bundles
                     .get(bundle_index)
                     .is_some_and(game_details::is_non_merged_arcade_bundle),
+                is_retroachievements: self
+                    .as_ref()
+                    .rust()
+                    .bundles
+                    .get(bundle_index)
+                    .is_some_and(game_details::is_retroachievements_bundle),
             },
             Err(error) => BundleCandidateGroup {
                 loaded: true,
                 files: Vec::new(),
                 error,
                 prefer_self_contained: false,
+                is_retroachievements: false,
             },
         };
         if let Some(target) = self
@@ -8437,11 +8452,17 @@ fn ranked_source_indices(groups: &[BundleCandidateGroup]) -> Vec<usize> {
         .filter(|&index| !groups[index].files.is_empty())
         .collect::<Vec<_>>();
     // Keep original bundle indices stable for asynchronous results and download
-    // selection. Source/catalog priority only breaks equal-quality matches.
+    // selection. Exactness comes first; achievement-specific sets are fallbacks
+    // for equally good matches, even when their archives happen to be larger.
     indices.sort_by(|&left, &right| {
         groups[right].files[0]
             .match_score
             .total_cmp(&groups[left].files[0].match_score)
+            .then_with(|| {
+                groups[left]
+                    .is_retroachievements
+                    .cmp(&groups[right].is_retroachievements)
+            })
             .then_with(|| {
                 groups[right]
                     .prefer_self_contained
@@ -8706,6 +8727,7 @@ mod tests {
                 .collect(),
             error: String::new(),
             prefer_self_contained: false,
+            is_retroachievements: false,
         }
     }
 
@@ -8803,6 +8825,38 @@ mod tests {
         weak.files[0].match_score = 0.72;
         let groups = vec![small, large, weak];
         assert_eq!(ranked_source_indices(&groups), [1, 0, 2]);
+        assert_eq!(download_candidate_location(&groups, 0), Some((1, 0)));
+    }
+
+    #[test]
+    fn retroachievements_is_a_fallback_even_when_its_archive_is_larger() {
+        let mut achievements = candidate_group(true, true);
+        achievements.is_retroachievements = true;
+        achievements.files[0].byte_size = 500;
+        achievements.files[0].index = 42;
+        let standard = candidate_group(true, true);
+        let groups = vec![achievements, standard];
+
+        assert_eq!(ranked_source_indices(&groups), [1, 0]);
+        assert_eq!(download_source_location(&groups, 0), Some(1));
+        assert_eq!(download_candidate_location(&groups, 0), Some((1, 0)));
+        assert_eq!(download_candidate_location(&groups, 1), Some((0, 0)));
+        assert_eq!(
+            groups[0].files[0].index, 42,
+            "Explicit source selection must remain intact"
+        );
+    }
+
+    #[test]
+    fn retroachievements_stays_available_when_it_is_the_only_or_more_exact_match() {
+        let mut achievements = candidate_group(true, true);
+        achievements.is_retroachievements = true;
+        let mut fuzzy = candidate_group(true, true);
+        fuzzy.files[0].match_score = 0.72;
+        let mut groups = vec![fuzzy, achievements];
+        assert_eq!(ranked_source_indices(&groups), [1, 0]);
+        groups[0].files.clear();
+        assert_eq!(ranked_source_indices(&groups), [1]);
         assert_eq!(download_candidate_location(&groups, 0), Some((1, 0)));
     }
 
