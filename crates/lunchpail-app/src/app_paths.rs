@@ -73,6 +73,20 @@ pub(crate) fn project_dirs() -> Option<AppDirectories> {
     }
 }
 
+pub(crate) fn protected_profile_state_paths() -> Vec<PathBuf> {
+    let mut paths: Vec<_> = [current_dirs(), legacy_dirs()].into_iter().flatten()
+        .map(|dirs| dirs.data_local_dir().join("state.db")).collect();
+    // An isolated XDG environment must not make the ordinary Linux profile
+    // writable by a probe that accidentally passes its absolute path.
+    #[cfg(target_os = "linux")]
+    if let Some(dirs) = directories::BaseDirs::new() {
+        for name in ["lunchpail", "lunchbox"] {
+            paths.push(dirs.home_dir().join(".local/share").join(name).join("state.db"));
+        }
+    }
+    paths
+}
+
 pub(crate) fn migrate_user_directories() -> Result<()> {
     let current = current_dirs().context("Lunchpail application directories are unavailable")?;
     let legacy = legacy_dirs().context("legacy application directories are unavailable")?;

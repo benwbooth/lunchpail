@@ -1,4 +1,5 @@
 mod app_paths;
+mod probe_safety;
 mod launch_timing;
 mod arcade;
 mod arcade_content;
@@ -414,6 +415,17 @@ fn needs_widget_application(
 
 pub fn run() -> i32 {
     app_paths::import_legacy_environment();
+    let arguments = std::env::args().collect::<Vec<_>>();
+    // This must precede every settings/database open and all QML construction:
+    // the metadata probe intentionally saves fixture edits from a QML timer.
+    if let Err(error) = probe_safety::validate_metadata_probe(
+        &arguments,
+        catalog::requested_path("--state-database", "LUNCHPAIL_STATE_DATABASE").as_deref(),
+        &app_paths::protected_profile_state_paths(),
+    ) {
+        eprintln!("LUNCHPAIL_PROBE_SAFETY_FAILED: {error}");
+        return 2;
+    }
     if std::env::args().any(|arg| arg == "--conversation-mcp-stdio") {
         return match conversation::bridge::run() {
             Ok(()) => 0,
@@ -844,7 +856,6 @@ pub fn run() -> i32 {
     // One visible Lunchpail owns the desktop. Headless UI probes may run
     // alongside it, but a visible probe must raise the existing instance just
     // like any other second launch.
-    let arguments = std::env::args().collect::<Vec<_>>();
     let qpa_platform = std::env::var("QT_QPA_PLATFORM").ok();
     let headless_ui_probe = may_bypass_instance_guard(&arguments, qpa_platform.as_deref());
     let _instance_guard = if headless_ui_probe {
