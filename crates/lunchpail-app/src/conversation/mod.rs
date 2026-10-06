@@ -157,7 +157,7 @@ pub fn ask(
             && m.content.len() <= 4000),
         "Enter a message of at most 4,000 characters"
     );
-    if let Some(reply) = commands::try_play(&history.last().unwrap().content, runtime)? {
+    if let Some(reply) = commands::try_play(history, runtime)? {
         runtime.check()?;
         return Ok(reply);
     }

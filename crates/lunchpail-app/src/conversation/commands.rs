@@ -1,6 +1,6 @@
 //! Short, explicit play commands do not need model inference. Resolve a unique
 //! exact catalog title, then use the same guarded launch workflow as every UI.
-use super::Runtime;
+use super::{Message, Runtime};
 use anyhow::{Result, ensure};
 use serde_json::{Value, json};
 
@@ -127,8 +127,72 @@ fn play_request(text: &str) -> Option<PlayRequest> {
     Some(PlayRequest { title, platform })
 }
 
-pub(super) fn try_play(text: &str, runtime: &mut Runtime<'_>) -> Result<Option<String>> {
-    let Some(request) = play_request(text) else {
+const AMBIGUOUS: &str = "More than one game matches: ";
+
+fn request_from_history(history: &[Message]) -> Option<PlayRequest> {
+    let current = history.last()?;
+    if current.role != "user" {
+        return None;
+    }
+    if let Some(request) = play_request(&current.content) {
+        return Some(request);
+    }
+    // A short platform answer to our immediately preceding clarification is
+    // still a launch instruction, not a new expensive model conversation.
+    let previous = history.get(history.len().checked_sub(3)?)?;
+    let clarification = &history[history.len() - 2];
+    if previous.role != "user"
+        || clarification.role != "assistant"
+        || !clarification.content.starts_with(AMBIGUOUS)
+        || !clarification
+            .content
+            .ends_with("I haven't launched anything.")
+    {
+        return None;
+    }
+    let mut request = play_request(&previous.content)?;
+    let answer = current
+        .content
+        .to_lowercase()
+        .replace(['\u{2019}', '\''], "");
+    let mut words: Vec<_> = answer
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .collect();
+    if words.is_empty()
+        || words.len() > 8
+        || words.iter().any(|w| {
+            [
+                "no", "not", "dont", "never", "cancel", "stop", "instead", "yes", "what", "why",
+                "how", "which", "can", "could", "would", "is", "are", "and", "or", "it", "this",
+                "that",
+            ]
+            .contains(w)
+        })
+    {
+        return None;
+    }
+    while words
+        .first()
+        .is_some_and(|w| ["the", "original", "on"].contains(w))
+    {
+        words.remove(0);
+    }
+    while words
+        .last()
+        .is_some_and(|w| ["version", "one", "please"].contains(w))
+    {
+        words.pop();
+    }
+    request.platform = words.join(" ");
+    if request.platform.is_empty() || request.platform.len() > 100 {
+        return None;
+    }
+    Some(request)
+}
+
+pub(super) fn try_play(history: &[Message], runtime: &mut Runtime<'_>) -> Result<Option<String>> {
+    let Some(request) = request_from_history(history) else {
         return Ok(None);
     };
     runtime.status("Finding the requested game…");
@@ -179,18 +243,12 @@ pub(super) fn try_play(text: &str, runtime: &mut Runtime<'_>) -> Result<Option<S
         let choices = games
             .into_iter()
             .flatten()
-            .take(5)
-            .map(|g| {
-                format!(
-                    "{} ({})",
-                    g["title"].as_str().unwrap_or("Unknown title"),
-                    g["platform"].as_str().unwrap_or("unknown platform")
-                )
-            })
+            .take(8)
+            .map(|g| g["platform"].as_str().unwrap_or("unknown platform"))
             .collect::<Vec<_>>()
             .join(", ");
         return Ok(Some(format!(
-            "More than one game matches: {choices}. Please say play, the exact title, and its platform. I haven't launched anything."
+            "{AMBIGUOUS}{choices}. Which platform? I haven't launched anything."
         )));
     }
     let game = games
@@ -225,6 +283,40 @@ mod tests {
     use super::*;
     use crate::conversation::{Event, Message, ask, settings::Settings};
     use std::sync::{atomic::AtomicBool, mpsc};
+
+    #[test]
+    fn a_platform_clarification_keeps_the_requested_title_not_the_selection() {
+        let mut history = vec![
+            Message {
+                role: "user".into(),
+                content: "let's play some super mario brothers".into(),
+            },
+            Message {
+                role: "assistant".into(),
+                content: format!(
+                    "{AMBIGUOUS}NES, FDS. Which platform? I haven't launched anything."
+                ),
+            },
+            Message {
+                role: "user".into(),
+                content: "the original NES version".into(),
+            },
+        ];
+        assert_eq!(
+            request_from_history(&history).unwrap(),
+            PlayRequest {
+                title: "super mario brothers".into(),
+                platform: "nes".into()
+            }
+        );
+        history[2].content = "never mind".into();
+        assert!(request_from_history(&history).is_none());
+        history[2].content = "what is NES?".into();
+        assert!(request_from_history(&history).is_none());
+        history[2].content = "NES".into();
+        history[1].content = "Do you want to play this game?".into();
+        assert!(request_from_history(&history).is_none());
+    }
 
     #[test]
     fn recognizes_natural_title_commands_without_swallowing_other_intents() {

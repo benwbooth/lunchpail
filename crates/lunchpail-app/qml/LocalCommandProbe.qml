@@ -14,6 +14,7 @@ Item {
     property int step: 0
     property bool couch: false
     property int phrase: 0
+    property bool clarified: false
     property var phrases: ["let's play some super mario brothers", "open up super mario brothers", "play Super Mario Bros. on NES"]
     property var calls: []
     property string launchId: ""
@@ -55,6 +56,7 @@ Item {
                 probe.step = 1
             } else if (probe.step === 1) {
                 if (probe.couch && !probe.view.inputEnabled) return
+                probe.clarified = false
                 probe.app.assistantBrowse("Faxanadu", "Nintendo Entertainment System", "all")
                 probe.step = 2
             } else if (probe.step === 2) {
@@ -69,18 +71,31 @@ Item {
             } else if (probe.step === 4) {
                 const result = JSON.parse(probe.assistant.result_json)
                 if (result.error || !result.message) { probe.fail("Command failed: " + result.message); return }
+                if (!probe.launchId) {
+                    if (probe.clarified || probe.calls.join(",") !== "get_context,resolve_game"
+                            || result.message.indexOf("More than one game matches:") !== 0) {
+                        probe.fail("No grounded resolution: " + result.message); return
+                    }
+                    const elapsed = Date.now() - probe.started
+                    if (elapsed > 5000) { probe.fail("Clarification took " + elapsed + " ms"); return }
+                    console.log("LUNCHPAIL_LOCAL_COMMAND_CLARIFIED mode=" + (probe.couch ? "couch" : "normal")
+                        + " selected=Faxanadu phrase=" + probe.phrases[probe.phrase] + " elapsed_ms=" + elapsed)
+                    probe.clarified = true
+                    probe.request("NES")
+                    return
+                }
                 if (probe.calls.join(",") !== "get_context,resolve_game,play_game") { probe.fail("Unexpected routing: " + probe.calls); return }
                 const title = probe.library.display_title_for_game(probe.launchId)
                 if (title !== "Super Mario Bros." || probe.launchId === probe.backgroundId) { probe.fail("Wrong game: " + title); return }
                 if (probe.routedMs > 5000) { probe.fail("Simple command took " + probe.routedMs + " ms"); return }
                 console.log("LUNCHPAIL_LOCAL_COMMAND_ROUTED mode=" + (probe.couch ? "couch" : "normal")
                     + " selected=Faxanadu phrase=" + probe.phrases[probe.phrase] + " title=" + title
-                    + " id=" + probe.launchId + " elapsed_ms=" + probe.routedMs)
+                    + " id=" + probe.launchId + " clarified=" + probe.clarified + " elapsed_ms=" + probe.routedMs)
                 probe.assistant.clear()
                 probe.phrase++
                 if (probe.phrase < probe.phrases.length) { probe.step = 1; return }
                 if (probe.couch) {
-                    console.log("LUNCHPAIL_LOCAL_COMMAND_READY modes=normal,couch commands=6 inference=none microphone=off speech=off launches=blocked")
+                    console.log("LUNCHPAIL_LOCAL_COMMAND_READY modes=normal,couch phrases=6 inference=none microphone=off speech=off launches=blocked")
                     Qt.quit(); return
                 }
                 probe.desktop.close(); probe.app.enterCouchMode()
