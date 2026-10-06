@@ -12369,6 +12369,7 @@ ApplicationWindow {
         }
 
         RowLayout {
+            id: headerLayout
             anchors.fill: parent
             anchors.leftMargin: 19
             anchors.rightMargin: 12
@@ -12419,8 +12420,11 @@ ApplicationWindow {
                 // Center search when there is room, but let it contract
                 // before the actions at the minimum window width.
                 Layout.minimumWidth: 0
-                Layout.preferredWidth: Math.max(0, (root.width - 460) / 2
-                                                - brandRow.width - 43)
+                Layout.preferredWidth: Math.max(0, Math.min(
+                    (root.width - 460) / 2 - brandRow.width - 43,
+                    headerLayout.width - brandRow.width - headerActions.width
+                    - windowActions.width - searchField.Layout.minimumWidth
+                    - 1 - headerLayout.spacing * 6))
             }
 
             ClearableSearchField {
