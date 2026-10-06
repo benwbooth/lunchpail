@@ -100,7 +100,7 @@ ColumnLayout {
         LbCheckBox { objectName: "spokenReplies"; text: "Speak replies (optional)"; checked: pane.config.spoken_replies === true; onClicked: pane.save("spoken_replies", checked) }
         LbCheckBox { objectName: "conversationCaptions"; text: "Player + assistant captions"; checked: pane.config.captions !== false; onClicked: pane.save("captions", checked) }
     }
-    LbCheckBox { objectName: "conversationWakeWord"; text: "Require ‘Lunchpail’ before hands-free requests"; checked: !!pane.config.wake_word; onClicked: pane.save("wake_word", checked) }
+    LbCheckBox { objectName: "conversationWakeWord"; text: "Require ‘Lunchpail’ before spoken requests"; checked: !!pane.config.wake_word; onClicked: pane.save("wake_word", checked) }
     LbComboBox {
         objectName: "conversationSpeechEngine"
         Layout.fillWidth: true; visible: pane.speechOutput.engines.length > 1

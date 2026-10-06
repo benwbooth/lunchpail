@@ -102,7 +102,7 @@ TestCase {
         settingsRequests.target = p; settingsRequests.clear()
         p.ai.hands_free = true // A preference saved by the old speech-only flow.
         compare(p.handsFreeAllowed, false); compare(p.speech.listening, false)
-        compare(p.handsFreeLabel, "Hands-free · Setup")
+        compare(p.handsFreeLabel, "Set up mic")
         compare(p.handsFreePauseReason, "Assistant setup needed")
         p.speech.search_requested("open up super mario bros")
         compare(settingsRequests.count, 0); compare(p.assistant.question, "")
@@ -125,17 +125,14 @@ TestCase {
         compare(p.assistant.question, "open up super mario bros")
         compare(p.searchPanel.preservedRequest, "")
     }
-    function test_pause_reasons_distinguish_focus_dialog_preview_and_reply() {
+    function test_pause_reasons_distinguish_focus_and_reply_without_blocking_menus() {
         const p = pane(); p.ai.hands_free = true; p.open("")
         p.windowActive = false
         compare(p.handsFreePauseReason, "Lunchpail is not focused")
         verify(p.handsFreeHint.indexOf(p.handsFreePauseReason) >= 0)
         p.windowActive = true; p.inputBlocked = true
-        compare(p.handsFreePauseReason, "A dialog or menu is open")
-        p.inputBlocked = false; p.previewAudioRequested = true
-        compare(p.handsFreePauseReason, "Preview audio is playing")
-        verify(findChild(p, "desktopHandsFreeStatus").text.indexOf(p.handsFreePauseReason) >= 0)
-        p.previewAudioRequested = false; p.assistant.busy = true
+        compare(p.handsFreePauseReason, ""); compare(p.speech.listening, true)
+        p.inputBlocked = false; p.assistant.busy = true
         compare(p.handsFreePauseReason, "Processing your request")
         p.assistant.busy = false; p.speechOutput.speaking = true
         compare(p.handsFreePauseReason, "Speaking a reply")
@@ -149,18 +146,18 @@ TestCase {
         compare(findChild(p, "couchSearchField").text, "")
         p.close(); compare(p.opened, false); compare(p.assistant.busy, true)
     }
-    function test_push_to_talk_cancels_on_background_or_mode_switch() {
+    function test_mic_suspends_on_background_or_mode_switch_and_resumes_on_focus() {
         const p = pane(); p.open(""); p.searchPanel.microphone()
         compare(p.speech.listening, true); compare(p.audioSuppressedForVoice, true)
         p.windowActive = false; compare(p.speech.listening, false)
-        p.windowActive = true; p.searchPanel.microphone(); p.active = false
+        p.windowActive = true; compare(p.speech.listening, true); p.active = false
         compare(p.speech.listening, false); compare(p.audioSuppressedForVoice, false)
     }
-    function test_hands_free_is_opt_in_and_pauses_for_games_dialogs_and_replies() {
+    function test_mic_is_opt_in_and_suspends_for_games_and_replies_not_dialogs() {
         const p = pane(); compare(p.handsFreeAllowed, false)
         p.ai.hands_free = true; compare(p.handsFreeAllowed, true)
         compare(p.speech.listening, true)
-        p.inputBlocked = true; compare(p.handsFreeAllowed, false); compare(p.speech.listening, false)
+        p.inputBlocked = true; compare(p.handsFreeAllowed, true); compare(p.speech.listening, true)
         p.inputBlocked = false; p.gameRunning = true; compare(p.speech.listening, false)
         p.gameRunning = false; p.speechOutput.speaking = true
         compare(p.speech.listening, false); compare(p.audioSuppressedForVoice, true)
@@ -174,24 +171,22 @@ TestCase {
         compare(p.assistant.question, "play the selected game")
         compare(p.speech.listening, false); compare(p.assistant.busy, true)
     }
-    function test_preview_unmute_pauses_open_mic_without_changing_preference() {
+    function test_typing_and_closing_do_not_interrupt_automatic_listening() {
         const p = pane(); p.ai.hands_free = true
         compare(p.speech.listening, true); compare(p.audioSuppressedForVoice, true)
-        p.previewAudioRequested = true
-        compare(p.handsFreeAllowed, false); compare(p.speech.listening, false)
-        compare(p.audioSuppressedForVoice, false); compare(p.ai.hands_free, true)
-        // Focus changes used to make the supposedly unmuted video intermittent.
-        p.windowActive = false; p.windowActive = true
-        compare(p.speech.listening, false); compare(p.audioSuppressedForVoice, false)
-        p.previewAudioRequested = false
-        compare(p.handsFreeAllowed, true); compare(p.speech.listening, true)
-        compare(p.audioSuppressedForVoice, true); compare(p.ai.hands_free, true)
+        p.open(""); keyClick(Qt.Key_M)
+        compare(findChild(p, "couchSearchField").text, "m")
+        compare(p.speech.listening, true)
+        p.close(); compare(p.speech.listening, true)
+        p.open(""); p.searchPanel.microphone()
+        compare(p.ai.hands_free, false); compare(p.speech.listening, false)
+        keyClick(Qt.Key_T); compare(findChild(p, "couchSearchField").text, "t")
     }
-    function test_push_to_talk_and_replies_still_duck_an_audible_preview() {
-        const p = pane(); p.ai.hands_free = true; p.previewAudioRequested = true
+    function test_one_microphone_toggle_and_replies_duck_preview_audio() {
+        const p = pane()
         p.open(""); p.searchPanel.microphone()
         compare(p.speech.listening, true); compare(p.audioSuppressedForVoice, true)
-        p.searchPanel.cancelVoice()
+        p.searchPanel.microphone()
         compare(p.speech.listening, false); compare(p.audioSuppressedForVoice, false)
         p.speechOutput.speaking = true; compare(p.audioSuppressedForVoice, true)
         p.speechOutput.speaking = false; compare(p.audioSuppressedForVoice, false)
@@ -199,22 +194,17 @@ TestCase {
     function test_wake_word_listener_remains_available_during_preview() {
         const p = pane()
         p.assistant.config_json = JSON.stringify({captions:true,wake_word:true})
-        p.ai.hands_free = true; p.previewAudioRequested = true
+        p.ai.hands_free = true
         compare(p.handsFreeAllowed, true); compare(p.speech.listening, true)
         compare(p.audioSuppressedForVoice, false)
         p.speech.awake = true; compare(p.audioSuppressedForVoice, true)
         p.speech.awake = false; compare(p.audioSuppressedForVoice, false)
-        // Changing to open conversation while audio plays must stop capture.
+        // Open conversation suppresses preview audio, not the microphone.
         p.assistant.config_json = JSON.stringify({captions:true,wake_word:false})
-        compare(p.speech.listening, false); compare(p.audioSuppressedForVoice, false)
+        compare(p.speech.listening, true); compare(p.audioSuppressedForVoice, true)
     }
     function test_real_video_unmute_with_open_mic_survives_focus_and_repeated_toggles() {
         const p = pane(); audioPane = p
-        p.previewAudioRequested = Qt.binding(function() {
-            return !test.previewMuted && preview.hasAudio
-                && preview.playbackState === MediaPlayer.PlayingState
-        })
-        p.ai.hands_free = true
         preview.source = Qt.resolvedUrl("../fixtures/video-audio-sync.mp4")
         preview.play()
         tryVerify(function() { return preview.position > 500 && preview.hasAudio }, 5000)
@@ -223,37 +213,42 @@ TestCase {
             previewMuted = false
             tryCompare(previewSound.player, "playbackState", MediaPlayer.PlayingState, 5000)
             verify(previewSound.player.hasAudio)
-            compare(p.speech.listening, false)
-            p.windowActive = false; p.windowActive = true
-            wait(150)
-            compare(previewSound.player.playbackState, MediaPlayer.PlayingState)
-            verify(preview.position >= before, "Unmute restarted the video")
-            previewMuted = true
+            p.ai.hands_free = true
             compare(previewSound.audioSource.toString(), "")
             compare(p.speech.listening, true)
+            p.windowActive = false
+            tryCompare(previewSound.player, "playbackState", MediaPlayer.PlayingState, 5000)
+            p.windowActive = true
+            compare(p.speech.listening, true); compare(previewSound.audioSource.toString(), "")
+            wait(150); verify(preview.position >= before, "Microphone toggle restarted the video")
+            p.ai.hands_free = false
+            tryCompare(previewSound.player, "playbackState", MediaPlayer.PlayingState, 5000)
+            previewMuted = true
         }
         previewMuted = false
         tryCompare(previewSound.player, "playbackState", MediaPlayer.PlayingState, 5000)
         preview.pause()
+        p.ai.hands_free = true
         compare(p.speech.listening, true)
         compare(previewSound.audioSource.toString(), "")
+        compare(preview.playbackState, MediaPlayer.PausedState)
         preview.play()
-        tryCompare(previewSound.player, "playbackState", MediaPlayer.PlayingState, 5000)
-        compare(p.speech.listening, false)
+        compare(previewSound.audioSource.toString(), "")
+        compare(p.speech.listening, true)
         preview.source = ""
         compare(p.speech.listening, true)
         compare(p.ai.hands_free, true)
     }
-    function test_visible_hands_free_button_toggles_both_directions_without_settings() {
+    function test_single_visible_microphone_button_toggles_without_settings() {
         const p = pane(); p.open("")
-        const button = findChild(p, "desktopHandsFreeToggle"); verify(button.visible)
-        compare(button.text, "Hands-free · Off")
+        const button = p.microphoneButton; verify(button.visible)
+        compare(button.text, "Mic off")
         button.clicked(); compare(p.ai.hands_free, true); compare(p.speech.listening, true)
-        compare(button.text, "Hands-free · On"); compare(p.ai.installs, 0)
-        p.previewAudioRequested = true
-        compare(button.text, "Hands-free · Paused"); verify(button.highlighted)
+        compare(button.text, "Mic on"); compare(p.ai.installs, 0)
+        p.windowActive = false
+        compare(button.text, "Mic on"); verify(button.highlighted)
         button.clicked(); compare(p.ai.hands_free, false); compare(p.speech.listening, false)
-        compare(button.text, "Hands-free · Off"); verify(!button.highlighted)
+        compare(button.text, "Mic off")
     }
     function test_missing_model_requires_consent_and_repeat_toggle_cancels_it() {
         const p = pane(); p.ai.speech_ready = false

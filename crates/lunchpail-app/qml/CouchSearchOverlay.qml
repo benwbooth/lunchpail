@@ -8,6 +8,10 @@ FocusScope {
     required property var speech
     property var assistant: null
     property var speechOutput: null
+    // Conversation surfaces share one persistent mic toggle. Plain title
+    // filters without a controller can still use one-shot dictation.
+    property var microphoneController: null
+    property var microphoneButton: null
     property bool askMode: false
     property bool compact: false
     property bool conversationOnly: false
@@ -54,8 +58,9 @@ FocusScope {
         if (!askMode) queryEdited(text)
     }
     function cancelVoice() {
+        const wasAcceptingVoice = acceptingVoice
         acceptingVoice = false
-        if (speech.busy) speech.cancel()
+        if (wasAcceptingVoice && speech.busy) speech.cancel()
     }
     function close() {
         cancelVoice()
@@ -63,6 +68,10 @@ FocusScope {
         closeRequested()
     }
     function microphone() {
+        if (microphoneController) {
+            microphoneController.toggleHandsFree()
+            return
+        }
         if (speechOutput) speechOutput.stop()
         if (assistant && assistant.busy) assistant.cancel()
         if (speech.hands_free) speech.cancel()
@@ -175,7 +184,7 @@ FocusScope {
         anchors.margins: search.compact ? 16 : 26
         spacing: search.compact ? 9 : 14
         Text {
-            text: search.askMode ? "TALK TO LUNCHPAIL" : "SEARCH GAMES  ·  " + search.resultCount + " RESULTS"
+            text: search.askMode ? "Type or talk to Lunchpail" : "SEARCH GAMES  ·  " + search.resultCount + " RESULTS"
             color: search.inkColor; font.pixelSize: search.compact ? 14 : 20; font.bold: true
         }
         Text {
@@ -192,7 +201,7 @@ FocusScope {
             Layout.preferredHeight: search.compact ? 44 : 62
             font.pixelSize: search.compact ? 16 : 28
             color: search.inkColor
-            placeholderText: search.askMode ? "Search for Super Mario Bros… or play the game" : "Type or speak a game title"
+            placeholderText: search.askMode ? "Tell me what you want…" : "Type or speak a game title"
             placeholderTextColor: search.mutedColor
             selectByMouse: true
             onTextEdited: {
@@ -206,27 +215,34 @@ FocusScope {
                 if (event.key === Qt.Key_F2) { search.microphone(); event.accepted = true }
             }
             background: Rectangle { color: "#090f19"; radius: 10; border.color: search.accentColor }
-            Accessible.name: search.askMode ? "Ask Lunchpail a game question" : "Search games"
+            Accessible.name: search.askMode ? "Message Lunchpail assistant" : "Search games"
         }
         RowLayout {
             Layout.fillWidth: true
             spacing: search.compact ? 6 : 12
             Repeater {
-                model: [search.speech.hands_free ? "Speak · F2" : search.speech.busy ? (search.acceptingVoice ? (search.speech.listening ? "Stop microphone" : "Cancel transcription") : "Cancel download")
+                id: actions
+                readonly property var labels: [search.microphoneController ? search.microphoneController.handsFreeLabel : search.speech.hands_free ? "Speak · F2" : search.speech.busy ? (search.acceptingVoice ? (search.speech.listening ? "Stop microphone" : "Cancel transcription") : "Cancel download")
                         : search.speech.ready ? "Speak · F2" : (search.compact ? "Set up voice" : "Download speech model"), search.askMode ? (search.compact ? "New chat" : "New conversation") : "Clear search",
-                        search.askMode ? (!search.assistant || !search.assistant.ready ? "Install & ask" : search.assistant.busy ? "Cancel answer" : "Ask") : "Browse results"]
-                        .concat(search.assistant && !search.conversationOnly ? [search.askMode ? "Search titles" : "Ask AI"] : [])
+                        search.askMode ? (!search.assistant || !search.assistant.ready ? "Set up assistant" : search.assistant.busy ? "Cancel answer" : "Send") : "Browse results"]
+                        .concat(search.assistant && !search.conversationOnly ? [search.askMode ? "Search titles" : "Assistant"] : [])
+                model: labels.length
+                onItemAdded: (index, item) => { if (index === 0) search.microphoneButton = item }
+                onItemRemoved: (index, item) => { if (search.microphoneButton === item) search.microphoneButton = null }
                 delegate: Button {
                     id: action
                     required property int index
-                    required property string modelData
                     objectName: "couchSearchAction" + index
                     Layout.fillWidth: true
                     Layout.preferredHeight: search.compact ? 40 : 54
                     Layout.minimumWidth: 0
-                    text: modelData
+                    text: actions.labels[index]
                     font.pixelSize: 18
                     highlighted: search.controllerIndex === index
+                        || (index === 0 && !!search.microphoneController && search.microphoneController.microphoneEnabled)
+                    ToolTip.visible: hovered && index === 0 && !!search.microphoneController
+                    ToolTip.text: search.microphoneController ? search.microphoneController.handsFreeHint : ""
+                    Accessible.name: index === 0 && search.microphoneController ? search.microphoneController.handsFreeHint : text
                     background: Rectangle {
                         radius: 10
                         color: action.highlighted ? search.accentColor : "#243345"
@@ -251,7 +267,12 @@ FocusScope {
         }
         Text {
             Layout.fillWidth: true
-            text: (search.speech.listening ? "● " : "") + search.speech.status
+            text: search.microphoneController
+                ? (!search.microphoneController.microphoneEnabled ? "Microphone off · You can still type"
+                    : search.microphoneController.handsFreePauseReason
+                        ? "Microphone waiting · " + search.microphoneController.handsFreePauseReason
+                        : search.speech.listening ? "● Listening · Speak naturally" : "Starting microphone…")
+                : (search.speech.listening ? "● " : "") + search.speech.status
             color: search.speech.listening ? "#72e1a0" : search.mutedColor
             font.pixelSize: search.compact ? 12 : 15
             wrapMode: Text.WordWrap
@@ -260,7 +281,7 @@ FocusScope {
         }
         Text {
             Layout.fillWidth: true
-            text: search.askMode ? "Enter to send · F2 to speak · Esc to browse · Follow up naturally: ‘play that one’" : "Direct title filter · Enter / Esc to browse"
+            text: search.askMode ? "Enter to send · F2 / F4 to toggle mic · Esc to browse" : "Direct title filter · Enter / Esc to browse"
             color: search.mutedColor; font.pixelSize: 13; wrapMode: Text.WordWrap
         }
         Text {

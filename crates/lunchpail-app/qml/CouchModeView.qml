@@ -28,27 +28,30 @@ Item {
     readonly property bool audioSuppressedForVoice: handsFreeController.capturingCommand
         || searchOverlay.microphoneBusy || assistantSpeaking
     readonly property var handsFreeSetupController: handsFreeSetup
+    readonly property bool microphoneEnabled: !!ai && ai.hands_free
+    readonly property string handsFreeLabel: !microphoneEnabled ? "Mic off"
+        : !handsFreeSetup.ready ? "Set up mic"
+        : speech.faulted ? "Mic error" : "Mic on"
     readonly property string handsFreePauseReason: !assistant || !assistant.ready ? "Assistant setup needed"
         : !speech.ready ? "Speech model setup needed"
         : speech.faulted ? speech.status
         : !active || !visible ? "Couch mode is not active"
         : !windowActive ? "Lunchpail is not focused"
         : details.game_running ? "A game is running"
-        : !inputEnabled || overlayOpen || modelInstall.visible || handsFreeSetup.pending ? "A dialog or menu is open"
+        : modelInstall.visible || handsFreeSetup.pending ? "Microphone setup is open"
         : launchStatusOverlayOpen ? "Game launch is open"
-        : downloadOverlayOpen ? "Downloads are open"
         : searchOverlay.microphoneBusy ? "Push-to-talk is active"
         : assistant.busy ? "Processing your request"
         : assistantSpeaking ? "Speaking a reply"
         : conversationCoolingDown ? "Waiting for reply audio to finish"
         : speech.busy && !speech.listening ? "Processing speech" : ""
-    readonly property string handsFreeHint: (handsFreeSetup.pending ? "Cancel hands-free setup"
-        : !handsFreeSetup.ready ? "Set up hands-free listening"
-        : ai && ai.hands_free ? "Turn hands-free listening off" : "Turn hands-free listening on")
+    readonly property string handsFreeHint: (handsFreeSetup.pending ? "Cancel microphone setup"
+        : !handsFreeSetup.ready ? "Set up assistant microphone"
+        : ai && ai.hands_free ? "Turn microphone off" : "Turn microphone on")
         + " · F4" + (ai && ai.hands_free && handsFreePauseReason ? " · " + handsFreePauseReason : "")
-    readonly property bool handsFreeAllowed: !!ai && ai.hands_free && active && visible && windowActive && inputEnabled
-        && !details.game_running && !launchStatusOverlayOpen && !downloadOverlayOpen
-        && !overlayOpen && !searchOverlay.microphoneBusy && !modelInstall.visible && !handsFreeSetup.pending
+    readonly property bool handsFreeAllowed: !!ai && ai.hands_free && active && visible && windowActive
+        && !details.game_running && !launchStatusOverlayOpen
+        && !searchOverlay.microphoneBusy && !modelInstall.visible && !handsFreeSetup.pending
         && !!assistant && assistant.ready && !assistant.busy && !assistantSpeaking && !conversationCoolingDown
     function acceptVoiceRequest(text) {
         speech.cancel()
@@ -379,6 +382,8 @@ Item {
         speech: view.speech
         assistant: view.assistant
         askMode: true
+        conversationOnly: true
+        microphoneController: view
         speechOutput: view.speechOutput
         query: view.searchText
         resultCount: shelf.count
@@ -1461,7 +1466,6 @@ Item {
                 && /^[a-z0-9]/i.test(event.text)
                 && !overlayOpen && !downloadOverlayOpen
                 && !launchStatusOverlayOpen) {
-            searchOverlay.askMode = false
             openSearch(event.text, false)
             event.accepted = true
             return
@@ -1727,36 +1731,12 @@ Item {
         CouchActionButton {
             id: searchButton
             soundFeedback: feedback; soundCue: ""
-            width: view.width < 1500 ? 132 : 174
-            text: view.searchText ? "Search: " + view.searchText : "Search · F3"
+            text: "Assistant" + (view.speech.listening ? " · Listening" : view.microphoneEnabled ? " · Mic on" : " · F3")
             inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
-            onClicked: view.openSearch(view.searchText, false)
-            Accessible.name: "Search games in Couch Mode"
-        }
-        CouchActionButton {
-            id: micButton
-            soundFeedback: feedback
-            text: "Voice · F2"
-            inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
-            onClicked: view.openSearch(view.searchText, true)
-            Accessible.name: "Local voice search"
-        }
-        CouchActionButton {
-            id: handsFreeButton
-            soundFeedback: feedback
-            objectName: "couchHandsFreeToggle"
-            width: 144
-            text: view.ai && view.ai.hands_free && !handsFreeSetup.ready ? "Hands-free · Setup"
-                  : view.speech.faulted && view.ai && view.ai.hands_free ? "Hands-free · Error"
-                  : view.speech.hands_free && view.speech.listening ? (view.speech.awake ? "Listening…" : "Hands-free · On")
-                  : view.ai && view.ai.hands_free ? "Hands-free · Paused" : "Hands-free · Off"
-            emphasized: !!view.ai && view.ai.hands_free
-            inkColor: view.ink; panelColor: view.panel; accentColor: view.accentCool
-            onClicked: view.toggleHandsFree()
+            onClicked: view.openSearch("", false)
             ToolTip.visible: hovered
-            ToolTip.text: view.handsFreeHint
-                + (view.conversationConfig.wake_word ? " Say Lunchpail before a request." : " Speak naturally while the microphone is on.")
-            Accessible.name: view.handsFreeHint
+            ToolTip.text: "Type or talk to Lunchpail" + (view.microphoneEnabled ? " · Mic on" : " · Mic off")
+            Accessible.name: "Open Lunchpail assistant"
         }
         CouchActionButton {
             text: view.viewLabel + "  ▾"

@@ -53,7 +53,7 @@ Item {
         id: assistantInstall
         parent: Overlay.overlay
         ai: setup.ai
-        purpose: "Hands-free needs an assistant to understand requests, as well as a speech model to hear them."
+        purpose: "The assistant microphone needs an assistant to understand requests, as well as a speech model to hear them."
         onReady: {
             if (!setup.pending) return
             if (setup.assistant) setup.assistant.refresh()
@@ -67,14 +67,14 @@ Item {
         id: speechInstall
         parent: Overlay.overlay
         ai: setup.ai
-        purpose: "Hands-free also needs local speech recognition."
+        purpose: "The assistant microphone also needs local speech recognition."
         onReady: Qt.callLater(setup.advance)
         onDeclined: setup.pending = false
     }
     LbDialog {
         id: providerSetup
         parent: Overlay.overlay
-        title: "Set up hands-free"
+        title: "Set up assistant microphone"
         modal: true
         closePolicy: Popup.NoAutoClose
         anchors.centerIn: parent
@@ -86,7 +86,7 @@ Item {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 color: providerSetup.palette.windowText
-                text: "Choose an assistant provider and model in AI & voice settings before enabling hands-free. The microphone is off. Any saved request stays in the conversation box until you send it."
+                text: "Choose an assistant provider and model in AI & voice settings before enabling the microphone. The microphone is off. Any saved request stays in the conversation box until you send it."
             }
             RowLayout {
                 Layout.alignment: Qt.AlignRight

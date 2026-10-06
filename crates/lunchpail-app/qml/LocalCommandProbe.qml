@@ -15,27 +15,45 @@ Item {
     property bool couch: false
     property int phrase: 0
     property bool clarified: false
-    property var phrases: ["let's play some super mario brothers", "open up super mario brothers", "play Super Mario Bros. on NES", "SUPER MARIO BROTHERS"]
+    property var phrases: ["let's play some super mario brothers", "open up super mario brothers", "play Super Mario Bros. on NES", "SUPER MARIO BROTHERS", "take me to super mario brothers", "take me to super mario brothers"]
     property var calls: []
     property string launchId: ""
     property string backgroundId: ""
+    property string browseQuery: ""
+    property bool capturing: false
     property double started: 0
     property double routedMs: 0
     function fail(message) { console.error("LUNCHPAIL_LOCAL_COMMAND_FAILED " + message); Qt.exit(2) }
     function request(text) {
-        calls = []; launchId = ""; started = Date.now(); routedMs = 0
-        if (couch) view.acceptVoiceRequest(text)
+        calls = []; launchId = ""; browseQuery = ""; started = Date.now(); routedMs = 0
+        if (phrase === 5) {
+            if (couch) { view.openSearch(text, false); view.searchPanel.submit() }
+            else { desktop.open(text); desktop.searchPanel.submit() }
+        } else if (couch) view.acceptVoiceRequest(text)
         else desktop.acceptVoiceRequest(text)
     }
     function nextPhrase() {
         assistant.clear(); phrase++
         if (phrase < phrases.length) { step = 1; return }
         if (couch) {
-            console.log("LUNCHPAIL_LOCAL_COMMAND_READY modes=normal,couch phrases=8 inference=none microphone=off speech=off launches=blocked")
+            console.log("LUNCHPAIL_LOCAL_COMMAND_READY modes=normal,couch phrases=12 input=voice,typed inference=none microphone=off speech=off launches=blocked")
             Qt.quit(); return
         }
         desktop.close(); app.enterCouchMode()
         couch = true; phrase = 0; step = 1
+    }
+    function finishSearch() {
+        const output = app.argumentValue("--screenshot-output")
+        if (phrase !== 5 || !output) { nextPhrase(); return }
+        capturing = true
+        const surface = couch ? view : desktop
+        const started = surface.grabToImage(function(result) {
+            if (!result.saveToFile(output + (probe.couch ? "-couch.png" : "-normal.png"))) {
+                probe.fail("Could not capture unified assistant"); return
+            }
+            probe.capturing = false; probe.nextPhrase()
+        })
+        if (!started) fail("Could not start unified assistant capture")
     }
     function verifyAllGames() {
         const screen = app.assistantScreenContext()
@@ -52,6 +70,7 @@ Item {
         target: probe.assistant
         function onTool_requested(id, name, argumentsJson) {
             probe.calls = probe.calls.concat([name])
+            if (name === "browse_library") probe.browseQuery = JSON.parse(argumentsJson).query
             if (name === "play_game") {
                 const args = JSON.parse(argumentsJson)
                 probe.launchId = args.game_id || ""
@@ -63,7 +82,7 @@ Item {
         interval: 100; repeat: true; running: true
         onTriggered: {
             if (probe.speech.listening || probe.voice.speaking) { probe.fail("Unexpected microphone or speech playback"); return }
-            if (!probe.library.ready || probe.library.loading || probe.library.filtering || probe.assistant.busy
+            if (probe.capturing || !probe.library.ready || probe.library.loading || probe.library.filtering || probe.assistant.busy
                     || probe.app.assistantScreenContext().filtering) return
             if (probe.step === 0) {
                 const config = JSON.parse(probe.assistant.config_json)
@@ -92,15 +111,19 @@ Item {
             } else if (probe.step === 4) {
                 const result = JSON.parse(probe.assistant.result_json)
                 if (result.error || !result.message) { probe.fail("Command failed: " + result.message); return }
-                if (probe.phrase === 3) {
+                if (probe.phrase >= 3) {
                     if (probe.launchId || probe.calls.join(",") !== "get_context,browse_library" || !probe.verifyAllGames()) {
-                        probe.fail("Bare title did not search All Games directly"); return
+                        probe.fail("Title request did not search All Games directly"); return
+                    }
+                    if (probe.browseQuery !== "super mario brothers") {
+                        probe.fail("Request words leaked into the title filter: " + probe.browseQuery); return
                     }
                     const elapsed = Date.now() - probe.started
                     if (elapsed > 5000) { probe.fail("Search took " + elapsed + " ms"); return }
                     console.log("LUNCHPAIL_LOCAL_COMMAND_SEARCHED mode=" + (probe.couch ? "couch" : "normal")
+                        + " input=" + (probe.phrase === 5 ? "typed" : "voice")
                         + " initial_scope=favorites phrase=" + probe.phrases[probe.phrase] + " all_games=true elapsed_ms=" + elapsed)
-                    probe.nextPhrase(); return
+                    probe.finishSearch(); return
                 }
                 if (!probe.launchId) {
                     if (probe.clarified || probe.calls.join(",") !== "get_context,resolve_game,browse_library"

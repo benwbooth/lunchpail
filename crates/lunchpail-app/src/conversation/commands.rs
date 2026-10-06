@@ -194,8 +194,22 @@ fn request_from_history(history: &[Message]) -> Option<PlayRequest> {
 fn search_request(text: &str) -> Option<String> {
     let lower = text.trim().trim_matches(['"', '\'']).to_lowercase();
     let mut query = lower.as_str();
+    for prefix in ["can you ", "could you ", "would you "] {
+        if let Some(rest) = query.strip_prefix(prefix) {
+            query = rest;
+            break;
+        }
+    }
+    query = query.strip_prefix("please ").unwrap_or(query);
+    let mut explicit_search = false;
     for prefix in [
         "search all games for ",
+        "take me to ",
+        "bring me to ",
+        "navigate to ",
+        "go to ",
+        "pull up ",
+        "bring up ",
         "search for ",
         "look for ",
         "look up ",
@@ -205,8 +219,20 @@ fn search_request(text: &str) -> Option<String> {
     ] {
         if let Some(rest) = query.strip_prefix(prefix) {
             query = rest;
+            explicit_search = true;
             break;
         }
+    }
+    if explicit_search {
+        query = query.trim().trim_end_matches(['?', '.', '!']);
+        query = query.strip_suffix(" please").unwrap_or(query);
+        if ["settings", "preferences", "downloads", "library", "the library", "the settings", "the downloads"]
+            .contains(&query)
+        {
+            return None; // These are app navigation, not game-title searches.
+        }
+    } else {
+        query = lower.as_str(); // Politeness alone does not turn a question into a title.
     }
     let words: Vec<_> = query.split_whitespace().collect();
     if query.is_empty() || query.len() > 160 || words.len() > 16 || query.contains('?') {
@@ -278,6 +304,10 @@ fn search_request(text: &str) -> Option<String> {
         "resume",
         "show",
         "go",
+        "take",
+        "bring",
+        "pull",
+        "navigate",
         "back",
         "switch",
         "add",
@@ -545,6 +575,11 @@ mod tests {
             "SUPER MARIO BROTHERS",
             "find Super Mario Brothers",
             "search all games for Super Mario Brothers",
+            "take me to super mario brothers",
+            "Take me to Super Mario Brothers please",
+            "Could you please take me to Super Mario Brothers?",
+            "go to Super Mario Brothers",
+            "pull up Super Mario Brothers",
         ] {
             let (reply, calls) = run_query(json!({}), false, question);
             assert_eq!(reply.unwrap(), "Showing 61 matching games in All Games.");
@@ -563,6 +598,11 @@ mod tests {
             "pause",
             "find Mario in favorites",
             "recommend a good game",
+            "take me to settings",
+            "go to downloads",
+            "take a screenshot",
+            "please don't search for Mario",
+            "could you explain Mario?",
         ] {
             assert!(search_request(question).is_none(), "{question}");
         }

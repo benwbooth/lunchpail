@@ -41,7 +41,7 @@ ColumnLayout {
     LbCheckBox {
         id: handsFreeToggle
         objectName: "handsFreePreference"
-        text: "Enable hands-free conversation in normal & Couch modes"
+        text: "Enable assistant microphone in normal & Couch modes"
         checked: !!pane.ai.hands_free
         onClicked: {
             if (!checked) { handsFreeSetup.cancel(); pane.ai.enable_hands_free(false) }
@@ -51,7 +51,7 @@ ColumnLayout {
     }
     Text {
         Layout.fillWidth: true; wrapMode: Text.WordWrap; color: pane.mutedColor; font.pixelSize: 11
-        text: "Use the Hands-free button or F4 to toggle listening in normal or Couch mode. When enabled, the microphone listens locally while Lunchpail is focused, pauses for games, dialogs and spoken replies, and shows whether it is on or paused. In normal mode, unmuted previews also pause hands-free listening unless the wake phrase is enabled; muting or leaving the preview resumes it. Audio is never saved or uploaded. Transcripts are sent to your chosen AI provider. Use a headset or the optional wake phrase to avoid picking up room/preview audio. F2 works for push-to-talk in the conversation panel."
+        text: "Open Assistant to type or talk. Its Mic button (F2 in the conversation, or F4 anywhere in Lunchpail) toggles automatic listening. The mic listens while Lunchpail is focused and resumes after processing requests or spoken replies. Menus and previews do not interrupt it; preview sound is temporarily muted during open-mic listening without changing your saved sound preference. Games and switching to another app suspend listening. Audio is never saved or uploaded. Transcripts go to your chosen AI provider. A headset or the optional wake phrase can help avoid picking up room audio."
     }
     HandsFreeSetup {
         id: handsFreeSetup

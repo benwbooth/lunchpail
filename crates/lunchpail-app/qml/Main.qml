@@ -11911,7 +11911,7 @@ ApplicationWindow {
         sourceComponent: HandsFreeProbe {
             app: root; desktop: desktopAssistant; view: couchModeView; library: library
             ai: localAi; assistant: localAssistant; speech: couchSpeech
-            inputGuard: desktopVoiceInputGuard; toggleButton: headerHandsFreeToggle
+            inputGuard: desktopVoiceInputGuard; toggleButton: desktopAssistant.microphoneButton
         }
     }
     DesktopAssistant {
@@ -11921,12 +11921,8 @@ ApplicationWindow {
         // Above modal workflow content, below the window's resize frame.
         z: 19000
         active: !root.couchModeActive
-        windowActive: root.active
+        windowActive: root.visible && Qt.application.state === Qt.ApplicationActive
         gameRunning: gameDetails.game_running
-        previewAudioRequested: !root.videoAudioMuted
-            && ((root.hoverPreviewPlaying && hoverPreviewPlayer.hasAudio)
-                || (gameVideoPlayer.playbackState === MediaPlayer.PlayingState
-                    && gameVideoPlayer.hasAudio))
         inputBlocked: desktopVoiceInputGuard.blocked
         assistant: localAssistant; speech: couchSpeech; speechOutput: assistantVoice; ai: localAi
         onSettingsRequested: root.openSettingsFor("local-ai")
@@ -11969,7 +11965,7 @@ ApplicationWindow {
         assistant: localAssistant
         speechOutput: assistantVoice
         ai: localAi
-        windowActive: root.active
+        windowActive: root.visible && Qt.application.state === Qt.ApplicationActive
         searchText: searchField.text
         sfxEnabled: couchFeedbackSettings.soundsEnabled
         sfxVolume: couchFeedbackSettings.soundVolume
@@ -12487,22 +12483,12 @@ ApplicationWindow {
                 spacing: 7
                 HeaderButton {
                     objectName: "desktopAssistantButton"
-                    text: "Ask AI"
+                    text: "Assistant" + (couchSpeech.listening ? " · Listening" : localAi.hands_free ? " · Mic on" : "")
                     active: desktopAssistant.opened
                     onClicked: desktopAssistant.toggle()
                     ToolTip.visible: hovered
-                    ToolTip.text: "Talk to Lunchpail · Ctrl+J" + (localAi.hands_free ? " · Hands-free enabled" : "")
+                    ToolTip.text: "Type or talk to Lunchpail · Ctrl+J" + (localAi.hands_free ? " · Mic on" : " · Mic off")
                     Accessible.name: "Open Lunchpail assistant"
-                }
-                HeaderButton {
-                    id: headerHandsFreeToggle
-                    objectName: "headerHandsFreeToggle"
-                    text: desktopAssistant.handsFreeLabel
-                    active: localAi.hands_free
-                    onClicked: desktopAssistant.toggleHandsFree()
-                    ToolTip.visible: hovered
-                    ToolTip.text: desktopAssistant.handsFreeHint
-                    Accessible.name: desktopAssistant.handsFreeHint
                 }
                 HeaderButton {
                     text: ""

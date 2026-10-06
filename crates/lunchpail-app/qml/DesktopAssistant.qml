@@ -15,13 +15,12 @@ Item {
     property bool windowActive: true
     property bool gameRunning: false
     property bool inputBlocked: false
-    // This is the user's requested video sound, independent of voice ducking.
-    // Deriving it from the actual audio decoder would create a mic/audio loop.
-    property bool previewAudioRequested: false
     property bool opened: false
     property bool coolingDown: false
     readonly property var config: JSON.parse(assistant.config_json || "{}")
     readonly property var searchPanel: conversation
+    readonly property var microphoneButton: conversation.microphoneButton
+    readonly property bool microphoneEnabled: ai.hands_free
     readonly property var handsFreeInstallDialog: handsFreeSetup.installDialog
     readonly property var handsFreeSetupController: handsFreeSetup
     readonly property string handsFreePauseReason: !assistant.ready ? "Assistant setup needed"
@@ -30,28 +29,24 @@ Item {
         : !active ? "Couch mode is active"
         : !windowActive ? "Lunchpail is not focused"
         : gameRunning ? "A game is running"
-        : inputBlocked ? "A dialog or menu is open"
         : assistant.busy ? "Processing your request"
         : speechOutput.speaking ? "Speaking a reply"
         : coolingDown ? "Waiting for reply audio to finish"
         : conversation.microphoneBusy ? "Push-to-talk is active"
-        : handsFreePausedForPreview ? "Preview audio is playing"
         : speech.busy && !speech.listening ? "Processing speech" : ""
-    readonly property string handsFreeLabel: !ai.hands_free ? "Hands-free · Off"
-        : !handsFreeSetup.ready ? "Hands-free · Setup"
-        : speech.faulted ? "Hands-free · Error"
-        : speech.hands_free && speech.listening ? "Hands-free · On" : "Hands-free · Paused"
-    readonly property string handsFreeHint: (handsFreeSetup.pending ? "Cancel hands-free setup"
-        : !handsFreeSetup.ready ? "Set up hands-free listening"
-        : ai.hands_free ? "Turn hands-free listening off" : "Turn hands-free listening on")
+    readonly property string handsFreeLabel: !ai.hands_free ? "Mic off"
+        : !handsFreeSetup.ready ? "Set up mic"
+        : speech.faulted ? "Mic error"
+        : "Mic on"
+    readonly property string handsFreeHint: (handsFreeSetup.pending ? "Cancel microphone setup"
+        : !handsFreeSetup.ready ? "Set up assistant microphone"
+        : ai.hands_free ? "Turn microphone off" : "Turn microphone on")
         + " · F4" + (ai.hands_free && handsFreePauseReason ? " · " + handsFreePauseReason : "")
-    readonly property bool handsFreePausedForPreview: previewAudioRequested && !config.wake_word
-    readonly property bool handsFreeAllowed: active && windowActive && !gameRunning && !inputBlocked
+    readonly property bool handsFreeAllowed: active && windowActive && !gameRunning
         && ai.hands_free && assistant.ready && !assistant.busy && !speechOutput.speaking && !coolingDown
-        && !conversation.microphoneBusy && !handsFreePausedForPreview
+        && !conversation.microphoneBusy && !handsFreeSetup.pending
     readonly property bool audioSuppressedForVoice: active
-        && ((handsFree.capturingCommand && !handsFreePausedForPreview)
-            || conversation.microphoneBusy || speechOutput.speaking)
+        && (handsFree.capturingCommand || conversation.microphoneBusy || speechOutput.speaking)
     signal settingsRequested()
     signal gameChosen(var game)
     function open(text) {
@@ -121,35 +116,19 @@ Item {
             spacing: 6
             Text {
                 Layout.fillWidth: true
-                text: desktop.speech.listening ? "● Mic on" : "NORMAL MODE"
+                text: "ASSISTANT"
                 color: desktop.speech.listening ? "#72e1a0" : "#acb6c6"
                 font.pixelSize: 12; font.bold: true
-            }
-            LbButton {
-                objectName: "desktopHandsFreeToggle"
-                text: desktop.handsFreeLabel
-                highlighted: desktop.ai.hands_free
-                onClicked: desktop.toggleHandsFree()
-                ToolTip.visible: hovered
-                ToolTip.text: desktop.handsFreeHint
-                Accessible.name: desktop.handsFreeHint
             }
             LbButton { text: "AI & voice"; onClicked: desktop.settingsRequested() }
             LbButton { text: "Close"; Accessible.name: "Close assistant"; onClicked: desktop.close() }
         }
-        Text {
-            id: microphoneStatus
-            objectName: "desktopHandsFreeStatus"
-            anchors { top: toolbar.bottom; left: parent.left; right: parent.right; margins: 12; topMargin: 6 }
-            visible: desktop.ai.hands_free && desktop.handsFreePauseReason.length > 0
-            text: "Mic paused · " + desktop.handsFreePauseReason
-            color: "#acb6c6"; font.pixelSize: 12; wrapMode: Text.WordWrap
-        }
         CouchSearchOverlay {
             id: conversation
-            anchors { top: microphoneStatus.visible ? microphoneStatus.bottom : toolbar.bottom; bottom: parent.bottom; left: parent.left; right: parent.right; topMargin: 6 }
+            anchors { top: toolbar.bottom; bottom: parent.bottom; left: parent.left; right: parent.right; topMargin: 6 }
             visible: desktop.active && desktop.opened
             compact: true; conversationOnly: true; askMode: true
+            microphoneController: desktop
             speech: desktop.speech; assistant: desktop.assistant; speechOutput: desktop.speechOutput
             onCloseRequested: desktop.close()
             onInstallationRequested: desktop.settingsRequested()

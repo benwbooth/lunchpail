@@ -61,8 +61,8 @@ Item {
                 probe.view.closeSearch()
                 probe.view.openPlatformWheel()
                 probe.view.handleKey({key: Qt.Key_M, modifiers: Qt.NoModifier, text: "m", accepted: false})
-                if (!probe.view.searchOpen || probe.view.platformWheelOpen || probe.view.searchPanel.askMode) { probe.fail("typing did not open literal search from platforms"); return }
-                console.log("LUNCHPAIL_COUCH_VIEWS_READY games=4 platforms=4 sizes=1080p,720p video=background typing=literal model_confirmation=no microphone=off")
+                if (!probe.view.searchOpen || probe.view.platformWheelOpen || !probe.view.searchPanel.askMode) { probe.fail("typing did not open the assistant from platforms"); return }
+                console.log("LUNCHPAIL_COUCH_VIEWS_READY games=4 platforms=4 sizes=1080p,720p video=background typing=assistant model_confirmation=no microphone=off")
                 Qt.quit(); return
             }
             const platforms = probe.step % 8 >= 4

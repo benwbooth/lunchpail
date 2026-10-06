@@ -39,10 +39,11 @@ Item {
                     probe.fail("use an isolated profile with assistant and speech disabled"); return
                 }
                 probe.app.width = 1040; probe.app.height = 900
+                probe.desktop.open("")
                 probe.ai.enable_hands_free(true) // Reproduce the old, incomplete saved preference.
                 probe.step++
             } else if (probe.step === 1) {
-                if (probe.desktop.handsFreeAllowed || probe.desktop.handsFreeLabel !== "Hands-free · Setup") {
+                if (probe.desktop.handsFreeAllowed || probe.desktop.handsFreeLabel !== "Set up mic") {
                     probe.fail("incomplete setup enabled capture"); return
                 }
                 probe.toggleButton.ToolTip.visible = true
