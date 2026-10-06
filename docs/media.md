@@ -8,10 +8,14 @@ What appears depends on the release and your connected media providers.
 Select a game to view its artwork. Use the artwork controls to browse images,
 refresh a missing image, or review another source.
 
-Video previews start muted. Use the speaker button to change sound, drag the
-seek bar to move through the video, and use fullscreen for a larger view.
+Desktop video previews start muted. Grid previews and Game Media each remember
+their own global mute setting across games and restarts: changing one does not
+change the other. Couch Mode has a separate setting, and fullscreen keeps the
+setting of the preview it opened from. Use the speaker button to change sound,
+drag the seek bar to move through the video, and use fullscreen for a larger view.
 Grid previews appear after you pause over a game rather than immediately
-while moving across the library.
+while moving across the library. They pause Game Media while playing; leaving
+the card resumes Game Media only if it was playing before.
 
 Manuals open in your system's document viewer. Game music is optional.
 
@@ -43,4 +47,3 @@ available from **Library & settings** in Couch Mode.
 
 Media caches are not included in a [Lunchpail profile backup](profile-backups.md).
 Artwork remains the property of its respective rights holders.
-

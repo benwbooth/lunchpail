@@ -81,8 +81,9 @@ Ask it to search or select games, browse installed/favorite/recent shelves,
 open game tools and settings, show the download queue, go back, switch between
 grid and list, control previews, or manage favorites and collections. Launches
 use the same card-launch workflow and keep save-sync, setup and download
-decisions in the existing dialogs. Video mute changes affect the current mode
-only. **AI & voice** opens provider and microphone setup; **Speak / F2** in the
+decisions in the existing dialogs. Video mute changes affect the active preview
+surface only: desktop grid previews, Game Media, and Couch videos have independent
+global settings. **AI & voice** opens provider and microphone setup; **Speak / F2** in the
 panel uses the same local recognizer as Couch mode. Closing the panel keeps
 the conversation and any pending action; canceling the reply stops further work.
 
@@ -289,7 +290,7 @@ status below the categories shows queued/look-up/download activity, transfer
 percentages, missing-account guidance, or unavailable media. Hover it for details.
 Unavailable themes are remembered for the session; network failures can retry
 when you reselect the game. Backgrounds preserve aspect ratio, can be paused or
-opened full-screen, and share the global video mute preference. Background music
+opened full-screen, and share the Couch video mute preference. Background music
 stops while an audible preview is playing. Opening another page suspends previews.
 
 The platform picker displays cached system logos and automatically finds a missing
