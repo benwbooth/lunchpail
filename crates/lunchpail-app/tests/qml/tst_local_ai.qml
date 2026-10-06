@@ -55,6 +55,7 @@ TestCase {
                 property bool busy: false
                 property string status: "Ready"
                 property string result_json: "{}"
+                property string history_json: "[]"
                 property int calls: 0
                 property int cancels: 0
                 property string lastQuestion: ""
@@ -113,6 +114,28 @@ TestCase {
         compare(pane.assistant.lastQuestion, "find me an SNES RPG")
         pane.speech.completed("duplicate")
         compare(pane.assistant.calls, 1)
+    }
+    function test_conversation_keeps_newest_answer_visible_after_layout_and_resize() {
+        const pane = panel(); pane.toggleMode()
+        const rows = [
+            {role:"user",content:"search for super mario bros"},
+            {role:"assistant",content:"Here are the games. ".repeat(40)},
+            {role:"user",content:"what game is selected?"},
+            {role:"assistant",content:"The selected game is Super Mario Bros."}
+        ]
+        pane.assistant.history_json = JSON.stringify(rows)
+        const transcript = findChild(pane, "conversationTranscript")
+        tryCompare(transcript, "count", 4)
+        wait(100) // Delegate wrapping and ColumnLayout sizing happen on polish.
+        tryVerify(() => transcript.atYEnd)
+        pane.height = 580
+        wait(100)
+        tryVerify(() => transcript.atYEnd)
+        rows.push({role:"user",content:"play the game"}, {role:"assistant",content:"The game is now running."})
+        pane.assistant.history_json = JSON.stringify(rows)
+        tryCompare(transcript, "count", 6)
+        wait(100)
+        tryVerify(() => transcript.atYEnd)
     }
     function test_closing_panel_rejects_late_voice_but_keeps_app_action_alive() {
         const pane = panel()

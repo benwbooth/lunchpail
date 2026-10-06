@@ -269,7 +269,17 @@ FocusScope {
             Layout.fillWidth: true; Layout.fillHeight: true
             visible: search.askMode && search.conversation.length > 0
             clip: true; spacing: 10; model: search.conversation
-            onCountChanged: Qt.callLater(() => transcript.positionViewAtEnd())
+            property bool followTail: true
+            function revealLatest() {
+                if (followTail) Qt.callLater(() => {
+                    if (transcript.followTail) { transcript.forceLayout(); transcript.positionViewAtEnd() }
+                })
+            }
+            onCountChanged: { followTail = true; revealLatest() }
+            onContentHeightChanged: revealLatest()
+            onHeightChanged: revealLatest()
+            onMovementStarted: followTail = false
+            onMovementEnded: followTail = atYEnd
             delegate: Rectangle {
                 id: bubble
                 required property var modelData
