@@ -370,6 +370,7 @@ mod tests {
         std::fs::set_permissions(&child, std::fs::Permissions::from_mode(0o700)).unwrap();
         let mut worker = Worker::start(&child).unwrap();
         let request = Request::Generate {
+            messages: Vec::new(),
             model: PathBuf::from("unused"),
             device: None,
             system: String::new(),

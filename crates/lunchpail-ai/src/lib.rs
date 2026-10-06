@@ -11,6 +11,13 @@ pub const PROTOCOL_VERSION: u32 = 1;
 pub const MAX_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Device {
     pub id: usize,
     pub name: String,
@@ -29,6 +36,11 @@ pub enum Request {
         device: Option<usize>,
         system: String,
         prompt: String,
+        /// Structured turns preserve the distinction between a user's request,
+        /// completed assistant calls and tool observations. Empty keeps the
+        /// original single-prompt protocol for non-conversational callers.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        messages: Vec<ChatMessage>,
         schema: serde_json::Value,
         max_tokens: u32,
     },
@@ -98,4 +110,25 @@ pub fn serve(mut handle: impl FnMut(Request) -> anyhow::Result<Reply>) -> anyhow
         stdout.flush()?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn generation_messages_are_optional_and_round_trip_on_the_wire() {
+        let mut value = serde_json::json!({"operation":"generate","model":"model.gguf","device":null,
+            "system":"system","prompt":"question","schema":{},"max_tokens":32});
+        let request: Request = serde_json::from_value(value.clone()).unwrap();
+        assert!(matches!(&request, Request::Generate { messages, .. } if messages.is_empty()));
+        assert!(serde_json::to_value(request).unwrap().get("messages").is_none());
+        value["prompt"] = serde_json::json!("");
+        value["messages"] = serde_json::json!([
+            {"role":"user","content":"open a game"},
+            {"role":"assistant","content":"{\"get_context\":{}}"},
+            {"role":"tool","content":"{\"games\":[]}"}
+        ]);
+        let request: Request = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(request).unwrap(), value);
+    }
 }

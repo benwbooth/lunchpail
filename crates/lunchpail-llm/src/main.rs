@@ -6,7 +6,7 @@ use llama_cpp_2::{
     model::{LlamaChatMessage, LlamaChatTemplate, LlamaModel, params::LlamaModelParams},
     sampling::LlamaSampler,
 };
-use lunchpail_ai::{Device, Reply, Request};
+use lunchpail_ai::{ChatMessage, Device, Reply, Request};
 use std::{
     ffi::CStr,
     io::Write,
@@ -68,22 +68,30 @@ fn generate(
     model: &LlamaModel,
     system: String,
     prompt: String,
+    messages: Vec<ChatMessage>,
     schema: serde_json::Value,
     max_tokens: u32,
 ) -> Result<String> {
     ensure!(
-        system.len() <= 32000 && prompt.len() <= 96000,
+        system.len() <= 32000 && prompt.len() <= 96000
+            && messages.len() <= 64 && messages.iter().map(|m| m.content.len()).sum::<usize>() <= 96000,
         "Assistant prompt is too large"
     );
     let clean = |s: String| s.replace("<|", "< |").replace('\0', "");
     // The curated Qwen models share ChatML. Explicitly end the thinking span
     // so constrained tool JSON starts immediately, including on CPU models.
-    let messages = [
-        LlamaChatMessage::new("system".into(), clean(system))?,
-        LlamaChatMessage::new("user".into(), format!("{}\n/no_think", clean(prompt)))?,
-    ];
+    let mut chat = vec![LlamaChatMessage::new("system".into(), clean(system))?];
+    if messages.is_empty() {
+        chat.push(LlamaChatMessage::new("user".into(), format!("{}\n/no_think", clean(prompt)))?);
+    } else {
+        ensure!(prompt.is_empty(), "Use either a prompt or structured messages, not both");
+        for message in messages {
+            ensure!(matches!(message.role.as_str(), "user" | "assistant" | "tool"), "Unsupported conversation role");
+            chat.push(LlamaChatMessage::new(message.role, clean(message.content))?);
+        }
+    }
     let mut formatted =
-        model.apply_chat_template(&LlamaChatTemplate::new("chatml")?, &messages, true)?;
+        model.apply_chat_template(&LlamaChatTemplate::new("chatml")?, &chat, true)?;
     formatted.push_str("<think>\n\n</think>\n\n");
     let tokens = model.vocab().tokenize(formatted.as_bytes(), true, true);
     let limit = max_tokens.clamp(32, 1500) as usize;
@@ -158,6 +166,7 @@ fn main() -> Result<()> {
             device,
             system,
             prompt,
+            messages,
             schema,
             max_tokens,
         } => {
@@ -200,7 +209,7 @@ fn main() -> Result<()> {
                 loaded = Some((model, selected_id, new_model, label));
             }
             let (_, _, model, device) = loaded.as_ref().context("Assistant model did not load")?;
-            let text = generate(&backend, model, system, prompt, schema, max_tokens)?;
+            let text = generate(&backend, model, system, prompt, messages, schema, max_tokens)?;
             Ok(Reply::success(text, device.clone()))
         }
         _ => bail!("This worker only supports assistant inference"),

@@ -49,7 +49,8 @@ Item {
     }
     function complete(id, result) {
         if (readOnlyProbe) console.log("LUNCHPAIL_CONVERSATION_TOOL_RESULT " + id + " " + JSON.stringify({
-            status: result.status, error: result.error, query: result.query, game: result.game || result.selected_game}))
+            status: result.status, error: result.error, query: result.query, game: result.game || result.selected_game,
+            games: result.games, total_results: result.total_results}))
         assistant.complete_tool(id, JSON.stringify(result))
     }
     function defer(id, kind, extra) {

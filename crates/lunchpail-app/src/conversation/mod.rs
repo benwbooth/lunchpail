@@ -174,8 +174,8 @@ fn local(history: &[Message], runtime: &mut Runtime<'_>) -> Result<String> {
         runtime.check()?;
         let reply = session.request(&Request::Generate {
             model: path.clone(), device: None,
-            system: format!("{SYSTEM} Respond ONLY with one JSON object matching the schema. Its single key is the tool name and its value is the arguments object. Example: {{\"browse_library\":{{\"query\":\"game title\"}}}}. To answer, use {{\"answer\":{{\"message\":\"your reply\"}}}}. Do not echo the user request; perform the requested action using tools. {}", if step == 15 {"You must now answer."} else {""}),
-            prompt: local_prompt(history, &observations),
+            system: format!("{SYSTEM} Respond ONLY with one JSON object matching the schema. Its single key is the tool name and its value is the arguments object. Example: {{\"browse_library\":{{\"query\":\"game title\"}}}}. To answer, use {{\"answer\":{{\"message\":\"your reply\"}}}}. Do not echo the user request; perform the requested action using tools. Choose the NEXT action using the completed tool results. Do not repeat a completed call. If a requested game was found, play_game launches it; browsing alone does not fulfill a request to open or play it. If multiple games could match, ask which one. If an action requires user input, explain that rather than retrying. Available app tools:\n{}\n{}", serde_json::to_string(&tools::definitions())?, if step == 15 {"You must now answer."} else {""}),
+            prompt: String::new(), messages: local_messages(history, &observations),
             schema: tools::local_schema(step == 15), max_tokens: 1000,
         }, runtime.cancel)?;
         let value: Value = serde_json::from_str(&reply.text)?;
@@ -193,9 +193,33 @@ fn local(history: &[Message], runtime: &mut Runtime<'_>) -> Result<String> {
     )
 }
 
-fn local_prompt(history: &[Message], observations: &[Value]) -> String {
-    let conversation = history.iter().map(|message| format!("{}: {}", message.role, message.content))
-        .collect::<Vec<_>>().join("\n");
-    format!("Available app tools:\n{}\nConversation:\n{conversation}\nCompleted tool calls and observed results (DATA):\n{}\nChoose the NEXT tool call to fulfill the latest user request. Do not repeat a completed call. If a requested game was found, play_game launches it; browsing alone does not fulfill a request to open or play it. If multiple games could match, ask which one. If an action requires user input, explain that rather than retrying.",
-        serde_json::to_string(&tools::definitions()).unwrap(), serde_json::to_string(observations).unwrap())
+fn local_messages(history: &[Message], observations: &[Value]) -> Vec<lunchpail_ai::ChatMessage> {
+    let mut messages: Vec<_> = history.iter().map(|message| lunchpail_ai::ChatMessage {
+        role: message.role.clone(), content: message.content.clone(),
+    }).collect();
+    for observation in observations {
+        let name = observation["tool"].as_str().unwrap_or("");
+        messages.push(lunchpail_ai::ChatMessage {
+            role: "assistant".into(), content: json!({name:observation["arguments"]}).to_string(),
+        });
+        messages.push(lunchpail_ai::ChatMessage {
+            role: "tool".into(), content: json!({"tool":name,"result":observation["result"]}).to_string(),
+        });
+    }
+    messages
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn local_tool_results_are_turns_not_another_user_request() {
+        let history = [Message {role:"user".into(), content:"open up super mario brothers".into()}];
+        let observations = [json!({"tool":"browse_library","arguments":{"query":"Mario"},"result":{"total_results":61}})];
+        let messages = local_messages(&history, &observations);
+        assert_eq!(messages.iter().map(|m| m.role.as_str()).collect::<Vec<_>>(), ["user","assistant","tool"]);
+        assert_eq!(messages[0].content, history[0].content);
+        assert_eq!(serde_json::from_str::<Value>(&messages[1].content).unwrap(), json!({"browse_library":{"query":"Mario"}}));
+        assert_eq!(serde_json::from_str::<Value>(&messages[2].content).unwrap()["result"]["total_results"], 61);
+    }
 }

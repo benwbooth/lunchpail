@@ -277,6 +277,7 @@ pub fn ask(
         let turn_schema = constrained_schema(index == 7 || finish, &games, &patches);
         let reply = session.request(
             &Request::Generate {
+                messages: Vec::new(),
                 model: model_path.clone(),
                 device: None,
                 system: SYSTEM.into(),
