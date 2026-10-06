@@ -12,6 +12,9 @@ Item {
     property string lastSource: ""
     property int stableTicks: 0
     property bool progressCaptured: false
+    property int themeViewIndex: 0
+    readonly property bool themePriorityCheck: app.argumentValue("--preview-theme-priority") === "true"
+    readonly property var themeViews: ["wall", "album", "shelf", "wheel"]
     readonly property string firstGame: "2d6cb4b2-a219-4c40-9b31-ac466a77e88c"
     readonly property string nextGame: app.argumentValue("--media-probe-game") || "9697a5eb-e0b4-4f24-8d43-672701414ee7"
     readonly property string platform: "Nintendo Entertainment System"
@@ -90,6 +93,11 @@ Item {
             } else if (probe.step === 1) {
                 if (!probe.view.focusGameById(probe.firstGame) || probe.view.selectedGameId !== probe.firstGame) return
                 if (!probe.view.gameVideoPreview.playing) return
+                if (probe.themePriorityCheck
+                        && (probe.view.browsing.theme_video_url
+                            || probe.view.previewVideoUrl.toString() !== probe.view.browsing.video_url)) {
+                    probe.fail("missing theme did not fall back to selected game video"); return
+                }
                 probe.lastSource = probe.view.previewVideoUrl.toString()
                 probe.capture("first-game"); probe.step = 2
             } else if (probe.step === 2) {
@@ -119,7 +127,26 @@ Item {
                 probe.capture("next-game-ready"); probe.step = 7
             } else if (probe.step === 7) {
                 if (!probe.checkAudioPreferences()) return
+                if (probe.themePriorityCheck) {
+                    probe.library.save_couch_view_style(probe.themeViews[0])
+                    probe.step = 8
+                    return
+                }
                 console.log("LUNCHPAIL_COUCH_MEDIA_READY selected_video=pass system_isolation=pass progress_identity=pass")
+                Qt.quit()
+            } else if (probe.step === 8) {
+                if (!probe.view.gameVideoPreview.playing || probe.view.gameVideoPreview.position < 100) return
+                if (!probe.view.browsing.theme_video_url || !probe.view.browsing.video_url
+                        || probe.view.previewVideoUrl.toString() !== probe.view.browsing.theme_video_url) {
+                    probe.fail("animated theme did not beat cached gameplay in " + probe.themeViews[probe.themeViewIndex]); return
+                }
+                console.log("LUNCHPAIL_COUCH_THEME_PRIORITY_READY view=" + probe.themeViews[probe.themeViewIndex]
+                            + " source=" + probe.view.previewVideoUrl)
+                if (++probe.themeViewIndex < probe.themeViews.length) {
+                    probe.library.save_couch_view_style(probe.themeViews[probe.themeViewIndex])
+                    return
+                }
+                console.log("LUNCHPAIL_COUCH_MEDIA_READY selected_video=pass system_isolation=pass theme_priority=pass gameplay_fallback=pass")
                 Qt.quit()
             }
         }

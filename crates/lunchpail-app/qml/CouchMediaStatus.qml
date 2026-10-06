@@ -25,7 +25,8 @@ Item {
         queueRevision
         return gameId ? library.automatic_video_message(gameId) : ""
     }
-    readonly property bool gameplayBusy: !videoKind && ["checking-setup", "queued", "downloading"].indexOf(gameplayState) >= 0
+    readonly property bool gameplayBusy: !videoKind && !themeBusy
+        && ["checking-setup", "queued", "downloading"].indexOf(gameplayState) >= 0
     readonly property bool themeBusy: ["queued", "finding", "downloading"].indexOf(themePhase) >= 0
     readonly property bool busy: selectionPending || gameplayBusy || themeBusy
     readonly property int progress: gameplayBusy
@@ -36,6 +37,9 @@ Item {
         let playing = videoKind === "theme" ? "GAME THEME" : videoKind === "gameplay" ? "GAMEPLAY VIDEO" : ""
         let activity = ""
         if (selectionPending && !playing) activity = "Loading selected game media…"
+        else if (themeBusy) activity = themePhase === "queued" ? "Game theme queued…"
+                     : themeProgress > 0 ? "Downloading game theme · " + themeProgress + "%"
+                     : "Finding game theme…"
         else if (gameplayBusy) {
             activity = gameplayState === "queued" ? "Game video queued…"
                      : gameplayState === "checking-setup" ? "Checking video account…"
@@ -43,9 +47,6 @@ Item {
                      : "Finding game video…"
         } else if (!playing && gameplayState === "setup-required") activity = "Game videos need EmuMovies setup · open Settings"
         else if (!playing && gameplayMessage.indexOf("failed") >= 0) activity = "Game video download failed · reselect to retry"
-        else if (themeBusy) activity = themePhase === "queued" ? "Game theme queued…"
-                     : themeProgress > 0 ? "Downloading game theme · " + themeProgress + "%"
-                     : "Finding game theme…"
         else if (!playing && (gameplayState === "unavailable" || themePhase === "unavailable")) activity = "No matching game video · artwork shown"
         else if (!playing && themePhase === "error") activity = "Game media download failed · reselect to retry"
         else if (!playing) activity = "Loading game media…"

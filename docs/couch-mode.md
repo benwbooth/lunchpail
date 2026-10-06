@@ -26,8 +26,9 @@ anything; controller navigation works even with the pointer parked over a card.
 In every game view, selection plays the HyperSpin video theme as a full-window
 background. Missing themes are looked up individually using the saved EmuMovies
 account, with one transfer at a time and the latest selection taking priority.
-Cached gameplay and then the selected platform's theme are fallbacks, labeled
-on screen. Changing views keeps playback and the shared mute preference. Games
+Gameplay is the fallback only after the theme lookup cannot provide a theme;
+system themes stay in the platform browser. Changing views keeps playback and
+the Couch mute preference. Games
 without any available video keep their artwork presentation.
 
 ## Browse and play
@@ -283,9 +284,13 @@ through your connected EmuMovies account. Theme videos require FTP access from a
 supporting EmuMovies account. Availability varies by system and game.
 
 Game themes are stored separately from gameplay videos. All four game views
-automatically request a missing individual theme and gameplay video after selection
-settles; browsing never downloads whole video packs. While a game video is missing,
-the game's artwork stays visible instead of playing a platform video. The media
+prefer the animated HyperSpin-style theme and look for it first after selection
+settles. While that lookup or download is pending, artwork stays visible instead
+of starting a gameplay clip. If the theme is unavailable, needs account setup, or
+fails to download, the selected game's gameplay video is used as a fallback and
+downloaded only if it is missing. Cached themes play immediately without a lookup.
+Browsing never downloads whole video packs or substitutes a platform video for a
+game. The media
 status below the categories shows queued/look-up/download activity, transfer
 percentages, missing-account guidance, or unavailable media. Hover it for details.
 Unavailable themes are remembered for the session; network failures can retry

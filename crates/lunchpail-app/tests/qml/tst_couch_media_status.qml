@@ -73,4 +73,16 @@ TestCase {
         verify(!item.busy)
         verify(!findChild(item, "couchMediaProgress").visible)
     }
+
+    function test_theme_lookup_takes_priority_over_background_gameplay_queue() {
+        const item = status({themePhase: "finding"})
+        compare(item.summary, "Finding game theme…")
+        compare(item.progress, -1)
+        item.themePhase = "downloading"; item.themeProgress = 62
+        compare(item.summary, "Downloading game theme · 62%")
+        compare(item.progress, 62)
+        item.themePhase = "unavailable"
+        verify(item.summary.indexOf("43%") >= 0)
+        compare(item.progress, 43)
+    }
 }

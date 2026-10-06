@@ -154,6 +154,8 @@ Item {
         active: view.active && !view.details.game_running
         gameId: view.selectedGameId
         platform: view.platformWheelOpen ? platformPresentation.platform : ""
+        themeVideoUrl: view.browsing.theme_video_url || ""
+        gameplayVideoUrl: view.browsing.video_url || ""
     }
     readonly property var previewRecord: JSON.parse(library.couch_preview_json || "{}")
     readonly property var browsing: Object.assign({
@@ -183,7 +185,7 @@ Item {
     readonly property bool wallView: library.couch_view_style === "wall"
     readonly property bool albumView: library.couch_view_style === "album"
     // A system theme belongs to the system browser, never to a selected game.
-    readonly property url previewVideoUrl: browsing.theme_video_url || browsing.video_url || ""
+    readonly property url previewVideoUrl: themeRequest.previewVideoUrl
     readonly property bool hasPreviewVideo: previewVideoUrl.toString().length > 0
     readonly property var gameVideoPreview: couchVideo
     readonly property var systemVideoPreview: platformVideo
@@ -2033,7 +2035,7 @@ Item {
         visible: view.active && !!view.selectedGameId && !view.platformWheelOpen
         library: view.library
         gameId: view.selectedGameId
-        videoKind: view.browsing.theme_video_url ? "theme" : view.browsing.video_url ? "gameplay" : ""
+        videoKind: themeRequest.videoKind
         themePhase: themeRequest.phase
         themeProgress: themeRequest.progress
         themeMessage: themeRequest.status
