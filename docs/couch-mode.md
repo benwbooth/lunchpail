@@ -43,8 +43,9 @@ The logo wheel packs eleven entries onto a full-height curved path. Neighboring
 logos remain opaque and tilt toward an offscreen hub on the right; the selected
 logo enlarges beside a fixed pointer. Up/down wraps around both the game and
 system lists. The wheel uses lightweight cached logo textures, preloads adjacent
-entries, and leaves theme artwork unobstructed. Move the mouse to the top edge
-for the toolbar, or press Left to reveal actions and navigate up to categories.
+entries. Toolbars, categories, game actions, and video controls stay visible;
+moving the mouse away from the top never hides them. Press Left to focus actions
+and navigate up to categories.
 Ctrl+V, F3, and the existing controller shortcuts remain available.
 
 The classic arc and size relationship are based on the
@@ -93,10 +94,10 @@ on every display or workload.
 
 The developer-only `--couch-smoothness-ui-probe --couch-hover-check true`
 check requires QtTest and the same isolated profile. It moves and parks the
-pointer across every game/platform toolbar button at 1080p and 720p, checking
-each rendered frame for toolbar/scrim visibility changes and uninterrupted
-background video. The reveal listener observes the common parent of the
-controls, so buttons cannot hide their own toolbar by consuming sibling hover.
+pointer across game/platform toolbar buttons, down to video controls, and away
+from the top at 1080p and 720p. It checks each rendered frame for persistent
+control visibility and uninterrupted background video. There is no hover-reveal
+or auto-hide region.
 
 ## Search with a keyboard or microphone
 

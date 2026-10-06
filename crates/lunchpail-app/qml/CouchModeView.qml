@@ -182,8 +182,6 @@ Item {
     readonly property int cardRadius: library.couch_theme_card_radius
     readonly property real heroScrimOpacity: library.couch_theme_hero_scrim_percent / 100.0
     readonly property bool cinematicWheel: library.couch_view_style === "wheel"
-    readonly property bool wheelBrowseOnly: cinematicWheel && navigationZone === 2
-        && !wheelToolbarHover.hovered && !platformToolbarHover.hovered
     readonly property bool wallView: library.couch_view_style === "wall"
     readonly property bool albumView: library.couch_view_style === "album"
     // A system theme belongs to the system browser, never to a selected game.
@@ -1606,7 +1604,6 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        visible: !view.wheelBrowseOnly
         gradient: Gradient {
             orientation: Gradient.Horizontal
             GradientStop { position: 0.0; color: view.withAlpha(view.background, couchVideo.playing ? 0.88 : 0.96) }
@@ -1620,7 +1617,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: parent.height * (view.wheelBrowseOnly ? 0.20 : 0.43)
+        height: parent.height * 0.43
         gradient: Gradient {
             GradientStop { position: 0.0; color: view.withAlpha(view.background, 0) }
             GradientStop { position: 0.35; color: view.withAlpha(view.background, 0.72) }
@@ -1630,7 +1627,6 @@ Item {
 
     Rectangle {
         anchors { left: parent.left; right: parent.right; top: parent.top }
-        visible: !view.wheelBrowseOnly
         height: 170
         gradient: Gradient {
             GradientStop { position: 0; color: view.withAlpha(view.background, 0.94) }
@@ -1640,7 +1636,6 @@ Item {
     }
     Row {
         id: brand
-        visible: !view.wheelBrowseOnly
         anchors.left: parent.left
         anchors.leftMargin: 54
         anchors.top: parent.top
@@ -1673,7 +1668,7 @@ Item {
 
     Row {
         id: categoryRow
-        visible: !view.wheelBrowseOnly
+        objectName: "couchCategories"
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: brand.bottom
         anchors.topMargin: 18
@@ -1730,16 +1725,10 @@ Item {
         }
     }
 
-    CouchToolbarHoverArea {
-        id: wheelToolbarHover
-        objectName: "couchGameToolbarHover"
-        // Mouse users reveal the same navigation controls at the top edge;
-        // controller/keyboard users reveal them by moving left to actions.
-    }
     Row {
         id: headerActions
         objectName: "couchHeaderActions"
-        visible: !view.wheelBrowseOnly
+        // Navigation controls stay available regardless of pointer position.
         z: 31
         anchors.right: parent.right
         anchors.rightMargin: 50
@@ -1793,12 +1782,11 @@ Item {
         anchors { left: gameCopy.left; leftMargin: -22; top: gameCopy.top; topMargin: 4 }
         width: 3; height: Math.min(90, gameCopy.height); radius: 2
         color: view.accent
-        visible: view.cinematicWheel && !view.wheelBrowseOnly
+        visible: view.cinematicWheel
     }
 
     Column {
         id: gameCopy
-        visible: !view.wheelBrowseOnly
         anchors.left: parent.left
         anchors.leftMargin: 70
         anchors.top: categoryRow.bottom
@@ -1918,6 +1906,7 @@ Item {
 
         Row {
             id: actionRow
+            objectName: "couchPrimaryActions"
             spacing: 10
 
             Repeater {
@@ -2030,9 +2019,10 @@ Item {
 
     Row {
         id: backgroundVideoControls
+        objectName: "couchBackgroundVideoControls"
         x: 70; y: footer.y - height - 12
         spacing: 8; z: 20
-        visible: view.hasPreviewVideo && !view.overlayOpen && !view.platformWheelOpen && !view.wheelBrowseOnly
+        visible: view.hasPreviewVideo && !view.overlayOpen && !view.platformWheelOpen
         CouchActionButton { text: couchVideo.paused ? "Play video" : "Pause video"; soundFeedback: feedback; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: couchVideo.paused = !couchVideo.paused }
         CouchActionButton {
             text: view.videoMuted ? "Unmute all game videos" : "Mute all game videos"
@@ -2050,7 +2040,7 @@ Item {
         objectName: "couchGameMediaStatus"
         x: 70; y: categoryRow.y + categoryRow.height + 6
         width: Math.min(600, parent.width - 140)
-        visible: view.active && !!view.selectedGameId && !view.platformWheelOpen && !view.wheelBrowseOnly
+        visible: view.active && !!view.selectedGameId && !view.platformWheelOpen
         library: view.library
         gameId: view.selectedGameId
         videoKind: themeRequest.videoKind
@@ -2151,23 +2141,6 @@ Item {
         width: Math.max(28, view.width * 0.025); height: width * 1.4
         name: "play"; filled: true; color: "#fff3dc"; rotation: 180
         z: 4
-    }
-    Column {
-        objectName: "couchWheelGameInfo"
-        visible: view.wheelBrowseOnly && !view.platformWheelOpen
-        anchors { left: parent.left; leftMargin: parent.width * 0.035; bottom: footer.top; bottomMargin: 16 }
-        width: parent.width * 0.52; spacing: 5
-        Text {
-            width: parent.width
-            text: view.selectedPlatform + (view.browsing.release_date ? "  ·  " + view.browsing.release_date.slice(0, 4) : "")
-            color: "#dedee4"; font.pixelSize: Math.max(13, view.height * 0.016)
-            style: Text.Outline; styleColor: "#16181c"; elide: Text.ElideRight
-        }
-        Text {
-            width: parent.width; text: view.selectedTitle
-            color: "white"; font.pixelSize: Math.max(22, view.height * 0.031); font.weight: Font.DemiBold
-            style: Text.Outline; styleColor: "#16181c"; elide: Text.ElideRight
-        }
     }
 
     ParallelAnimation {
@@ -2712,10 +2685,6 @@ Item {
             border.width: view.cinematicWheel ? 0 : 1
             clip: true
 
-            CouchToolbarHoverArea {
-                id: platformToolbarHover
-                objectName: "couchPlatformToolbarHover"
-            }
             SemanticIcon {
                 objectName: "couchPlatformWheelPointer"
                 visible: view.cinematicWheel
@@ -2742,7 +2711,6 @@ Item {
 
             Rectangle {
                 objectName: "couchPlatformHeader"
-                visible: !view.wheelBrowseOnly
                 z: 2
                 anchors.left: parent.left
                 anchors.right: parent.right

@@ -261,7 +261,6 @@ fn main() {
                 "qml/CouchGameCard.qml",
                 "qml/CouchLaunchScreen.qml",
                 "qml/CouchModeView.qml",
-                "qml/CouchToolbarHoverArea.qml",
                 "qml/CouchDetailsPage.qml",
                 "qml/CouchPrimaryAction.qml",
                 "qml/CouchVideoPreview.qml",
