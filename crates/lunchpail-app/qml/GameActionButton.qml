@@ -30,6 +30,8 @@ Button {
     Behavior on scale { NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
     Accessible.name: text
     background: Rectangle {
+        id: surface
+        readonly property bool raised: control.positive && control.enabled && !control.busy
         radius: Math.min(10, height / 3)
         color: !control.enabled && !control.busy ? "#e61a222e"
                : control.down ? (control.positive ? "#f0123023" : "#f017202d")
@@ -43,6 +45,49 @@ Button {
                       : control.hovered ? "#708299" : "#63738393"
         Behavior on color { ColorAnimation { duration: 140 } }
         Behavior on border.color { ColorAnimation { duration: 140 } }
+        gradient: raised ? playFinish : null
+        Gradient {
+            id: playFinish
+            GradientStop { position: 0; color: Qt.lighter(surface.color, control.down ? 1.04 : 1.24) }
+            GradientStop { position: 1; color: Qt.darker(surface.color, 1.12) }
+        }
+        // Small translucent layers keep the shadow soft without allocating a
+        // shader texture for every cover, and also work with software rendering.
+        Item {
+            id: shadow
+            objectName: "gameActionShadow"
+            anchors.fill: parent
+            z: -1
+            visible: surface.raised
+            property real elevation: control.down ? 1 : control.hovered ? 4 : 3
+            Behavior on elevation { NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
+            Repeater {
+                model: shadow.visible ? 5 : 0
+                Rectangle {
+                    required property int index
+                    readonly property real spread: index * 0.8
+                    x: -spread
+                    y: shadow.elevation - spread
+                    width: shadow.width + spread * 2
+                    height: shadow.height + spread * 2
+                    radius: surface.radius + spread
+                    color: "black"
+                    opacity: control.down ? 0.035 : 0.075
+                }
+            }
+        }
+        Rectangle {
+            objectName: "gameActionTopHighlight"
+            visible: surface.raised
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.topMargin: 1
+            anchors.leftMargin: surface.radius
+            anchors.rightMargin: surface.radius
+            height: 1
+            color: control.down ? "#10d9ffe8" : "#38d9ffe8"
+        }
     }
     contentItem: Item {
         implicitWidth: contents.implicitWidth

@@ -19,6 +19,44 @@ TestCase {
     }
     SignalSpy { id: clicks; signalName: "clicked" }
 
+    function test_play_depth_preserves_size_and_tracks_press() {
+        const action = createTemporaryObject(actionComponent, test)
+        const shadow = findChild(action, "gameActionShadow")
+        const highlight = findChild(action, "gameActionTopHighlight")
+        mouseMove(test, test.width - 5, test.height - 5)
+        verify(shadow.visible)
+        verify(highlight.visible)
+        verify(action.background.gradient !== null)
+        compare(action.width, 80)
+        compare(action.height, 36)
+        tryCompare(shadow, "elevation", 3)
+        mouseMove(action, action.width / 2, action.height / 2)
+        tryCompare(shadow, "elevation", 4)
+        mousePress(action, action.width / 2, action.height / 2)
+        tryCompare(shadow, "elevation", 1)
+        mouseRelease(action, action.width / 2, action.height / 2)
+        tryCompare(shadow, "elevation", 4)
+    }
+
+    function test_depth_is_only_for_ready_play_actions() {
+        const action = createTemporaryObject(actionComponent, test)
+        const shadow = findChild(action, "gameActionShadow")
+        const highlight = findChild(action, "gameActionTopHighlight")
+        action.positive = false
+        verify(!shadow.visible)
+        verify(!highlight.visible)
+        compare(action.background.gradient, null)
+        action.positive = true
+        action.busy = true
+        verify(!shadow.visible)
+        compare(action.background.gradient, null)
+        action.busy = false
+        action.enabled = false
+        verify(!shadow.visible)
+        action.enabled = true
+        verify(shadow.visible)
+    }
+
     function test_pointer_does_not_take_keyboard_focus() {
         const action = createTemporaryObject(actionComponent, test)
         clicks.target = action
