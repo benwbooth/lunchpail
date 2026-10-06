@@ -20789,6 +20789,9 @@ ApplicationWindow {
         parent: Overlay.overlay
         modal: true
         focus: true
+        popupType: Popup.Item
+        // This is a full-window page, not a floating native-style dialog.
+        margins: 0
         dim: false
         x: 0
         y: 0
@@ -27328,10 +27331,11 @@ ApplicationWindow {
     WindowResizeFrame {
         objectName: "windowResizeFrame"
         applicationWindow: root
-        // Modal settings would otherwise intercept the window's outer rim.
-        parent: settingsDialog.visible ? settingsDialog.header.parent : root.contentItem
+        // Keep the rim at the actual window edges, above the modal surface.
+        // Native styles can inset the dialog; its header is not the window.
+        parent: settingsDialog.visible ? settingsDialog.parent : root.contentItem
         anchors.fill: parent
-        z: 1100
+        z: 20000
         visible: root.visibility === Window.Windowed
 
     }

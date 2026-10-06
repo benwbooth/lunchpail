@@ -43,9 +43,10 @@ TestCase {
             Lunchpail.WindowResizeFrame {
                 id: resizeFrame
                 applicationWindow: app
-                parent: dialog.header.parent
+                parent: dialog.parent
                 anchors.fill: parent
-                z: 1100
+                visible: dialog.visible
+                z: 20000
             }
         }
     }
@@ -55,6 +56,7 @@ TestCase {
         app.resizeEdges = 0
         settingsClosed.clear()
         dialog.close()
+        tryVerify(() => !dialog.visible)
     }
     function test_window_actions_and_settings_close_remain_distinct() {
         mouseClick(findChild(header, "settingsMinimizeWindow"))
