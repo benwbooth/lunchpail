@@ -17,11 +17,12 @@ Item {
     function fail(reason) { console.error("LUNCHPAIL_CONVERSATION_FAILED " + reason); Qt.exit(2) }
     function capture(item, suffix) {
         capturing = true
-        item.grabToImage(function(image) {
+        const started = item.grabToImage(function(image) {
             if (!image.saveToFile(probe.app.argumentValue("--screenshot-output") + "-" + suffix + ".png")) { probe.fail("Could not save screenshot"); return }
             console.log("LUNCHPAIL_CONVERSATION_CAPTURE " + suffix)
             probe.capturing = false; probe.step++
         })
+        if (!started) probe.fail("Could not capture " + suffix)
     }
     Timer {
         interval: 250; repeat: true; running: true
@@ -68,8 +69,9 @@ Item {
             } else if (probe.step === 8) {
                 probe.app.positionRequestedSettingsSection(); probe.step++
             } else if (probe.step === 9) {
-                // Include the header, close/window controls and scrollbar.
-                probe.capture(probe.settingsDialog.parent, "settings")
+                probe.capture(probe.settingsDialog.header, "settings-header")
+            } else if (probe.step === 10) {
+                probe.capture(probe.settingsDialog.contentItem, "settings")
             } else {
                 console.log("LUNCHPAIL_CONVERSATION_READY provider=ollama model=" + JSON.parse(probe.assistant.config_json).profiles.ollama.model
                     + " transport=real-http navigation=real followup=verified microphone=off launches=blocked")
