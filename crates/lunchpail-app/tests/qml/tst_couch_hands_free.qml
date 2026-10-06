@@ -77,12 +77,14 @@ TestCase {
         item.speech.listening = false
         verify(!item.capturingCommand)
     }
-    function test_open_conversation_suppresses_preview_dialogue_until_capture_ends() {
-        const item = controller(); item.wakeWordRequired = false; item.allowed = true
+    function test_open_conversation_only_suppresses_audio_during_an_utterance() {
+        const item = controller(); item.allowed = true
         item.speech.listening = true
-        verify(item.capturingCommand)
+        verify(!item.capturingCommand, "An idle open microphone must not override Unmute")
+        item.speech.awake = true
+        verify(item.capturingCommand, "The backend marks actual speech in open conversation too")
         item.speech.awake = false
-        verify(item.capturingCommand, "Trailer dialogue must not become a user request")
+        verify(!item.capturingCommand, "Audio must return between utterances")
         item.speech.listening = false
         verify(!item.capturingCommand, "Suppression is temporary, not a saved mute preference")
     }

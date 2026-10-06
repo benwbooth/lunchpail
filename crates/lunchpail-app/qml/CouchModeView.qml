@@ -66,7 +66,6 @@ Item {
         id: handsFreeController
         speech: view.speech
         allowed: view.handsFreeAllowed
-        wakeWordRequired: !!view.conversationConfig.wake_word
         onSearchRequested: text => view.acceptVoiceRequest(text)
     }
     Timer { id: voiceCooldown; interval: 900; onTriggered: view.conversationCoolingDown = false }

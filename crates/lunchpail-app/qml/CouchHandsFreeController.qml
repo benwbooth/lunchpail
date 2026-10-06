@@ -4,12 +4,10 @@ Item {
     id: controller
     required property var speech
     property bool allowed: false
-    property bool wakeWordRequired: true
-    // A wake-word listener can keep previews audible between commands. In
-    // open conversation mode, suppress them for the whole capture session so
-    // the app cannot mistake its own trailer dialogue for a user request.
+    // The backend marks actual utterances as awake even without a wake word.
+    // An idle hands-free microphone must not override the user's Unmute choice.
     readonly property bool capturingCommand: speech.listening
-        && (!speech.hands_free || !wakeWordRequired || speech.awake)
+        && (!speech.hands_free || speech.awake)
     signal searchRequested(string text)
     function reconcile() {
         if (allowed && speech.ready && !speech.busy && !speech.faulted)

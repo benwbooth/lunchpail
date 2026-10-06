@@ -84,7 +84,6 @@ Item {
         id: handsFree
         speech: desktop.speech
         allowed: desktop.handsFreeAllowed
-        wakeWordRequired: !!desktop.config.wake_word
         onSearchRequested: text => desktop.acceptVoiceRequest(text)
     }
     Timer { id: cooldown; interval: 900; onTriggered: desktop.coolingDown = false }

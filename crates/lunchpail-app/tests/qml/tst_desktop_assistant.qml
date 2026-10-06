@@ -68,7 +68,8 @@ TestCase {
                 signal search_requested(string text)
                 function start() { busy = true; listening = true }
                 function start_hands_free() { hands_free = true; start() }
-                function cancel() { busy = false; hands_free = false; listening = false }
+                // Match CouchSpeechModel::cancel: close capture before clearing its mode.
+                function cancel() { busy = false; listening = false; hands_free = false; awake = false }
                 function stop() { listening = false }
                 function poll() {}
                 function refresh() { ready = true }
@@ -148,7 +149,7 @@ TestCase {
     }
     function test_mic_suspends_on_background_or_mode_switch_and_resumes_on_focus() {
         const p = pane(); p.open(""); p.searchPanel.microphone()
-        compare(p.speech.listening, true); compare(p.audioSuppressedForVoice, true)
+        compare(p.speech.listening, true); compare(p.audioSuppressedForVoice, false)
         p.windowActive = false; compare(p.speech.listening, false)
         p.windowActive = true; compare(p.speech.listening, true); p.active = false
         compare(p.speech.listening, false); compare(p.audioSuppressedForVoice, false)
@@ -173,7 +174,7 @@ TestCase {
     }
     function test_typing_and_closing_do_not_interrupt_automatic_listening() {
         const p = pane(); p.ai.hands_free = true
-        compare(p.speech.listening, true); compare(p.audioSuppressedForVoice, true)
+        compare(p.speech.listening, true); compare(p.audioSuppressedForVoice, false)
         p.open(""); keyClick(Qt.Key_M)
         compare(findChild(p, "couchSearchField").text, "m")
         compare(p.speech.listening, true)
@@ -182,10 +183,12 @@ TestCase {
         compare(p.ai.hands_free, false); compare(p.speech.listening, false)
         keyClick(Qt.Key_T); compare(findChild(p, "couchSearchField").text, "t")
     }
-    function test_one_microphone_toggle_and_replies_duck_preview_audio() {
+    function test_actual_speech_and_replies_duck_preview_audio_not_an_idle_microphone() {
         const p = pane()
         p.open(""); p.searchPanel.microphone()
-        compare(p.speech.listening, true); compare(p.audioSuppressedForVoice, true)
+        compare(p.speech.listening, true); compare(p.audioSuppressedForVoice, false)
+        p.speech.awake = true; compare(p.audioSuppressedForVoice, true)
+        p.speech.awake = false; compare(p.audioSuppressedForVoice, false)
         p.searchPanel.microphone()
         compare(p.speech.listening, false); compare(p.audioSuppressedForVoice, false)
         p.speechOutput.speaking = true; compare(p.audioSuppressedForVoice, true)
@@ -199,9 +202,11 @@ TestCase {
         compare(p.audioSuppressedForVoice, false)
         p.speech.awake = true; compare(p.audioSuppressedForVoice, true)
         p.speech.awake = false; compare(p.audioSuppressedForVoice, false)
-        // Open conversation suppresses preview audio, not the microphone.
+        // The backend marks actual utterances in either wake-word mode.
         p.assistant.config_json = JSON.stringify({captions:true,wake_word:false})
-        compare(p.speech.listening, true); compare(p.audioSuppressedForVoice, true)
+        compare(p.speech.listening, true); compare(p.audioSuppressedForVoice, false)
+        p.speech.awake = true; compare(p.audioSuppressedForVoice, true)
+        p.speech.awake = false; compare(p.audioSuppressedForVoice, false)
     }
     function test_real_video_unmute_with_open_mic_survives_focus_and_repeated_toggles() {
         const p = pane(); audioPane = p
@@ -214,12 +219,18 @@ TestCase {
             tryCompare(previewSound.player, "playbackState", MediaPlayer.PlayingState, 5000)
             verify(previewSound.player.hasAudio)
             p.ai.hands_free = true
-            compare(previewSound.audioSource.toString(), "")
+            compare(previewSound.audioSource, preview.source)
             compare(p.speech.listening, true)
             p.windowActive = false
-            tryCompare(previewSound.player, "playbackState", MediaPlayer.PlayingState, 5000)
+            compare(previewSound.player.playbackState, MediaPlayer.PlayingState)
             p.windowActive = true
-            compare(p.speech.listening, true); compare(previewSound.audioSource.toString(), "")
+            compare(p.speech.listening, true); compare(previewSound.audioSource, preview.source)
+            compare(previewSound.player.playbackState, MediaPlayer.PlayingState)
+            p.speech.awake = true
+            compare(previewSound.audioSource.toString(), "")
+            compare(previewMuted, false, "Voice activity must not change the saved mute preference")
+            p.speech.awake = false
+            tryCompare(previewSound.player, "playbackState", MediaPlayer.PlayingState, 5000)
             wait(150); verify(preview.position >= before, "Microphone toggle restarted the video")
             p.ai.hands_free = false
             tryCompare(previewSound.player, "playbackState", MediaPlayer.PlayingState, 5000)
@@ -232,8 +243,15 @@ TestCase {
         compare(p.speech.listening, true)
         compare(previewSound.audioSource.toString(), "")
         compare(preview.playbackState, MediaPlayer.PausedState)
+        const pausedPosition = preview.position
+        p.speech.awake = true; p.speech.awake = false
+        p.windowActive = false; p.windowActive = true
+        wait(150)
+        compare(preview.position, pausedPosition)
+        compare(preview.playbackState, MediaPlayer.PausedState)
+        compare(previewMuted, false)
         preview.play()
-        compare(previewSound.audioSource.toString(), "")
+        tryCompare(previewSound.player, "playbackState", MediaPlayer.PlayingState, 5000)
         compare(p.speech.listening, true)
         preview.source = ""
         compare(p.speech.listening, true)
