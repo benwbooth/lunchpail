@@ -19,6 +19,7 @@ FocusScope {
     property color accentColor: "#eec270"
     property int controllerIndex: 0
     property bool acceptingVoice: false
+    property string preservedRequest: ""
     signal queryEdited(string text)
     signal closeRequested()
     signal feedbackRequested(string kind)
@@ -40,9 +41,13 @@ FocusScope {
 
     function open(initialText) {
         controllerIndex = 0
-        field.text = initialText
+        field.text = preservedRequest || initialText
         field.cursorPosition = field.length
         field.forceActiveFocus()
+    }
+    function preserveRequest(text) {
+        preservedRequest = text
+        open(text)
     }
     function focusInput() { field.forceActiveFocus() }
     function edit(text) {
@@ -73,6 +78,7 @@ FocusScope {
     }
     function clear() {
         cancelVoice()
+        preservedRequest = ""
         if (askMode && assistant) assistant.clear()
         field.text = ""
         edit("")
@@ -81,6 +87,7 @@ FocusScope {
     function toggleMode() {
         if (conversationOnly) return
         cancelVoice()
+        preservedRequest = ""
         if (assistant && assistant.busy) assistant.cancel()
         askMode = !askMode
         controllerIndex = 0
@@ -89,9 +96,9 @@ FocusScope {
     }
     function submit() {
         if (!askMode) { close(); return }
-        if (!assistant || !assistant.ready) { installationRequested(true); return }
+        if (!assistant || !assistant.ready) { preservedRequest = field.text; installationRequested(true); return }
         if (assistant.busy) assistant.cancel()
-        else { cancelVoice(); if (speechOutput) speechOutput.stop(); assistant.ask(field.text); field.text = "" }
+        else { cancelVoice(); if (speechOutput) speechOutput.stop(); assistant.ask(field.text); preservedRequest = ""; field.text = "" }
     }
     function chooseRow(index) {
         const row = resultRows[index]
@@ -171,6 +178,13 @@ FocusScope {
             text: search.askMode ? "TALK TO LUNCHPAIL" : "SEARCH GAMES  ·  " + search.resultCount + " RESULTS"
             color: search.inkColor; font.pixelSize: search.compact ? 14 : 20; font.bold: true
         }
+        Text {
+            objectName: "preservedVoiceRequestNotice"
+            Layout.fillWidth: true
+            visible: search.preservedRequest.length > 0
+            text: "Request kept below. Finish AI setup, then send it when you're ready."
+            color: search.accentColor; font.pixelSize: 12; wrapMode: Text.WordWrap
+        }
         TextField {
             id: field
             objectName: "couchSearchField"
@@ -181,7 +195,11 @@ FocusScope {
             placeholderText: search.askMode ? "Search for Super Mario Bros… or play the game" : "Type or speak a game title"
             placeholderTextColor: search.mutedColor
             selectByMouse: true
-            onTextEdited: { search.cancelVoice(); search.edit(text) }
+            onTextEdited: {
+                search.cancelVoice()
+                if (search.preservedRequest) search.preservedRequest = text
+                search.edit(text)
+            }
             onAccepted: search.submit()
             Keys.onEscapePressed: event => { search.close(); event.accepted = true }
             Keys.onPressed: event => {

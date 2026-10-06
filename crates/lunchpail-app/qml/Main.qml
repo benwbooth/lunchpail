@@ -11894,6 +11894,19 @@ ApplicationWindow {
         }
     }
 
+    HandsFreeInputGuard {
+        id: desktopVoiceInputGuard
+        overlayItem: Overlay.overlay
+        ignoredItem: desktopAssistant
+    }
+    Loader {
+        active: Qt.application.arguments.indexOf("--hands-free-ui-probe") >= 0
+        sourceComponent: HandsFreeProbe {
+            app: root; desktop: desktopAssistant; view: couchModeView; library: library
+            ai: localAi; assistant: localAssistant; speech: couchSpeech
+            inputGuard: desktopVoiceInputGuard; toggleButton: headerHandsFreeToggle
+        }
+    }
     DesktopAssistant {
         id: desktopAssistant
         parent: Overlay.overlay
@@ -11907,13 +11920,7 @@ ApplicationWindow {
             && ((root.hoverPreviewPlaying && hoverPreviewPlayer.hasAudio)
                 || (gameVideoPlayer.playbackState === MediaPlayer.PlayingState
                     && gameVideoPlayer.hasAudio))
-        inputBlocked: {
-            for (let i = 0; i < Overlay.overlay.children.length; ++i) {
-                const item = Overlay.overlay.children[i]
-                if (item !== desktopAssistant && item.visible && item.width > 0 && item.height > 0) return true
-            }
-            return false
-        }
+        inputBlocked: desktopVoiceInputGuard.blocked
         assistant: localAssistant; speech: couchSpeech; speechOutput: assistantVoice; ai: localAi
         onSettingsRequested: root.openSettingsFor("local-ai")
         onGameChosen: game => root.assistantShowDetails(game)
@@ -11928,6 +11935,9 @@ ApplicationWindow {
         desktopController: desktopAssistant
         couchController: couchModeView
         couchModeActive: root.couchModeActive
+        setupControllers: [desktopAssistant.handsFreeSetupController,
+                           couchModeView.handsFreeSetupController,
+                           localAiSettingsSection.handsFreeSetupController]
     }
 
     CouchModeView {
@@ -12478,6 +12488,7 @@ ApplicationWindow {
                     Accessible.name: "Open Lunchpail assistant"
                 }
                 HeaderButton {
+                    id: headerHandsFreeToggle
                     objectName: "headerHandsFreeToggle"
                     text: desktopAssistant.handsFreeLabel
                     active: localAi.hands_free
@@ -23550,6 +23561,7 @@ ApplicationWindow {
                     ai: localAi
                     assistant: localAssistant
                     speechOutput: assistantVoice
+                    onSettingsRequested: root.openSettingsFor("local-ai")
                     inkColor: root.ink
                     mutedColor: root.muted
                     accentColor: root.accent

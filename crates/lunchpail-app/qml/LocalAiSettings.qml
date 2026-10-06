@@ -12,7 +12,8 @@ ColumnLayout {
     required property color mutedColor
     required property color accentColor
     property bool advanced: false
-    property bool enableVoiceAfterInstall: false
+    signal settingsRequested()
+    readonly property var handsFreeSetupController: handsFreeSetup
     spacing: 12
     readonly property var catalog: JSON.parse(ai.models_json || "[]")
     readonly property var assistants: [{id: "", name: "Disabled"}].concat(catalog.filter(m => m.assistant))
@@ -34,28 +35,30 @@ ColumnLayout {
         color: pane.mutedColor; wrapMode: Text.WordWrap; font.pixelSize: 12
     }
     RowLayout {
-        LbButton { text: pane.ai.assistant_ready ? "Assistant installed" : "Install assistant…"; enabled: !pane.ai.busy; onClicked: { pane.enableVoiceAfterInstall = false; installer.request(true, false) } }
-        LbButton { text: pane.ai.speech_ready ? "Voice model installed" : "Install voice…"; enabled: !pane.ai.busy; onClicked: { pane.enableVoiceAfterInstall = false; installer.request(false, false) } }
+        LbButton { text: pane.ai.assistant_ready ? "Assistant installed" : "Install assistant…"; enabled: !pane.ai.busy; onClicked: installer.request(true, false) }
+        LbButton { text: pane.ai.speech_ready ? "Voice model installed" : "Install voice…"; enabled: !pane.ai.busy; onClicked: installer.request(false, false) }
     }
     LbCheckBox {
         id: handsFreeToggle
         objectName: "handsFreePreference"
-        text: "Hands-free conversation in normal & Couch modes · microphone on"
+        text: "Enable hands-free conversation in normal & Couch modes"
         checked: !!pane.ai.hands_free
         onClicked: {
-            if (!checked) pane.ai.enable_hands_free(false)
-            else { pane.enableVoiceAfterInstall = true; installer.request(false, true) }
+            if (!checked) { handsFreeSetup.cancel(); pane.ai.enable_hands_free(false) }
+            else handsFreeSetup.request()
+            checked = Qt.binding(() => !!pane.ai.hands_free)
         }
     }
     Text {
         Layout.fillWidth: true; wrapMode: Text.WordWrap; color: pane.mutedColor; font.pixelSize: 11
         text: "Use the Hands-free button or F4 to toggle listening in normal or Couch mode. When enabled, the microphone listens locally while Lunchpail is focused, pauses for games, dialogs and spoken replies, and shows whether it is on or paused. In normal mode, unmuted previews also pause hands-free listening unless the wake phrase is enabled; muting or leaving the preview resumes it. Audio is never saved or uploaded. Transcripts are sent to your chosen AI provider. Use a headset or the optional wake phrase to avoid picking up room/preview audio. F2 works for push-to-talk in the conversation panel."
     }
-    LocalModelInstall {
-        id: installer; ai: pane.ai
-        onReady: { if (pane.enableVoiceAfterInstall) pane.ai.enable_hands_free(true); pane.enableVoiceAfterInstall = false }
-        onDeclined: { pane.enableVoiceAfterInstall = false; handsFreeToggle.checked = Qt.binding(() => !!pane.ai.hands_free) }
+    HandsFreeSetup {
+        id: handsFreeSetup
+        ai: pane.ai; assistant: pane.assistant
+        onSettingsRequested: pane.settingsRequested()
     }
+    LocalModelInstall { id: installer; ai: pane.ai }
     LbButton { objectName: "advancedAiOptions"; text: pane.advanced ? "Hide advanced options" : "Advanced options"; onClicked: pane.advanced = !pane.advanced }
     ColumnLayout {
       Layout.fillWidth: true; visible: pane.advanced; spacing: 12

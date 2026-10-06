@@ -8,6 +8,7 @@ LbDialog {
     property bool assistantModel: false
     property bool pending: false
     property bool microphoneConsent: false
+    property string purpose: ""
     signal ready()
     signal declined()
     modal: true
@@ -56,6 +57,11 @@ LbDialog {
         spacing: 16
         Label {
             Layout.fillWidth: true; wrapMode: Text.WordWrap
+            visible: dialog.purpose.length > 0
+            text: dialog.purpose
+        }
+        Label {
+            Layout.fillWidth: true; wrapMode: Text.WordWrap
             text: (dialog.assistantModel ? "Install the local assistant model" : "Install the local voice model")
                   + (dialog.modelInfo.name ? " (" + dialog.modelInfo.name + ")" : "") + "?"
                   + (dialog.modelInfo.bytes ? " Download: " + (dialog.modelInfo.bytes / 1e9 < 1 ? Math.ceil(dialog.modelInfo.bytes / 1e6) + " MB" : (dialog.modelInfo.bytes / 1e9).toFixed(1) + " GB") + "." : "")
@@ -63,8 +69,8 @@ LbDialog {
         }
         Label {
             Layout.fillWidth: true; wrapMode: Text.WordWrap
-            text: "The download needs internet. Speech and prompts stay on this device."
-                  + (dialog.microphoneConsent ? " After installation, the microphone will listen locally for requests while you browse Lunchpail in normal or Couch mode. You can turn it off at any time. Transcribed requests go to your selected AI provider." : "")
+            text: "The download needs internet. Bundled models process audio and prompts on this device."
+                  + (dialog.microphoneConsent ? " Once both the assistant and speech recognition are ready, hands-free will be enabled while you browse Lunchpail. You can turn it off at any time. Transcribed requests go to your selected AI provider." : "")
         }
         ProgressBar { Layout.fillWidth: true; visible: dialog.pending; value: dialog.ai ? dialog.ai.progress : 0 }
         Label { Layout.fillWidth: true; wrapMode: Text.WordWrap; visible: dialog.pending || (dialog.ai && !dialog.ai.busy); text: dialog.ai ? dialog.ai.status : "" }

@@ -53,6 +53,7 @@ TestCase {
                 function ask(text) { question = text; busy = true }
                 function cancel() { busy = false }
                 function clear() { history_json = "[]" }
+                function refresh() {}
             }
             speech: QtObject {
                 property bool busy: false
@@ -95,6 +96,50 @@ TestCase {
         }
     }
     function pane() { const p = createTemporaryObject(component, test); verify(p); return p }
+    SignalSpy { id: settingsRequests; signalName: "settingsRequested" }
+    function test_missing_assistant_never_opens_microphone_or_redirects_a_phrase() {
+        const p = pane(); p.assistant.ready = false
+        settingsRequests.target = p; settingsRequests.clear()
+        p.ai.hands_free = true // A preference saved by the old speech-only flow.
+        compare(p.handsFreeAllowed, false); compare(p.speech.listening, false)
+        compare(p.handsFreeLabel, "Hands-free · Setup")
+        compare(p.handsFreePauseReason, "Assistant setup needed")
+        p.speech.search_requested("open up super mario bros")
+        compare(settingsRequests.count, 0); compare(p.assistant.question, "")
+        p.toggleHandsFree()
+        verify(p.handsFreeInstallDialog.visible); verify(p.handsFreeInstallDialog.assistantModel)
+        compare(p.ai.hands_free, false); compare(p.speech.listening, false)
+        compare(p.ai.installs, 0)
+        p.toggleHandsFree(); verify(!p.handsFreeInstallDialog.visible)
+    }
+    function test_request_survives_readiness_race_and_waits_for_explicit_send() {
+        const p = pane(); p.assistant.ready = false
+        p.acceptVoiceRequest("open up super mario bros")
+        verify(p.opened); compare(p.speech.listening, false)
+        compare(p.searchPanel.preservedRequest, "open up super mario bros")
+        p.close(); p.open("")
+        compare(findChild(p, "couchSearchField").text, "open up super mario bros")
+        p.assistant.ready = true; p.handsFreeSetupController.cancel()
+        compare(p.assistant.question, "")
+        p.searchPanel.submit()
+        compare(p.assistant.question, "open up super mario bros")
+        compare(p.searchPanel.preservedRequest, "")
+    }
+    function test_pause_reasons_distinguish_focus_dialog_preview_and_reply() {
+        const p = pane(); p.ai.hands_free = true; p.open("")
+        p.windowActive = false
+        compare(p.handsFreePauseReason, "Lunchpail is not focused")
+        verify(p.handsFreeHint.indexOf(p.handsFreePauseReason) >= 0)
+        p.windowActive = true; p.inputBlocked = true
+        compare(p.handsFreePauseReason, "A dialog or menu is open")
+        p.inputBlocked = false; p.previewAudioRequested = true
+        compare(p.handsFreePauseReason, "Preview audio is playing")
+        verify(findChild(p, "desktopHandsFreeStatus").text.indexOf(p.handsFreePauseReason) >= 0)
+        p.previewAudioRequested = false; p.assistant.busy = true
+        compare(p.handsFreePauseReason, "Processing your request")
+        p.assistant.busy = false; p.speechOutput.speaking = true
+        compare(p.handsFreePauseReason, "Speaking a reply")
+    }
     function test_compact_panel_is_conversation_only_and_sends_same_backend() {
         const p = pane(); p.open("find Mario")
         compare(p.opened, true); compare(p.searchPanel.askMode, true)
@@ -233,8 +278,8 @@ TestCase {
         p.toggleHandsFree(); p.handsFreeInstallDialog.install()
         compare(p.ai.hands_free, false)
         p.ai.speech_ready = true; p.ai.busy = false; p.ai.operation_finished(true)
+        tryCompare(p.ai, "hands_free", true); compare(p.speech.listening, true)
         compare(p.speech.faulted, false)
-        compare(p.ai.hands_free, true); compare(p.speech.listening, true)
     }
     function test_captions_and_transcript_keep_literal_text() {
         const p = pane(); p.open("")

@@ -22,15 +22,32 @@ Item {
     property bool coolingDown: false
     readonly property var config: JSON.parse(assistant.config_json || "{}")
     readonly property var searchPanel: conversation
-    readonly property var handsFreeInstallDialog: handsFreeInstall
+    readonly property var handsFreeInstallDialog: handsFreeSetup.installDialog
+    readonly property var handsFreeSetupController: handsFreeSetup
+    readonly property string handsFreePauseReason: !assistant.ready ? "Assistant setup needed"
+        : !speech.ready ? "Speech model setup needed"
+        : speech.faulted ? speech.status
+        : !active ? "Couch mode is active"
+        : !windowActive ? "Lunchpail is not focused"
+        : gameRunning ? "A game is running"
+        : inputBlocked ? "A dialog or menu is open"
+        : assistant.busy ? "Processing your request"
+        : speechOutput.speaking ? "Speaking a reply"
+        : coolingDown ? "Waiting for reply audio to finish"
+        : conversation.microphoneBusy ? "Push-to-talk is active"
+        : handsFreePausedForPreview ? "Preview audio is playing"
+        : speech.busy && !speech.listening ? "Processing speech" : ""
     readonly property string handsFreeLabel: !ai.hands_free ? "Hands-free · Off"
+        : !handsFreeSetup.ready ? "Hands-free · Setup"
         : speech.faulted ? "Hands-free · Error"
         : speech.hands_free && speech.listening ? "Hands-free · On" : "Hands-free · Paused"
-    readonly property string handsFreeHint: (ai.hands_free ? "Turn hands-free listening off" : "Turn hands-free listening on")
-        + " · F4" + (ai.hands_free && handsFreePausedForPreview ? " · Paused for preview audio" : "")
+    readonly property string handsFreeHint: (handsFreeSetup.pending ? "Cancel hands-free setup"
+        : !handsFreeSetup.ready ? "Set up hands-free listening"
+        : ai.hands_free ? "Turn hands-free listening off" : "Turn hands-free listening on")
+        + " · F4" + (ai.hands_free && handsFreePauseReason ? " · " + handsFreePauseReason : "")
     readonly property bool handsFreePausedForPreview: previewAudioRequested && !config.wake_word
     readonly property bool handsFreeAllowed: active && windowActive && !gameRunning && !inputBlocked
-        && ai.hands_free && !assistant.busy && !speechOutput.speaking && !coolingDown
+        && ai.hands_free && assistant.ready && !assistant.busy && !speechOutput.speaking && !coolingDown
         && !conversation.microphoneBusy && !handsFreePausedForPreview
     readonly property bool audioSuppressedForVoice: active
         && ((handsFree.capturingCommand && !handsFreePausedForPreview)
@@ -43,22 +60,28 @@ Item {
     }
     function close() { opened = false; conversation.cancelVoice() }
     function toggle() { if (opened) close(); else open("") }
-    function toggleHandsFree() {
-        if (ai.hands_free) { ai.enable_hands_free(false); speech.cancel(); return }
-        if (handsFreeInstall.visible) { handsFreeInstall.decline(); return }
-        handsFreeInstall.request(false, true)
+    function toggleHandsFree() { handsFreeSetup.toggle() }
+    function acceptVoiceRequest(text) {
+        speech.cancel()
+        if (!assistant.ready) {
+            conversation.preserveRequest(text)
+            opened = true
+            handsFreeSetup.request()
+        } else assistant.ask(text)
     }
-    onActiveChanged: { if (!active) conversation.cancelVoice() }
+    onActiveChanged: { if (!active) { conversation.cancelVoice(); handsFreeSetup.cancel() } }
     onWindowActiveChanged: { if (!windowActive) conversation.cancelVoice() }
     onGameRunningChanged: { if (gameRunning) conversation.cancelVoice() }
     visible: active
-    LocalModelInstall {
-        id: handsFreeInstall
+    HandsFreeSetup {
+        id: handsFreeSetup
         ai: desktop.ai
-        onReady: {
+        assistant: desktop.assistant
+        onStoppedListening: desktop.speech.cancel()
+        onSettingsRequested: desktop.settingsRequested()
+        onEnabledListening: {
             desktop.speech.refresh()
             desktop.speech.faulted = false
-            desktop.ai.enable_hands_free(true)
             handsFree.reconcile()
         }
     }
@@ -67,11 +90,7 @@ Item {
         speech: desktop.speech
         allowed: desktop.handsFreeAllowed
         wakeWordRequired: !!desktop.config.wake_word
-        onSearchRequested: text => {
-            desktop.speech.cancel()
-            if (!desktop.assistant.ready) desktop.settingsRequested()
-            else desktop.assistant.ask(text)
-        }
+        onSearchRequested: text => desktop.acceptVoiceRequest(text)
     }
     Timer { id: cooldown; interval: 900; onTriggered: desktop.coolingDown = false }
     Connections {
@@ -102,9 +121,7 @@ Item {
             spacing: 6
             Text {
                 Layout.fillWidth: true
-                text: desktop.speech.listening ? "● Mic on"
-                      : desktop.ai.hands_free && desktop.handsFreePausedForPreview
-                        ? "Mic paused · preview audio" : "NORMAL MODE"
+                text: desktop.speech.listening ? "● Mic on" : "NORMAL MODE"
                 color: desktop.speech.listening ? "#72e1a0" : "#acb6c6"
                 font.pixelSize: 12; font.bold: true
             }
@@ -120,9 +137,17 @@ Item {
             LbButton { text: "AI & voice"; onClicked: desktop.settingsRequested() }
             LbButton { text: "Close"; Accessible.name: "Close assistant"; onClicked: desktop.close() }
         }
+        Text {
+            id: microphoneStatus
+            objectName: "desktopHandsFreeStatus"
+            anchors { top: toolbar.bottom; left: parent.left; right: parent.right; margins: 12; topMargin: 6 }
+            visible: desktop.ai.hands_free && desktop.handsFreePauseReason.length > 0
+            text: "Mic paused · " + desktop.handsFreePauseReason
+            color: "#acb6c6"; font.pixelSize: 12; wrapMode: Text.WordWrap
+        }
         CouchSearchOverlay {
             id: conversation
-            anchors { top: toolbar.bottom; bottom: parent.bottom; left: parent.left; right: parent.right; topMargin: 6 }
+            anchors { top: microphoneStatus.visible ? microphoneStatus.bottom : toolbar.bottom; bottom: parent.bottom; left: parent.left; right: parent.right; topMargin: 6 }
             visible: desktop.active && desktop.opened
             compact: true; conversationOnly: true; askMode: true
             speech: desktop.speech; assistant: desktop.assistant; speechOutput: desktop.speechOutput

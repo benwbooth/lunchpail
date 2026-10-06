@@ -19,9 +19,16 @@ TestCase {
         property int toggles: 0
         function toggleHandsFree() { toggles++; test.handsFreeEnabled = !test.handsFreeEnabled }
     }
+    QtObject {
+        id: setup
+        property bool pending: false
+        property int cancels: 0
+        function cancel() { pending = false; cancels++ }
+    }
     Lunchpail.HandsFreeShortcut {
         id: shortcut
         desktopController: desktop; couchController: couch
+        setupControllers: [setup]
     }
     TextField { id: field; width: 300; placeholderText: "Conversation" }
     Popup {
@@ -33,6 +40,7 @@ TestCase {
         handsFreeEnabled = false
         desktop.toggles = 0; couch.toggles = 0
         shortcut.couchModeActive = false
+        setup.pending = false; setup.cancels = 0
         field.forceActiveFocus()
     }
     function cleanup() { dialog.close() }
@@ -63,5 +71,13 @@ TestCase {
     function test_f2_does_not_toggle_hands_free() {
         keyClick(Qt.Key_F2)
         compare(handsFreeEnabled, false); compare(desktop.toggles, 0); compare(couch.toggles, 0)
+    }
+    function test_f4_cancels_setup_started_from_settings_without_a_second_flow() {
+        dialog.open(); tryCompare(dialog, "opened", true)
+        setup.pending = true; dialogField.forceActiveFocus()
+        keyClick(Qt.Key_F4)
+        compare(setup.pending, false); compare(setup.cancels, 1)
+        compare(desktop.toggles, 0); compare(couch.toggles, 0)
+        compare(handsFreeEnabled, false)
     }
 }
