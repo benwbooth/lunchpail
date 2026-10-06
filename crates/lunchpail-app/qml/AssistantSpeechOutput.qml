@@ -20,8 +20,8 @@ Item {
         if (tts.state === TextToSpeech.Error) error = "Speech playback unavailable: " + tts.errorString()
         else if (voices.length) error = ""
     }
-    function say(text) {
-        if (!allowed || config.spoken_replies === false || !text.trim().length) return
+    function say(text, preview = false) {
+        if (!allowed || (!preview && config.spoken_replies !== true) || !text.trim().length) return
         error = ""
         tts.stop()
         if (!engines.length) { error = "No system speech voice is installed. Captions remain available."; return }
@@ -29,14 +29,14 @@ Item {
         startTimeout.restart()
         tts.say(text)
     }
-    function test() { say("Hello! I'm Lunchpail. What would you like to play?") }
+    function test() { say("Hello! I'm Lunchpail. What would you like to play?", true) }
     function stop() { queued = false; startTimeout.stop(); tts.stop() }
     onAllowedChanged: if (!allowed) stop()
     onConfigChanged: {
         const desired = config.voice_engine || ""
         if (desired !== requestedEngine) { requestedEngine = desired; tts.engine = desired }
         refreshVoices()
-        if (config.spoken_replies === false) stop()
+        if (config.spoken_replies !== true) stop()
     }
     Component.onCompleted: refreshVoices()
     Timer { id: startTimeout; interval: 4000; onTriggered: { output.queued = false; if (tts.state !== TextToSpeech.Speaking) output.error = "System voice did not start. Choose another voice or check your speech service." } }

@@ -91,6 +91,13 @@ TestCase {
         const config = JSON.parse(pane.assistant.config_json)
         compare(config.captions, false); compare(config.wake_word, true); compare(config.provider, "builtin")
     }
+    function test_unspecified_spoken_reply_preference_is_off() {
+        const pane = settingsPane()
+        const config = JSON.parse(pane.assistant.config_json)
+        delete config.spoken_replies
+        pane.assistant.configure(JSON.stringify(config))
+        compare(findChild(pane, "spokenReplies").checked, false)
+    }
     function test_typed_setup_test_uses_same_assistant() {
         const pane = settingsPane()
         const input = findChild(pane, "conversationTestInput")

@@ -446,13 +446,67 @@ pub fn definitions() -> Vec<rmcp::model::Tool> {
     tools
 }
 
-pub fn local_schema() -> Value {
-    schemars::schema_for!(Call).to_value()
+pub fn local_schema(final_only: bool) -> Value {
+    let mut schema = schemars::schema_for!(Call).to_value();
+    // The native grammar emits object properties in sorted order. An adjacent
+    // tag therefore forces `arguments` BEFORE `tool`, making a small model pick
+    // an argument shape (often an echoed answer) before it can choose an action.
+    // A single tool-name key makes the action the first generated decision.
+    let variants = schema["oneOf"].as_array().expect("Call is a tagged enum");
+    let variants: Vec<_> = variants.iter().filter_map(|variant| {
+        let name = variant["properties"]["tool"]["const"].as_str()?;
+        if final_only && name != "answer" { return None; }
+        Some(json!({
+            "type":"object", "additionalProperties":false,
+            "properties":{name:variant["properties"]["arguments"].clone()},
+            "required":[name],
+        }))
+    }).collect();
+    schema["oneOf"] = json!(variants);
+    schema
+}
+
+pub fn parse_local(value: Value) -> Result<(String, Value, Call)> {
+    let object = value.as_object().context("Local reply must be a tool object")?;
+    ensure!(object.len() == 1, "Local reply must contain exactly one tool");
+    let (name, arguments) = object.iter().next().unwrap();
+    let call = parse(name, arguments.clone())?;
+    Ok((name.clone(), arguments.clone(), call))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn local_grammar_chooses_the_action_before_its_arguments() {
+        let schema = local_schema(false);
+        let variants = schema["oneOf"].as_array().unwrap();
+        assert_eq!(variants.len(), 22);
+        for variant in variants {
+            let properties = variant["properties"].as_object().unwrap();
+            assert_eq!(properties.len(), 1);
+            let name = properties.keys().next().unwrap();
+            assert_eq!(variant["required"], json!([name]));
+            assert_ne!(name, "arguments");
+        }
+        assert!(schema["$defs"]["Reply"].is_object());
+        let (name, arguments, call) = parse_local(json!({"play_game":{"game_id":"mario"}})).unwrap();
+        assert_eq!(name, "play_game");
+        assert_eq!(arguments, json!({"game_id":"mario"}));
+        assert!(matches!(call, Call::PlayGame(_)));
+        for invalid in [json!({}), json!({"tool":"answer","arguments":{"message":"echo"}}),
+            json!({"get_context":{},"play_game":{}}), json!({"shell":{"command":"no"}})] {
+            assert!(parse_local(invalid).is_err());
+        }
+    }
+    #[test]
+    fn local_final_turn_can_only_answer() {
+        let schema = local_schema(true);
+        let variants = schema["oneOf"].as_array().unwrap();
+        assert_eq!(variants.len(), 1);
+        assert_eq!(variants[0]["required"], json!(["answer"]));
+        assert!(matches!(parse_local(json!({"answer":{"message":"Ready"}})).unwrap().2, Call::Answer(_)));
+    }
     #[test]
     fn capability_boundaries_reject_code_paths_and_invalid_preferences() {
         for (name, args) in [

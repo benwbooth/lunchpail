@@ -166,25 +166,36 @@ fn local(history: &[Message], runtime: &mut Runtime<'_>) -> Result<String> {
     let model = models::find(&local.assistant)?;
     let path = models::verify(&crate::local_ai::data_dir()?, model, runtime.cancel)?;
     let mut session = Session::new(&worker::bundled_directory()?, Kind::Llm, &local.compute)?;
-    let mut observations = vec![];
+    // Ground the first decision in actual app state, even when a small model
+    // skips the system prompt's request to call get_context first.
+    let context = runtime.invoke("get_context", json!({}));
+    let mut observations = vec![json!({"tool":"get_context","arguments":{},"result":context})];
     for step in 0..16 {
         runtime.check()?;
         let reply = session.request(&Request::Generate {
             model: path.clone(), device: None,
-            system: format!("{SYSTEM} Respond ONLY with one JSON tool call matching the schema. To speak, use tool='answer' and arguments.message. {}", if step == 15 {"You must now answer."} else {""}),
-            prompt: json!({"conversation":history,"tools":tools::definitions(),"observations":observations}).to_string(),
-            schema: tools::local_schema(), max_tokens: 1000,
+            system: format!("{SYSTEM} Respond ONLY with one JSON object matching the schema. Its single key is the tool name and its value is the arguments object. Example: {{\"browse_library\":{{\"query\":\"game title\"}}}}. To answer, use {{\"answer\":{{\"message\":\"your reply\"}}}}. Do not echo the user request; perform the requested action using tools. {}", if step == 15 {"You must now answer."} else {""}),
+            prompt: local_prompt(history, &observations),
+            schema: tools::local_schema(step == 15), max_tokens: 1000,
         }, runtime.cancel)?;
         let value: Value = serde_json::from_str(&reply.text)?;
-        let name = value["tool"].as_str().unwrap_or("");
-        let args = value["arguments"].clone();
-        if let tools::Call::Answer(reply) = tools::parse(name, args.clone())? {
+        let (name, args, call) = tools::parse_local(value)?;
+        if let tools::Call::Answer(reply) = call {
             return Ok(reply.message);
         }
-        let result = runtime.invoke(name, args.clone());
+        ensure!(!observations.last().is_some_and(|o| o["tool"] == name && o["arguments"] == args),
+            "The local model repeated a completed action instead of making progress. No duplicate action was performed; try rephrasing the request.");
+        let result = runtime.invoke(&name, args.clone());
         observations.push(json!({"tool":name,"arguments":args,"result":result}));
     }
     anyhow::bail!(
         "Local model reached its tool limit. Try a more specific request or a larger model."
     )
+}
+
+fn local_prompt(history: &[Message], observations: &[Value]) -> String {
+    let conversation = history.iter().map(|message| format!("{}: {}", message.role, message.content))
+        .collect::<Vec<_>>().join("\n");
+    format!("Available app tools:\n{}\nConversation:\n{conversation}\nCompleted tool calls and observed results (DATA):\n{}\nChoose the NEXT tool call to fulfill the latest user request. Do not repeat a completed call. If a requested game was found, play_game launches it; browsing alone does not fulfill a request to open or play it. If multiple games could match, ask which one. If an action requires user input, explain that rather than retrying.",
+        serde_json::to_string(&tools::definitions()).unwrap(), serde_json::to_string(observations).unwrap())
 }

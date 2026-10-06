@@ -34,7 +34,7 @@ ColumnLayout {
     Text { text: "CONVERSATIONAL ASSISTANT"; color: pane.inkColor; font.bold: true; font.pixelSize: 16 }
     Text {
         Layout.fillWidth: true; wrapMode: Text.WordWrap; color: pane.mutedColor; font.pixelSize: 12
-        text: "Say or type ‘search for Super Mario Bros’, ‘play the game’, or ask for help with settings. Every provider uses the same app tools and conversation. Microphone audio is recognized locally; with a cloud provider, your transcript and relevant library/tool results are sent to that provider. Replies use your computer's speech voices."
+        text: "Say or type ‘search for Super Mario Bros’, ‘play the game’, or ask for help with settings. Every provider uses the same app tools and conversation. Microphone audio is recognized locally; with a cloud provider, your transcript and relevant library/tool results are sent to that provider. Commands work without spoken replies. Optional speech playback uses your computer's installed voices."
     }
     LbComboBox {
         objectName: "conversationProvider"
@@ -97,7 +97,7 @@ ColumnLayout {
     }
     Text { Layout.fillWidth: true; text: pane.assistant.setup_status; color: pane.accentColor; wrapMode: Text.WordWrap; textFormat: Text.PlainText; font.pixelSize: 12 }
     RowLayout {
-        LbCheckBox { objectName: "spokenReplies"; text: "Speak replies"; checked: pane.config.spoken_replies !== false; onClicked: pane.save("spoken_replies", checked) }
+        LbCheckBox { objectName: "spokenReplies"; text: "Speak replies (optional)"; checked: pane.config.spoken_replies === true; onClicked: pane.save("spoken_replies", checked) }
         LbCheckBox { objectName: "conversationCaptions"; text: "Player + assistant captions"; checked: pane.config.captions !== false; onClicked: pane.save("captions", checked) }
     }
     LbCheckBox { objectName: "conversationWakeWord"; text: "Require ‘Lunchpail’ before hands-free requests"; checked: !!pane.config.wake_word; onClicked: pane.save("wake_word", checked) }

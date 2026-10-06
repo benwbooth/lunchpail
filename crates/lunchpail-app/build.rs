@@ -230,6 +230,7 @@ fn main() {
                 "qml/CouchAssistantController.qml",
                 "qml/DesktopAssistant.qml",
                 "qml/DesktopConversationProbe.qml",
+                "qml/LocalCommandProbe.qml",
                 "qml/ConversationProbe.qml",
                 "qml/LocalModelInstall.qml",
                 "qml/LocalAiProbe.qml",

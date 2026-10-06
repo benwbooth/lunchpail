@@ -69,7 +69,7 @@ impl Default for Settings {
         Self {
             provider: Provider::Builtin,
             profiles: BTreeMap::new(),
-            spoken_replies: true,
+            spoken_replies: false,
             captions: true,
             wake_word: false,
             voice: String::new(),
@@ -233,6 +233,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut settings = Settings::load(dir.path()).unwrap();
         assert!(!settings.wake_word);
+        assert!(!settings.spoken_replies);
+        assert!(!serde_json::from_str::<Settings>("{}").unwrap().spoken_replies);
+        // Preserve an explicit opt-in when loading an existing profile.
+        assert!(serde_json::from_str::<Settings>(r#"{"spoken_replies":true}"#).unwrap().spoken_replies);
         settings.provider = Provider::Ollama;
         let mut profile = settings.profile();
         profile.model = "chosen-model".into();

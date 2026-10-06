@@ -737,7 +737,7 @@ ApplicationWindow {
         id: couchAssistant
         app: root; view: couchModeView; library: library; details: gameDetails
         assistant: localAssistant; ai: localAi
-        readOnlyProbe: root.conversationUiProbe
+        readOnlyProbe: root.conversationUiProbe || Qt.application.arguments.indexOf("--local-command-ui-probe") >= 0
         feedbackSettings: couchFeedbackSettings; videoPreferences: videoAudioPreferences
     }
     Connections {
@@ -11885,6 +11885,13 @@ ApplicationWindow {
         sourceComponent: DesktopConversationProbe {
             app: root; library: library; assistant: localAssistant; speech: couchSpeech
             settingsDialog: settingsDialog; gameToolDialog: couchGameToolDialog
+        }
+    }
+    Loader {
+        active: Qt.application.arguments.indexOf("--local-command-ui-probe") >= 0
+        sourceComponent: LocalCommandProbe {
+            app: root; desktop: desktopAssistant; view: couchModeView; library: library
+            assistant: localAssistant; speech: couchSpeech; voice: assistantVoice
         }
     }
     Loader {
