@@ -206,11 +206,18 @@ ApplicationWindow {
     property var hoverPreviewTile: null
     property string hoverPreviewPendingGameId: ""
     property bool hoverPreviewPlaying: false
-    // Share audio across every video within a mode, but remember each mode's
-    // choice separately across games, mode switches, and application restarts.
-    readonly property bool videoAudioMuted: root.couchModeActive
-                                           ? videoAudioPreferences.couchMuted
-                                           : videoAudioPreferences.normalMuted
+    // Each surface has a global choice across games. Fullscreen retains the
+    // originating surface's preference, and Couch remains independent.
+    readonly property bool gridVideoAudioMuted: videoAudioPreferences.gridMuted
+    readonly property bool detailsVideoAudioMuted: videoAudioPreferences.detailsMuted
+    property string fullscreenVideoAudioScope: "details"
+    readonly property string gameVideoAudioScope: root.couchModeActive ? "couch"
+                                                  : mediaFullscreen.opened ? fullscreenVideoAudioScope : "details"
+    readonly property bool gameVideoAudioMuted: videoAudioPreferences.muted(gameVideoAudioScope)
+    readonly property string activeVideoAudioScope: root.couchModeActive ? "couch"
+                                                    : mediaFullscreen.opened ? gameVideoAudioScope
+                                                    : root.hoverPreviewTile ? "grid" : "details"
+    readonly property bool videoAudioMuted: videoAudioPreferences.muted(activeVideoAudioScope)
     property string hoverPreviewPlaybackError: ""
     property int hoverPreviewProbeStage: 0
     property int hoverPreviewPlaybackCycles: 0
@@ -1026,14 +1033,14 @@ ApplicationWindow {
     function assistantControlMedia(action) {
         const player = mediaFullscreen.opened || !hoverPreviewTile ? gameVideoPlayer : hoverPreviewPlayer
         if (action === "mute" || action === "unmute") {
-            if (videoAudioPreferences.normalMuted !== (action === "mute")) videoAudioPreferences.toggle(false)
+            videoAudioPreferences.setMuted(root.activeVideoAudioScope, action === "mute")
         } else if (action === "fullscreen" || action === "close_fullscreen") assistantFullscreen(action)
         else {
             if (!player.source.toString()) throw new Error("No preview video is available")
             if (action === "pause") player.pause()
             else player.play()
         }
-        return {status: "updated", muted: videoAudioPreferences.normalMuted,
+        return {status: "updated", muted: root.videoAudioMuted, audio_scope: root.activeVideoAudioScope,
             paused: player.playbackState === MediaPlayer.PausedState, playing: player.playbackState === MediaPlayer.PlayingState}
     }
     function assistantFullscreen(action) {
@@ -1043,6 +1050,7 @@ ApplicationWindow {
                 ? (couchModeView.platformWheelOpen ? couchModeView.systemVideoPreview.source : couchModeView.gameVideoPreview.source)
                 : (hoverPreviewTile ? hoverPreviewPlayer.source : gameVideoPlayer.source)
             if (!source.toString()) throw new Error("No preview video is available")
+            root.fullscreenVideoAudioScope = root.activeVideoAudioScope
             couchFullscreenVideoUrl = source
             mediaFullscreen.open(); gameVideoPlayer.play()
         }
@@ -1886,6 +1894,40 @@ ApplicationWindow {
         hoverPreviewArmProbeTimer.restart()
     }
 
+    function verifyPreviewAudioScopes(tile) {
+        const gridMuted = root.gridVideoAudioMuted
+        const detailsMuted = root.detailsVideoAudioMuted
+        const couchMuted = videoAudioPreferences.couchMuted
+        const gridPosition = hoverPreviewPlayer.position
+        const detailsPosition = gameVideoPlayer.position
+        tile.previewAudioControl.clicked()
+        let valid = root.gridVideoAudioMuted === !gridMuted
+                    && root.detailsVideoAudioMuted === detailsMuted
+        for (const control of [detailVideoMuteButton, fullscreenMuteButton]) {
+            control.clicked()
+            valid = valid && root.detailsVideoAudioMuted === !detailsMuted
+                    && root.gridVideoAudioMuted === !gridMuted
+            control.clicked()
+            valid = valid && root.detailsVideoAudioMuted === detailsMuted
+                    && root.gridVideoAudioMuted === !gridMuted
+        }
+        tile.previewAudioControl.clicked()
+        valid = valid && root.gridVideoAudioMuted === gridMuted
+                && root.detailsVideoAudioMuted === detailsMuted
+                && videoAudioPreferences.couchMuted === couchMuted
+                && hoverPreviewPlayer.position === gridPosition
+                && gameVideoPlayer.position === detailsPosition
+                && hoverPreviewPlayer.playbackState === MediaPlayer.PlayingState
+                && gameVideoPlayer.playbackState === MediaPlayer.PausedState
+        if (!valid) {
+            console.error("LUNCHPAIL_VIDEO_AUDIO_SCOPES_FAILED control isolation or timeline changed")
+            Qt.exit(2)
+            return false
+        }
+        console.warn("LUNCHPAIL_VIDEO_AUDIO_SCOPES_READY grid=independent details=independent couch=unchanged timeline=unchanged")
+        return true
+    }
+
     function openGame(gameId, databaseId, title, platform, local, downloadable) {
         root.disarmGridPreview(null)
         if (root.pendingCardLaunchGameId.length > 0
@@ -2686,7 +2728,7 @@ ApplicationWindow {
         videoSource: gameVideoPlayer.source
         videoPosition: gameVideoPlayer.position
         previewPlaying: gameVideoPlayer.playbackState === MediaPlayer.PlayingState
-        unmuted: !root.videoAudioMuted && !desktopAssistant.audioSuppressedForVoice
+        unmuted: !root.gameVideoAudioMuted && !desktopAssistant.audioSuppressedForVoice
                  && previewPlayback.detailsAllowed
         volume: root.hoverPreviewExclusiveProbe ? 0 : 0.45
         onPlaybackError: function(message) {
@@ -2993,7 +3035,7 @@ ApplicationWindow {
         videoSource: hoverPreviewPlayer.source
         videoPosition: hoverPreviewPlayer.position
         previewPlaying: root.hoverPreviewPlaying
-        unmuted: !root.videoAudioMuted && !desktopAssistant.audioSuppressedForVoice
+        unmuted: !root.gridVideoAudioMuted && !desktopAssistant.audioSuppressedForVoice
                  && previewPlayback.gridAllowed
         onPlaybackError: function(message) {
             console.warn("LUNCHPAIL_HOVER_PREVIEW_AUDIO_FAILED " + message)
@@ -3173,6 +3215,10 @@ ApplicationWindow {
                              + root.hoverPreviewPlaybackCycles + " detailsPausedAt="
                              + gameVideoPlayer.position + " gridPosition="
                              + hoverPreviewPlayer.position)
+                if (root.hoverPreviewPlaybackCycles === 0
+                        && root.argumentValue("--video-audio-check") === "scopes"
+                        && !root.verifyPreviewAudioScopes(tile))
+                    return
             }
             const grid = gameViewLoader.item
             const margin = 8
@@ -9500,6 +9546,7 @@ ApplicationWindow {
                 gameDetails.save_video_progress(gameVideoPlayer.position,
                                                 gameVideoPlayer.duration)
             root.couchFullscreenVideoUrl = ""
+            root.fullscreenVideoAudioScope = "details"
         }
 
         contentItem: Item {
@@ -9564,7 +9611,7 @@ ApplicationWindow {
                 rightPadding: 0
                 topPadding: 0
                 bottomPadding: 0
-                Accessible.name: root.videoAudioMuted ? "Unmute all game videos" : "Mute all game videos"
+                Accessible.name: videoAudioPreferences.toggleLabel(root.gameVideoAudioScope)
                 ToolTip.visible: hovered
                 ToolTip.text: Accessible.name
                 contentItem: Item {
@@ -9574,11 +9621,11 @@ ApplicationWindow {
                         anchors.centerIn: parent
                         width: 20
                         height: 20
-                        name: root.videoAudioMuted ? "mute" : "volume"
+                        name: root.gameVideoAudioMuted ? "mute" : "volume"
                         color: fullscreenMuteButton.enabled ? "#f4f7fb" : root.muted
                     }
                 }
-                onClicked: videoAudioPreferences.toggle(root.couchModeActive)
+                onClicked: videoAudioPreferences.toggle(root.gameVideoAudioScope)
             }
             LbButton {
                 Layout.preferredWidth: root.couchModeActive ? 96 : 72
@@ -10897,6 +10944,7 @@ ApplicationWindow {
                 downloadJobIndex >= 0 && downloadJobState !== "IMPORTED"
                 ? downloadQueue.job_badge_at(downloadJobIndex) : ""
             property var previewVideoOutput: tileVideoOutput
+            readonly property var previewAudioControl: cardPreviewMuteButton
             readonly property var previewCard: card
             readonly property real previewCardExpansion: cardGeometry.expansion
             readonly property bool playBadgeVisible: cardPlayButton.visible
@@ -11408,10 +11456,8 @@ ApplicationWindow {
                         height: 32 * cardChrome.actionScale
                         visible: tile.previewActive
                         flat: true
-                        highlighted: !root.videoAudioMuted
-                        Accessible.name: root.videoAudioMuted
-                                         ? "Unmute all game videos"
-                                         : "Mute all game videos"
+                        highlighted: !root.gridVideoAudioMuted
+                        Accessible.name: videoAudioPreferences.toggleLabel("grid")
                         ToolTip.visible: hovered
                         ToolTip.text: Accessible.name
                         // A pointer click must not turn on GridView's controller
@@ -11424,11 +11470,11 @@ ApplicationWindow {
                                 anchors.centerIn: parent
                                 width: 20 * cardChrome.actionScale
                                 height: 20 * cardChrome.actionScale
-                                name: root.videoAudioMuted ? "mute" : "volume"
+                                name: root.gridVideoAudioMuted ? "mute" : "volume"
                                 color: cardPreviewMuteButton.highlighted ? "#ffcb84" : "#f4f7fb"
                             }
                         }
-                        onClicked: videoAudioPreferences.toggle(root.couchModeActive)
+                        onClicked: videoAudioPreferences.toggle("grid")
                     }
                 }
 
@@ -12049,7 +12095,7 @@ ApplicationWindow {
             root.rememberPlatformSearch(false)
             root.scheduleFilter()
         }
-        onVideoMuteRequested: videoAudioPreferences.toggle(true)
+        onVideoMuteRequested: videoAudioPreferences.toggle("couch")
         onSystemMediaRequested: platform => {
             couchSystemMediaDialog.platform = platform
             couchSystemMediaDialog.open()
@@ -14667,8 +14713,8 @@ ApplicationWindow {
                                         rightPadding: 0
                                         topPadding: 0
                                         bottomPadding: 0
-                                        highlighted: !root.videoAudioMuted
-                                        Accessible.name: root.videoAudioMuted ? "Unmute all game videos" : "Mute all game videos"
+                                        highlighted: !root.detailsVideoAudioMuted
+                                        Accessible.name: videoAudioPreferences.toggleLabel("details")
                                         contentItem: Item {
                                             implicitWidth: 18
                                             implicitHeight: 18
@@ -14676,12 +14722,12 @@ ApplicationWindow {
                                                 anchors.centerIn: parent
                                                 width: 18
                                                 height: 18
-                                                name: root.videoAudioMuted ? "mute" : "volume"
+                                                name: root.detailsVideoAudioMuted ? "mute" : "volume"
                                                 color: !detailVideoMuteButton.enabled ? root.muted
                                                        : detailVideoMuteButton.highlighted ? "#ffcb84" : "#f4f7fb"
                                             }
                                         }
-                                        onClicked: videoAudioPreferences.toggle(root.couchModeActive)
+                                        onClicked: videoAudioPreferences.toggle("details")
                                         ToolTip.visible: hovered
                                         ToolTip.text: Accessible.name
                                     }

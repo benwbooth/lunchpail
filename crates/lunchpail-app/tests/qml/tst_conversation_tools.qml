@@ -11,6 +11,8 @@ TestCase {
         Lunchpail.CouchAssistantController {
             app: QtObject {
                 property bool couchModeActive: true
+                property string desktopMediaScope: "details"
+                readonly property string activeVideoAudioScope: couchModeActive ? "couch" : desktopMediaScope
                 property string selectedGameId: "mario"
                 property bool confirmation: false
                 property bool filterPending: false
@@ -125,8 +127,10 @@ TestCase {
             }
             videoPreferences: QtObject {
                 property bool couchMuted: false
-                property bool normalMuted: true
-                function toggle(couch) { if (couch) couchMuted = !couchMuted; else normalMuted = !normalMuted }
+                property bool gridMuted: true
+                property bool detailsMuted: true
+                function muted(scope) { return this[scope + "Muted"] }
+                function setMuted(scope, value) { this[scope + "Muted"] = value }
             }
         }
     }
@@ -217,9 +221,9 @@ TestCase {
     }
     function test_separate_video_modes_are_preserved() {
         const c = controller(); call(c, "control_media", {name:"mute"})
-        compare(c.videoPreferences.couchMuted, true); compare(c.videoPreferences.normalMuted, true)
+        compare(c.videoPreferences.couchMuted, true); compare(c.videoPreferences.gridMuted, true); compare(c.videoPreferences.detailsMuted, true)
         call(c, "control_media", {name:"unmute"})
-        compare(c.videoPreferences.couchMuted, false); compare(c.videoPreferences.normalMuted, true)
+        compare(c.videoPreferences.couchMuted, false); compare(c.videoPreferences.gridMuted, true); compare(c.videoPreferences.detailsMuted, true)
     }
     function test_microphone_enable_requires_later_confirmation() {
         const c = controller(); call(c, "set_preference", {name:"hands_free",value:true})
@@ -281,7 +285,14 @@ TestCase {
         c.videoPreferences.couchMuted = true
         call(c, "control_media", {name:"pause"}); compare(c.app.opened, "media:pause")
         call(c, "set_preference", {name:"video_muted",value:false})
-        compare(c.videoPreferences.normalMuted, false); compare(c.videoPreferences.couchMuted, true)
+        compare(c.videoPreferences.detailsMuted, false); compare(c.videoPreferences.gridMuted, true); compare(c.videoPreferences.couchMuted, true)
+        c.app.desktopMediaScope = "grid"
+        call(c, "set_preference", {name:"video_muted",value:false})
+        compare(c.videoPreferences.gridMuted, false); compare(c.videoPreferences.detailsMuted, false)
+        call(c, "set_preference", {name:"video_muted",value:true})
+        compare(c.videoPreferences.gridMuted, true); compare(c.videoPreferences.detailsMuted, false)
+        call(c, "get_preferences")
+        compare(result(c).video_audio_scope, "grid"); compare(result(c).video_muted, true)
         call(c, "set_preference", {name:"view_style",value:"list"})
         compare(c.library.view_mode, "list"); compare(c.library.couch_view_style, "wheel")
         call(c, "get_preferences"); compare(result(c).mode, "normal"); compare(result(c).view_style, "list")

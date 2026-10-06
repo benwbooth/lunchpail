@@ -13,66 +13,93 @@ TestCase {
     function freshLocation() { return locationPrefix + "-" + (++nextLocation) + ".ini" }
     Component { id: preferencesComponent; Lunchpail.VideoAudioPreferences {} }
     Component { id: settingsComponent; Settings { category: "VideoAudio" } }
-    Component {
-        id: modeComponent
-        QtObject {
-            required property var preferences
-            property bool couchMode: false
-            readonly property bool muted: couchMode ? preferences.couchMuted : preferences.normalMuted
-        }
-    }
 
     function test_defaults_are_separate() {
-        const preferences = createTemporaryObject(preferencesComponent, this, { location: freshLocation() })
-        compare(preferences.normalMuted, true)
-        compare(preferences.couchMuted, false)
+        const prefs = createTemporaryObject(preferencesComponent, this, { location: freshLocation() })
+        compare(prefs.gridMuted, true)
+        compare(prefs.detailsMuted, true)
+        compare(prefs.couchMuted, false)
     }
 
-    function test_toggles_and_mode_switches_do_not_change_other_mode() {
-        const preferences = createTemporaryObject(preferencesComponent, this, { location: freshLocation() })
-        const mode = createTemporaryObject(modeComponent, this, { preferences: preferences })
-        compare(mode.muted, true)
-        preferences.toggle(false)
-        compare(mode.muted, false)
-        compare(preferences.couchMuted, false)
-        mode.couchMode = true
-        compare(mode.muted, false)
-        preferences.toggle(true)
-        compare(mode.muted, true)
-        compare(preferences.normalMuted, false)
-        mode.couchMode = false
-        compare(mode.muted, false)
-        mode.couchMode = true
-        compare(mode.muted, true)
+    function test_each_toggle_changes_only_its_global_scope_data() {
+        return [{ tag: "grid", scope: "grid" }, { tag: "details", scope: "details" },
+                { tag: "couch", scope: "couch" }]
+    }
+
+    function test_each_toggle_changes_only_its_global_scope(data) {
+        const prefs = createTemporaryObject(preferencesComponent, this, { location: freshLocation() })
+        const before = {grid: prefs.gridMuted, details: prefs.detailsMuted, couch: prefs.couchMuted}
+        prefs.toggle(data.scope)
+        for (const scope of ["grid", "details", "couch"])
+            compare(prefs.muted(scope), scope === data.scope ? !before[scope] : before[scope])
+        prefs.toggle(data.scope)
+        for (const scope of ["grid", "details", "couch"])
+            compare(prefs.muted(scope), before[scope])
     }
 
     function test_choices_are_saved_immediately_and_reloaded() {
         const location = freshLocation()
-        const preferences = preferencesComponent.createObject(this, { location: location })
-        preferences.toggle(false)
-        preferences.toggle(true)
+        const prefs = preferencesComponent.createObject(this, { location: location })
+        prefs.setMuted("grid", false)
+        prefs.setMuted("details", true)
+        prefs.setMuted("couch", true)
         const reader = createTemporaryObject(settingsComponent, this, { location: location })
-        compare(reader.value("normalMuted"), false)
+        compare(reader.value("gridMuted"), false)
+        compare(reader.value("detailsMuted"), true)
         compare(reader.value("couchMuted"), true)
-        preferences.destroy()
+        prefs.destroy()
         wait(1)
         const restored = createTemporaryObject(preferencesComponent, this, { location: location })
-        compare(restored.normalMuted, false)
+        compare(restored.gridMuted, false)
+        compare(restored.detailsMuted, true)
         compare(restored.couchMuted, true)
-        restored.toggle(false)
-        restored.toggle(true)
-        compare(reader.value("normalMuted"), true)
-        compare(reader.value("couchMuted"), false)
+        restored.toggle("details")
+        compare(reader.value("gridMuted"), false)
+        compare(reader.value("detailsMuted"), false)
+        compare(reader.value("couchMuted"), true)
     }
 
-    function test_false_from_a_previous_process_is_not_truthy() {
+    function test_legacy_choice_seeds_both_scopes_once_data() {
+        return [{tag: "muted", value: true, expected: true},
+                {tag: "unmuted", value: false, expected: false},
+                {tag: "serialized-false", value: "false", expected: false}]
+    }
+
+    function test_legacy_choice_seeds_both_scopes_once(data) {
         const location = freshLocation()
         const seed = createTemporaryObject(settingsComponent, this, { location: location })
-        seed.setValue("normalMuted", "false")
+        seed.setValue("normalMuted", data.value)
+        seed.sync()
+        const prefs = preferencesComponent.createObject(this, { location: location })
+        compare(prefs.gridMuted, data.expected)
+        compare(prefs.detailsMuted, data.expected)
+        prefs.toggle("grid")
+        prefs.destroy()
+        wait(1)
+        const restored = createTemporaryObject(preferencesComponent, this, { location: location })
+        compare(restored.gridMuted, !data.expected)
+        compare(restored.detailsMuted, data.expected)
+    }
+
+    function test_migration_does_not_overwrite_existing_scopes() {
+        const location = freshLocation()
+        const seed = createTemporaryObject(settingsComponent, this, { location: location })
+        seed.setValue("normalMuted", true)
+        seed.setValue("gridMuted", "false")
         seed.setValue("couchMuted", "false")
         seed.sync()
-        const restored = createTemporaryObject(preferencesComponent, this, { location: location })
-        compare(restored.normalMuted, false)
-        compare(restored.couchMuted, false)
+        const prefs = createTemporaryObject(preferencesComponent, this, { location: location })
+        compare(prefs.gridMuted, false)
+        compare(prefs.detailsMuted, true)
+        compare(prefs.couchMuted, false)
+    }
+
+    function test_labels_describe_the_scope() {
+        const prefs = createTemporaryObject(preferencesComponent, this, { location: freshLocation() })
+        compare(prefs.toggleLabel("grid"), "Unmute all grid previews")
+        compare(prefs.toggleLabel("details"), "Unmute all Game Media videos")
+        prefs.toggle("grid")
+        compare(prefs.toggleLabel("grid"), "Mute all grid previews")
+        compare(prefs.toggleLabel("details"), "Unmute all Game Media videos")
     }
 }

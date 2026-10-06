@@ -1,4 +1,4 @@
-"""Guard the shared preference wiring in the full application QML."""
+"""Guard independent global audio scopes in the full application QML."""
 from pathlib import Path
 import unittest
 
@@ -8,20 +8,27 @@ class VideoAudioWiring(unittest.TestCase):
     def setUpClass(cls):
         cls.qml = (Path(__file__).resolve().parents[1] / "qml" / "Main.qml").read_text()
 
-    def test_every_speaker_control_changes_the_active_modes_saved_preference(self):
+    def test_every_speaker_control_changes_only_its_saved_scope(self):
         self.assertNotIn("hoverPreviewAudioMuted", self.qml)
-        self.assertIn("unmuted: !root.videoAudioMuted", self.qml)
         self.assertNotRegex(self.qml, r"root\.videoAudioMuted\s*=")
-        self.assertEqual(self.qml.count("videoAudioPreferences.toggle(root.couchModeActive)"), 3)
-        self.assertEqual(self.qml.count("onVideoMuteRequested: videoAudioPreferences.toggle(true)"), 1)
-        self.assertNotIn("gameVideoAudio", self.qml)
+        for scope in ("grid", "details", "couch"):
+            self.assertEqual(self.qml.count(f'videoAudioPreferences.toggle("{scope}")'), 1)
+        self.assertIn("onClicked: videoAudioPreferences.toggle(root.gameVideoAudioScope)", self.qml)
+        self.assertNotIn("id: gameVideoAudio", self.qml)
 
-    def test_modes_read_their_separate_preferences(self):
-        self.assertRegex(self.qml, r"readonly property bool videoAudioMuted: root\.couchModeActive\s*"
-                                  r"\? videoAudioPreferences\.couchMuted\s*"
-                                  r": videoAudioPreferences\.normalMuted")
+    def test_surfaces_read_their_separate_preferences(self):
+        self.assertIn("readonly property bool gridVideoAudioMuted: videoAudioPreferences.gridMuted", self.qml)
+        self.assertIn("readonly property bool detailsVideoAudioMuted: videoAudioPreferences.detailsMuted", self.qml)
+        self.assertIn("unmuted: !root.gridVideoAudioMuted", self.qml)
+        self.assertIn("unmuted: !root.gameVideoAudioMuted", self.qml)
+        self.assertNotIn("videoAudioPreferences.normalMuted", self.qml)
         self.assertIn("videoMuted: videoAudioPreferences.couchMuted", self.qml)
         self.assertIn("VideoAudioPreferences { id: videoAudioPreferences }", self.qml)
+
+    def test_fullscreen_and_assistant_preserve_the_originating_scope(self):
+        self.assertIn("root.fullscreenVideoAudioScope = root.activeVideoAudioScope", self.qml)
+        self.assertIn('root.fullscreenVideoAudioScope = "details"', self.qml)
+        self.assertIn("videoAudioPreferences.setMuted(root.activeVideoAudioScope, action === \"mute\")", self.qml)
 
     def test_unmute_cannot_reload_or_reconfigure_the_details_video(self):
         self.assertNotIn("enableAudio", self.qml)
@@ -37,7 +44,7 @@ class VideoAudioWiring(unittest.TestCase):
         self.assertIn("videoSource: gameVideoPlayer.source", sound)
         self.assertIn("videoPosition: gameVideoPlayer.position", sound)
         self.assertIn("previewPlaying: gameVideoPlayer.playbackState === MediaPlayer.PlayingState", sound)
-        self.assertIn("unmuted: !root.videoAudioMuted", sound)
+        self.assertIn("unmuted: !root.gameVideoAudioMuted", sound)
         self.assertIn("volume: root.hoverPreviewExclusiveProbe ? 0 : 0.45", sound)
 
     def test_video_decoders_and_sound_share_exclusive_playback_ownership(self):

@@ -41,7 +41,8 @@ Item {
     function preferences() {
         return {mode: app.couchModeActive ? "couch" : "normal",
             view_style: app.couchModeActive ? library.couch_view_style : library.view_mode,
-            video_muted: app.couchModeActive ? videoPreferences.couchMuted : videoPreferences.normalMuted,
+            video_muted: videoPreferences.muted(app.activeVideoAudioScope),
+            video_audio_scope: app.activeVideoAudioScope,
             navigation_sounds: feedbackSettings.soundsEnabled, navigation_volume: feedbackSettings.soundVolume,
             music_enabled: library.couch_music_enabled, music_volume: library.couch_music_volume,
             spoken_replies: config.spoken_replies, captions: config.captions, wake_word: config.wake_word,
@@ -144,7 +145,7 @@ Item {
             const player = view.platformWheelOpen ? view.systemVideoPreview : view.gameVideoPreview
             if (args.name === "mute" || args.name === "unmute") {
                 const muted = args.name === "mute"
-                if (videoPreferences.couchMuted !== muted) videoPreferences.toggle(true)
+                videoPreferences.setMuted("couch", muted)
             } else if (args.name === "play" || args.name === "pause") player.paused = args.name === "pause"
             else app.assistantFullscreen(args.name)
             complete(id, {status: "updated", muted: videoPreferences.couchMuted, paused: player.paused, playing: player.playing}); break
@@ -169,8 +170,7 @@ Item {
                     library.choose_view_mode(args.value)
                 }
             } else if (args.name === "video_muted") {
-                const muted = app.couchModeActive ? videoPreferences.couchMuted : videoPreferences.normalMuted
-                if (muted !== args.value) videoPreferences.toggle(app.couchModeActive)
+                videoPreferences.setMuted(app.activeVideoAudioScope, args.value)
             } else if (args.name === "navigation_sounds") { feedbackSettings.soundsEnabled = args.value; feedbackSettings.sync() }
             else if (args.name === "navigation_volume") { feedbackSettings.soundVolume = args.value; feedbackSettings.sync() }
             else if (args.name === "music_enabled" || args.name === "music_volume") {

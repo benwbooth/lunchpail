@@ -24,18 +24,20 @@ Item {
         if (!phase) return true
         if (phase !== "write" && phase !== "read") { fail("unknown audio phase"); return false }
         const couchMuted = phase === "read"
-        const normalMuted = !couchMuted
+        const detailsMuted = !couchMuted
+        const gridMuted = app.gridVideoAudioMuted
         if (!app.couchModeActive || app.videoAudioMuted !== couchMuted
                 || view.videoMuted !== couchMuted || view.gameVideoPreview.muted !== couchMuted) {
             fail("Couch audio restore/default " + phase); return false
         }
         app.exitCouchMode()
-        if (app.videoAudioMuted !== normalMuted || audioControls.length !== 2) {
+        if (app.detailsVideoAudioMuted !== detailsMuted || audioControls.length !== 2) {
             fail("normal audio restore/default " + phase); return false
         }
         for (const control of audioControls) {
             control.clicked()
-            if (app.videoAudioMuted !== !normalMuted || view.videoMuted !== couchMuted) {
+            if (app.detailsVideoAudioMuted !== !detailsMuted || view.videoMuted !== couchMuted
+                    || app.gridVideoAudioMuted !== gridMuted) {
                 fail("normal speaker control or mode isolation"); return false
             }
             control.clicked()
@@ -47,7 +49,9 @@ Item {
             fail("Couch speaker control"); return false
         }
         app.exitCouchMode()
-        if (app.videoAudioMuted !== normalMuted) { fail("Couch changed normal preference"); return false }
+        if (app.detailsVideoAudioMuted !== detailsMuted || app.gridVideoAudioMuted !== gridMuted) {
+            fail("Couch changed desktop preferences"); return false
+        }
         app.enterCouchMode()
         // Write leaves both choices opposite their defaults; read restores
         // its original choices so it can be repeated without reseeding.
