@@ -1915,7 +1915,7 @@ ApplicationWindow {
         valid = valid && root.gridVideoAudioMuted === gridMuted
                 && root.detailsVideoAudioMuted === detailsMuted
                 && videoAudioPreferences.couchMuted === couchMuted
-                && hoverPreviewPlayer.position === gridPosition
+                && hoverPreviewPlayer.position >= gridPosition
                 && gameVideoPlayer.position === detailsPosition
                 && hoverPreviewPlayer.playbackState === MediaPlayer.PlayingState
                 && gameVideoPlayer.playbackState === MediaPlayer.PausedState
