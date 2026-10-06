@@ -279,6 +279,24 @@ pub(crate) fn list_saved_library_path(path: &str) -> Result<Vec<String>> {
     client(username, password).list_files(path)
 }
 
+pub(crate) fn platform_logo_saved_probe(platform: &str) -> Result<String> {
+    crate::catalog::requested_path("--media-directory", "LUNCHPAIL_MEDIA_DIRECTORY")
+        .context("the platform logo probe requires an explicit --media-directory")?;
+    prepare_saved_platform_logos()?;
+    let path = crate::emumovies::cached_platform_wheel(
+        &crate::media::requested_media_directory(),
+        platform,
+    )
+    .with_context(|| format!("No HyperSpin Main Menu wheel for {platform}"))?;
+    let dimensions = image::image_dimensions(&path)?;
+    Ok(format!(
+        "platform={platform:?} logo={} width={} height={}",
+        path.display(),
+        dimensions.0,
+        dimensions.1
+    ))
+}
+
 pub(crate) fn couch_media_saved_probe() -> Result<String> {
     const GAME_UID: &str = "9697a5eb-e0b4-4f24-8d43-672701414ee7";
     const PLATFORM: &str = "Nintendo Entertainment System";
@@ -506,6 +524,20 @@ pub(crate) fn download_saved_platform_video(
     }
     let (username, password) = effective_credentials(String::new(), String::new())?;
     client(username, password).get_platform_video(platform, &directory, progress.as_ref())
+}
+
+pub(crate) fn prepare_saved_platform_logos() -> Result<()> {
+    let media = crate::media::requested_media_directory();
+    if crate::platform_wheels::ready(&media) {
+        return Ok(());
+    }
+    // Cached archives can be decoded without an account or a network request.
+    let (username, password) = if crate::platform_wheels::archive_path(&media).is_file() {
+        (String::new(), String::new())
+    } else {
+        effective_credentials(String::new(), String::new())?
+    };
+    client(username, password).prepare_platform_logos(None)
 }
 
 impl qobject::EmuMoviesModel {

@@ -280,6 +280,7 @@ mod patch_catalog;
 pub mod patch_catalog_model;
 pub mod platform_locations;
 mod platform_process;
+mod platform_wheels;
 mod profile_backup;
 mod provider_image;
 mod qbittorrent;
@@ -544,6 +545,21 @@ pub fn run() -> i32 {
         };
     }
 
+    if let Some(platform) = std::env::args()
+        .skip_while(|argument| argument != "--emumovies-platform-logo-probe")
+        .nth(1)
+    {
+        return match emumovies_model::platform_logo_saved_probe(&platform) {
+            Ok(evidence) => {
+                println!("LUNCHPAIL_PLATFORM_LOGO_READY {evidence}");
+                0
+            }
+            Err(error) => {
+                eprintln!("LUNCHPAIL_PLATFORM_LOGO_FAILED error={error:#}");
+                1
+            }
+        };
+    }
     if let Some(path) = std::env::args()
         .skip_while(|argument| argument != "--emumovies-list-library-path")
         .nth(1)

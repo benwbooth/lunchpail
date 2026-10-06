@@ -17,6 +17,8 @@ Item {
     property int toolIndex: 0
     readonly property bool wheelCheck: app.argumentValue("--hyperspin-wheel-check") === "true"
     readonly property bool hoverCheck: app.argumentValue("--couch-hover-check") === "true"
+    readonly property bool platformLogoCheck: app.argumentValue("--platform-logo-check") === "true"
+    readonly property var logoPlatforms: ["Atari 800", "Nintendo Entertainment System", "Nintendo 64", "Sony Playstation"]
     Loader {
         active: probe.hoverCheck
         sourceComponent: CouchHoverProbe { app: probe.app; view: probe.view; library: probe.library }
@@ -113,10 +115,38 @@ Item {
             Qt.quit()
         }
     }
+    function platformLogoTick() {
+        if (capturing) return
+        if (stage === 0) {
+            view.sfxEnabled = false
+            library.save_couch_view_style("wheel")
+            view.openPlatformWheel()
+            stage = 300; tick = 0
+        }
+        if (stage !== 300) return
+        if (tick >= logoPlatforms.length * 2) {
+            console.log("LUNCHPAIL_PLATFORM_WHEELS_READY logos=" + tick + " sizes=1080p,720p source=hyperspin-main-menu")
+            Qt.quit(); return
+        }
+        const platform = logoPlatforms[tick % logoPlatforms.length]
+        const small = tick >= logoPlatforms.length
+        app.width = small ? 1280 : 1920; app.height = small ? 720 : 1080
+        view.focusPlatform(platform)
+        const item = view.platformBrowser.currentItem
+        if (!item || item.platformName !== platform || !item.artworkReady) return
+        const expected = library.platform_media_url(platform, "wheel-logo").toString()
+        if (expected.indexOf("/emumovies-system-wheels/") < 0 || item.source.toString() !== expected)
+            return fail("Platform does not use dedicated HyperSpin artwork: " + platform)
+        if (++style < 5) return // Let the selection animation and resized view settle.
+        style = 0
+        console.log("LUNCHPAIL_PLATFORM_WHEEL_RENDERED platform=" + platform + " source=" + expected)
+        capture("system-wheel-" + tick + (small ? "-720p" : "-1080p")); tick++
+    }
     Timer {
         interval: probe.wheelCheck ? 100 : 200; repeat: true; running: !probe.hoverCheck
         onTriggered: {
             if (!probe.library.ready || probe.library.loading || probe.library.filtering || !probe.view.active) return
+            if (probe.platformLogoCheck) { probe.platformLogoTick(); return }
             if (probe.wheelCheck) { probe.wheelTick(); return }
             if (probe.stage === 0) {
                 if (!probe.view.selectedGameId || !probe.view.browsing.description) return

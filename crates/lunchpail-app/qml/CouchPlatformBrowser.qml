@@ -16,6 +16,12 @@ Item {
     readonly property int columns: viewStyle === "wall" && presentation.item ? presentation.item.columnCount : 1
     readonly property var currentItem: !selectionPending && presentation.item ? presentation.item.currentItem : null
     property bool hoverSelectionEnabled: true
+    function requestLogos() {
+        if (visible && count > 0 && typeof library.request_platform_logos === "function")
+            library.request_platform_logos()
+    }
+    Component.onCompleted: Qt.callLater(requestLogos)
+    onVisibleChanged: if (visible) Qt.callLater(requestLogos)
     signal activated(int index)
     function applySelection() {
         const item = presentation.item
@@ -48,7 +54,7 @@ Item {
     onViewStyleChanged: pointerSelection.cancel()
     onWidthChanged: { pointerSelection.cancel(); Qt.callLater(settleSelection) }
     onHeightChanged: { pointerSelection.cancel(); Qt.callLater(settleSelection) }
-    onCountChanged: { selectionPending = true; Qt.callLater(applySelection) }
+    onCountChanged: { selectionPending = true; Qt.callLater(applySelection); Qt.callLater(requestLogos) }
     CouchPointerSelection {
         id: pointerSelection
         enabled: browser.visible && browser.hoverSelectionEnabled
@@ -169,7 +175,7 @@ Item {
                     title: platformName
                     source: {
                         browser.library.media_revision
-                        return browser.library.platform_media_url(platformName, "clear-logo")
+                        return browser.library.platform_media_url(platformName, "wheel-logo")
                     }
                     selected: PathView.isCurrentItem
                     ink: browser.ink

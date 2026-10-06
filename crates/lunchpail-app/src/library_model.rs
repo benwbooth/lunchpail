@@ -345,6 +345,9 @@ pub mod qobject {
         fn platform_media_url(self: &LibraryModel, platform: QString, kind: QString) -> QUrl;
 
         #[qinvokable]
+        fn request_platform_logos(self: Pin<&mut LibraryModel>);
+
+        #[qinvokable]
         fn exact_artwork_candidates_json(
             self: &LibraryModel,
             media_id: i64,
@@ -1251,6 +1254,9 @@ pub struct LibraryModelRust {
     couch_theme_selected: Option<String>,
     couch_theme_cancel: Option<Arc<AtomicBool>>,
     couch_theme_results: HashMap<String, CouchThemeStatus>,
+    platform_logos_busy: bool,
+    platform_logos_ready: bool,
+    platform_logos_retry_after: Option<std::time::Instant>,
     media_started: Option<std::time::Instant>,
     media_fetch_started: Option<std::time::Instant>,
     media_fetch_queue: Option<MediaFetchQueue>,
@@ -1420,6 +1426,9 @@ impl Default for LibraryModelRust {
             couch_theme_selected: None,
             couch_theme_cancel: None,
             couch_theme_results: HashMap::new(),
+            platform_logos_busy: false,
+            platform_logos_ready: false,
+            platform_logos_retry_after: None,
             couch_theme_id: qstring(&couch_theme.id),
             couch_theme_name: qstring(&couch_theme.name),
             couch_theme_author: qstring(&couch_theme.author),
@@ -4266,14 +4275,75 @@ impl qobject::LibraryModel {
             .unwrap_or_default()
     }
 
+    pub fn request_platform_logos(mut self: Pin<&mut Self>) {
+        if self.rust().platform_logos_busy
+            || self.rust().platform_logos_ready
+            || !*self.media_retrieval_enabled()
+            || self.rust().catalog.platforms.is_empty()
+            || self
+                .rust()
+                .platform_logos_retry_after
+                .is_some_and(|when| when > std::time::Instant::now())
+        {
+            return;
+        }
+        self.as_mut().rust_mut().platform_logos_busy = true;
+        let qt_thread = self.as_ref().qt_thread();
+        let spawn = std::thread::Builder::new()
+            .name("lunchpail-system-wheels".into())
+            .spawn(move || {
+                let result = crate::emumovies_model::prepare_saved_platform_logos();
+                let _ = qt_thread.queue(move |mut model| {
+                    model.as_mut().rust_mut().platform_logos_busy = false;
+                    match result {
+                        Ok(()) => {
+                            model.as_mut().rust_mut().platform_logos_ready = true;
+                            let revision = model.media_revision().wrapping_add(1);
+                            model.as_mut().set_media_revision(revision);
+                        }
+                        Err(error) => {
+                            tracing::warn!("HyperSpin system wheels unavailable: {error:#}");
+                            model.as_mut().rust_mut().platform_logos_retry_after = Some(
+                                std::time::Instant::now() + std::time::Duration::from_secs(60),
+                            );
+                        }
+                    }
+                });
+            });
+        if let Err(error) = spawn {
+            self.as_mut().rust_mut().platform_logos_busy = false;
+            tracing::warn!("Could not start system-wheel worker: {error}");
+        }
+    }
+
     pub fn platform_media_url(&self, platform: QString, kind: QString) -> QUrl {
         let directory = crate::media::platform_media_directory(&platform.to_string());
-        let names: &[&str] = match kind.to_string().as_str() {
+        let kind = kind.to_string();
+        let names: &[&str] = match kind.as_str() {
             "video" => &["theme-video.mp4"],
             "clear-logo" => &["clear-logo.png", "clear-logo.webp", "clear-logo.jpg"],
+            "wheel-logo" => &[
+                "wheel-logo.png",
+                "wheel-logo.webp",
+                "wheel-logo.jpg",
+                "clear-logo.png",
+                "clear-logo.webp",
+                "clear-logo.jpg",
+            ],
             _ => return QUrl::default(),
         };
         for provider in ["local", "emumovies"] {
+            if provider == "emumovies" && matches!(kind.as_str(), "wheel-logo" | "clear-logo") {
+                if let Some(path) = crate::emumovies::cached_platform_wheel(
+                    &crate::media::requested_media_directory(),
+                    &platform.to_string(),
+                ) {
+                    return QUrl::from_local_file(&qstring(path.to_string_lossy()));
+                }
+                if kind == "wheel-logo" {
+                    break;
+                }
+            }
             for name in names {
                 let path = directory.join(provider).join(name);
                 if path

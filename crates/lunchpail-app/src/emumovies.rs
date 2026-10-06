@@ -147,6 +147,29 @@ fn normalize_emumovies_platform_key(name: &str) -> String {
         .collect()
 }
 
+pub(crate) fn cached_platform_wheel(media: &Path, platform: &str) -> Option<PathBuf> {
+    let mut candidates = emumovies_platform_search_candidates(platform);
+    // System-wheel naming differs from EmuMovies game-archive naming.
+    let alias = match normalize_emumovies_platform_key(platform).as_str() {
+        "atari800" | "atari8bit" | "atari8bitfamily" => Some("Atari 8-Bit"),
+        "wonderswan" => Some("Bandai WonderSwan"),
+        "wonderswancolor" => Some("Bandai WonderSwan Color"),
+        "megaduck" => Some("Creatronic Mega Duck"),
+        "gameparkgp32" => Some("GamePark 32"),
+        "commodorecd32" => Some("Commodore Amiga CD32"),
+        "philipsvg5000" => Some("Phillips VG 5000"),
+        "dos" | "msdos" | "microsoftdos" => Some("Microsoft MS-DOS"),
+        "windows" | "microsoftwindows" => Some("PC Games"),
+        "megadrive" | "segamegadrive" => Some("Sega Genesis"),
+        "necpcenginesupergrafx" | "pcenginesupergrafx" => Some("NEC SuperGrafx"),
+        _ => None,
+    };
+    if let Some(alias) = alias {
+        candidates.push(alias.to_owned());
+    }
+    crate::platform_wheels::find(media, &candidates)
+}
+
 fn tokenize_emumovies_platform_name(name: &str) -> Vec<String> {
     name.split(|c: char| !c.is_ascii_alphanumeric())
         .filter(|token| !token.is_empty())
@@ -2570,21 +2593,27 @@ impl EmuMoviesClient {
     pub fn get_platform_logo(
         &self,
         platform: &str,
-        directory: &Path,
+        _directory: &Path,
         progress: Option<&ProgressCallback>,
     ) -> Result<PathBuf> {
-        for candidate in emumovies_platform_search_candidates(platform) {
-            if let Some(path) = self.try_get_media_from_archive(
-                platform,
-                EmuMoviesMediaType::ClearLogo,
-                &candidate,
-                directory,
-                progress,
-            )? {
-                return Ok(path);
-            }
+        self.prepare_platform_logos(progress)?;
+        cached_platform_wheel(&self.cache_dir, platform)
+            .with_context(|| format!("No HyperSpin Main Menu wheel found for {platform}"))
+    }
+
+    pub(crate) fn prepare_platform_logos(&self, progress: Option<&ProgressCallback>) -> Result<()> {
+        let archive = crate::platform_wheels::archive_path(&self.cache_dir);
+        let lock = get_archive_lock(&archive);
+        let _guard = lock
+            .lock()
+            .map_err(|_| anyhow::anyhow!("System wheel cache lock unavailable"))?;
+        if crate::platform_wheels::ready(&self.cache_dir) {
+            return Ok(());
         }
-        anyhow::bail!("No system logo found in the EmuMovies logo pack for {platform}")
+        self.download_archive(crate::platform_wheels::REMOTE, &archive, progress)?;
+        let count = crate::platform_wheels::extract(&self.cache_dir)?;
+        tracing::info!("Cached {count} HyperSpin Main Menu system wheels");
+        Ok(())
     }
 
     pub fn get_platform_video(
@@ -3099,6 +3128,50 @@ fn move_article_to_end(name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn platform_wheels_use_exact_system_aliases_and_work_without_ftp() {
+        let media = tempfile::tempdir().unwrap();
+        let directory = media.path().join("emumovies-system-wheels/v1");
+        std::fs::create_dir_all(&directory).unwrap();
+        for name in [
+            "atari8bit.png",
+            "nintendods.png",
+            "sonypsp.png",
+            "panasonic3do.png",
+            "segagenesis.png",
+        ] {
+            std::fs::write(directory.join(name), b"logo").unwrap();
+        }
+        std::fs::write(directory.join("complete"), b"5").unwrap();
+        for (platform, expected) in [
+            ("Atari 800", "atari8bit.png"),
+            ("Nintendo DS", "nintendods.png"),
+            ("Sony Playstation Portable", "sonypsp.png"),
+            ("3DO Interactive Multiplayer", "panasonic3do.png"),
+            ("Sega Mega Drive", "segagenesis.png"),
+        ] {
+            assert_eq!(
+                cached_platform_wheel(media.path(), platform),
+                Some(directory.join(expected))
+            );
+        }
+        assert!(cached_platform_wheel(media.path(), "Nintendo 3DS").is_none());
+        let client = EmuMoviesClient::new(EmuMoviesConfig::default(), media.path().to_owned());
+        assert_eq!(
+            client
+                .get_platform_logo("Atari 800", media.path(), None)
+                .unwrap(),
+            directory.join("atari8bit.png")
+        );
+        assert!(
+            client
+                .get_platform_logo("Unknown", media.path(), None)
+                .unwrap_err()
+                .to_string()
+                .contains("No HyperSpin Main Menu wheel")
+        );
+    }
 
     #[test]
     fn platform_video_selection_prefers_unified_widescreen_without_crossing_systems() {

@@ -48,6 +48,12 @@ moving the mouse away from the top never hides them. Press Left to focus actions
 and navigate up to categories.
 Ctrl+V, F3, and the existing controller shortcuts remain available.
 
+Platform wheels automatically fetch the dedicated HyperSpin **Main Menu / Images /
+Wheel** artwork from EmuMovies (Ninja2bseen's Dojo), using the saved account.
+The shared system-image pack is downloaded and decoded once, then reused offline;
+game-logo packs are not searched for platform names. Custom local platform logos
+take precedence. Systems not covered by the pack retain readable title fallbacks.
+
 The classic arc and size relationship are based on the
 [HyperSpin Classic wheel reference](https://hyperspin-fe.com/forums/topic/11431-change-game-info-font/)
 and [normal-wheel settings](https://hyperspin-fe.com/forums/topic/14838-how-to-change-the-wheel-setting-from-vertical-to-circle/).
@@ -336,11 +342,11 @@ when you reselect the game. Backgrounds preserve aspect ratio, can be paused or
 opened full-screen, and share the Couch video mute preference. Background music
 stops while an audible preview is playing. Opening another page suspends previews.
 
-The platform picker displays cached system logos and automatically finds a missing
+The platform picker automatically caches the HyperSpin system-wheel artwork and finds a missing
 individual system video after selection settles. All four platform views use the
 video as a full-window background and show lookup/availability status and download
 progress. System videos are only used in the platform browser. Game and
-system lookups share one transfer queue; rapid scrolling cancels the old selection
+system video lookups share one transfer queue; rapid scrolling cancels the old selection
 and keeps only the latest request. Local custom videos take priority and do not
 require an account. These use a separate system-media cache, never a game's box
 art or logo slot. Missing system videos leave the normal artwork background intact.

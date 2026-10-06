@@ -13,11 +13,30 @@ TestCase {
             library: QtObject {
                 property int platform_count: 36
                 property int media_revision: 0
+                property int logoRequests: 0
+                property string lastMediaKind: ""
+                function request_platform_logos() { logoRequests++ }
                 function platform_name_at(index) { return "Platform " + index }
                 function platform_game_count_at(index) { return index * 100 + 1 }
-                function platform_media_url(platform, type) { return "" }
+                function platform_media_url(platform, type) { lastMediaKind = type; return "" }
             }
         }
+    }
+    function test_wheel_requests_real_system_wheels_and_refreshes_after_download() {
+        const browser = createTemporaryObject(browserComponent, this)
+        tryVerify(() => browser.library.logoRequests > 0)
+        tryVerify(() => browser.currentItem !== null)
+        compare(browser.library.lastMediaKind, "wheel-logo")
+        browser.library.lastMediaKind = ""
+        browser.library.media_revision++
+        tryCompare(browser.library, "lastMediaKind", "wheel-logo")
+        browser.visible = false
+        const requests = browser.library.logoRequests
+        browser.library.platform_count = 20
+        wait(50)
+        compare(browser.library.logoRequests, requests)
+        browser.visible = true
+        tryVerify(() => browser.library.logoRequests > requests)
     }
     function test_all_views_preserve_platform_identity() {
         const browser = createTemporaryObject(browserComponent, this)
