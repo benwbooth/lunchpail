@@ -12971,11 +12971,10 @@ ApplicationWindow {
                 anchors.rightMargin: 1
                 anchors.verticalCenter: parent.verticalCenter
                 width: sidebarResizeMouse.pressed || sidebarResizeHover.hovered ? 3 : 1
-                height: sidebarResizeMouse.pressed || sidebarResizeHover.hovered ? 56 : parent.height
+                height: parent.height
                 radius: 2
                 color: sidebarResizeMouse.pressed ? root.accent
                        : sidebarResizeHover.hovered ? root.accentCool : root.line
-                Behavior on height { NumberAnimation { duration: 120 } }
             }
             HoverHandler { id: sidebarResizeHover }
             MouseArea {
@@ -13404,12 +13403,10 @@ ApplicationWindow {
             anchors.rightMargin: 1
             anchors.verticalCenter: parent.verticalCenter
             width: detailsResizeMouse.pressed || detailsResizeHover.hovered ? 3 : 1
-            height: detailsResizeMouse.pressed || detailsResizeHover.hovered
-                    ? 64 : parent.height
+            height: parent.height
             radius: 2
             color: detailsResizeMouse.pressed ? root.accent
                    : detailsResizeHover.hovered ? root.accentCool : root.line
-            Behavior on height { NumberAnimation { duration: 120 } }
         }
         HoverHandler { id: detailsResizeHover }
         MouseArea {
