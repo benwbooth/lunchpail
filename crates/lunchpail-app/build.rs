@@ -252,6 +252,7 @@ fn main() {
                 "qml/CouchGameShelf.qml",
                 "qml/CouchGameBrowser.qml",
                 "qml/CouchWheelPath.qml",
+                "qml/CouchWheelLogo.qml",
                 "qml/CouchCoverFlowPath.qml",
                 "qml/CouchCoverReflection.qml",
                 "qml/CouchPointerSelection.qml",

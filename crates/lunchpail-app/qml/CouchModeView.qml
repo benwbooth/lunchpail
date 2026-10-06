@@ -182,6 +182,8 @@ Item {
     readonly property int cardRadius: library.couch_theme_card_radius
     readonly property real heroScrimOpacity: library.couch_theme_hero_scrim_percent / 100.0
     readonly property bool cinematicWheel: library.couch_view_style === "wheel"
+    readonly property bool wheelBrowseOnly: cinematicWheel && navigationZone === 2
+        && !wheelToolbarHover.hovered && !platformToolbarHover.hovered
     readonly property bool wallView: library.couch_view_style === "wall"
     readonly property bool albumView: library.couch_view_style === "album"
     // A system theme belongs to the system browser, never to a selected game.
@@ -485,8 +487,9 @@ Item {
             return
         noteActivity()
         const previous = shelf.currentIndex
-        shelf.currentIndex = Math.max(0, Math.min(shelf.count - 1,
-                                                 shelf.currentIndex + delta))
+        shelf.currentIndex = cinematicWheel
+            ? ((shelf.currentIndex + delta) % shelf.count + shelf.count) % shelf.count
+            : Math.max(0, Math.min(shelf.count - 1, shelf.currentIndex + delta))
         if (previous !== shelf.currentIndex) feedback.play(view.movementCue)
         shelf.positionViewAtIndex(shelf.currentIndex, ListView.Contain)
     }
@@ -630,8 +633,9 @@ Item {
     function movePlatformWheel(delta) {
         if (library.platform_count <= 0)
             return
-        platformWheelIndex = Math.max(0, Math.min(library.platform_count - 1,
-                                                  platformWheelIndex + delta))
+        platformWheelIndex = cinematicWheel
+            ? ((platformWheelIndex + delta) % library.platform_count + library.platform_count) % library.platform_count
+            : Math.max(0, Math.min(library.platform_count - 1, platformWheelIndex + delta))
         platformWheel.currentIndex = platformWheelIndex
         platformWheel.positionViewAtIndex(platformWheelIndex, ListView.Contain)
     }
@@ -1581,7 +1585,7 @@ Item {
         fillMode: Image.PreserveAspectCrop
         sourceSize: Qt.size(1920, 1080)
         retainWhileLoading: true
-        opacity: status === Image.Ready ? 0.78 : 0
+        opacity: status === Image.Ready ? (view.cinematicWheel ? 1 : 0.78) : 0
         Behavior on opacity { NumberAnimation { duration: 220 } }
     }
 
@@ -1602,6 +1606,7 @@ Item {
 
     Rectangle {
         anchors.fill: parent
+        visible: !view.wheelBrowseOnly
         gradient: Gradient {
             orientation: Gradient.Horizontal
             GradientStop { position: 0.0; color: view.withAlpha(view.background, couchVideo.playing ? 0.88 : 0.96) }
@@ -1615,7 +1620,7 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        height: parent.height * 0.43
+        height: parent.height * (view.wheelBrowseOnly ? 0.20 : 0.43)
         gradient: Gradient {
             GradientStop { position: 0.0; color: view.withAlpha(view.background, 0) }
             GradientStop { position: 0.35; color: view.withAlpha(view.background, 0.72) }
@@ -1625,6 +1630,7 @@ Item {
 
     Rectangle {
         anchors { left: parent.left; right: parent.right; top: parent.top }
+        visible: !view.wheelBrowseOnly
         height: 170
         gradient: Gradient {
             GradientStop { position: 0; color: view.withAlpha(view.background, 0.94) }
@@ -1634,6 +1640,7 @@ Item {
     }
     Row {
         id: brand
+        visible: !view.wheelBrowseOnly
         anchors.left: parent.left
         anchors.leftMargin: 54
         anchors.top: parent.top
@@ -1666,6 +1673,7 @@ Item {
 
     Row {
         id: categoryRow
+        visible: !view.wheelBrowseOnly
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: brand.bottom
         anchors.topMargin: 18
@@ -1722,8 +1730,18 @@ Item {
         }
     }
 
+    Item {
+        // Mouse users reveal the same navigation controls at the top edge;
+        // controller/keyboard users reveal them by moving left to actions.
+        anchors { left: parent.left; right: parent.right; top: parent.top }
+        height: 150
+        z: 30
+        HoverHandler { id: wheelToolbarHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad }
+    }
     Row {
         id: headerActions
+        visible: !view.wheelBrowseOnly
+        z: 31
         anchors.right: parent.right
         anchors.rightMargin: 50
         anchors.verticalCenter: brand.verticalCenter
@@ -1776,11 +1794,12 @@ Item {
         anchors { left: gameCopy.left; leftMargin: -22; top: gameCopy.top; topMargin: 4 }
         width: 3; height: Math.min(90, gameCopy.height); radius: 2
         color: view.accent
-        visible: view.cinematicWheel
+        visible: view.cinematicWheel && !view.wheelBrowseOnly
     }
 
     Column {
         id: gameCopy
+        visible: !view.wheelBrowseOnly
         anchors.left: parent.left
         anchors.leftMargin: 70
         anchors.top: categoryRow.bottom
@@ -2014,7 +2033,7 @@ Item {
         id: backgroundVideoControls
         x: 70; y: footer.y - height - 12
         spacing: 8; z: 20
-        visible: view.hasPreviewVideo && !view.overlayOpen && !view.platformWheelOpen
+        visible: view.hasPreviewVideo && !view.overlayOpen && !view.platformWheelOpen && !view.wheelBrowseOnly
         CouchActionButton { text: couchVideo.paused ? "Play video" : "Pause video"; soundFeedback: feedback; inkColor: view.ink; panelColor: view.panel; accentColor: view.accent; onClicked: couchVideo.paused = !couchVideo.paused }
         CouchActionButton {
             text: view.videoMuted ? "Unmute all game videos" : "Mute all game videos"
@@ -2032,7 +2051,7 @@ Item {
         objectName: "couchGameMediaStatus"
         x: 70; y: categoryRow.y + categoryRow.height + 6
         width: Math.min(600, parent.width - 140)
-        visible: view.active && !!view.selectedGameId && !view.platformWheelOpen
+        visible: view.active && !!view.selectedGameId && !view.platformWheelOpen && !view.wheelBrowseOnly
         library: view.library
         gameId: view.selectedGameId
         videoKind: themeRequest.videoKind
@@ -2055,17 +2074,17 @@ Item {
 
     Item {
         id: shelfArea
-        x: view.cinematicWheel ? parent.width - width - 44 : view.wallView ? 60 : 0
-        y: view.cinematicWheel ? categoryRow.y + categoryRow.height + 28
-                               : footer.y - height
-        width: view.cinematicWheel ? Math.min(650, parent.width * 0.42)
+        x: view.cinematicWheel ? parent.width - width : view.wallView ? 60 : 0
+        y: view.cinematicWheel ? 0 : footer.y - height
+        width: view.cinematicWheel ? parent.width * 0.44
                                    : view.wallView ? parent.width - 120 : parent.width
         height: view.cinematicWheel
-                ? Math.max(320, footer.y - categoryRow.y - categoryRow.height - 46)
+                ? parent.height
                 : view.wallView || view.albumView ? Math.max(180, footer.y - gameCopy.y - gameCopy.height - 28)
                 : Math.max(250, parent.height * 0.30)
 
         Text {
+            visible: !view.cinematicWheel
             anchors.left: parent.left
             anchors.leftMargin: view.cinematicWheel || view.wallView ? 8 : 70
             anchors.top: parent.top
@@ -2084,7 +2103,7 @@ Item {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: parent.top
-            anchors.topMargin: 25
+            anchors.topMargin: view.cinematicWheel ? 0 : 25
             anchors.bottom: parent.bottom
             anchors.bottomMargin: view.wallView && backgroundVideoControls.visible
                                   ? backgroundVideoControls.height + 20 : 0
@@ -2123,6 +2142,32 @@ Item {
                 view.forceActiveFocus()
                 if (selectedAgain) view.requestDetails()
             }
+        }
+    }
+
+    SemanticIcon {
+        objectName: "couchWheelPointer"
+        visible: view.cinematicWheel && !view.platformWheelOpen
+        anchors { right: parent.right; rightMargin: 12; verticalCenter: parent.verticalCenter }
+        width: Math.max(28, view.width * 0.025); height: width * 1.4
+        name: "play"; filled: true; color: "#fff3dc"; rotation: 180
+        z: 4
+    }
+    Column {
+        objectName: "couchWheelGameInfo"
+        visible: view.wheelBrowseOnly && !view.platformWheelOpen
+        anchors { left: parent.left; leftMargin: parent.width * 0.035; bottom: footer.top; bottomMargin: 16 }
+        width: parent.width * 0.52; spacing: 5
+        Text {
+            width: parent.width
+            text: view.selectedPlatform + (view.browsing.release_date ? "  ·  " + view.browsing.release_date.slice(0, 4) : "")
+            color: "#dedee4"; font.pixelSize: Math.max(13, view.height * 0.016)
+            style: Text.Outline; styleColor: "#16181c"; elide: Text.ElideRight
+        }
+        Text {
+            width: parent.width; text: view.selectedTitle
+            color: "white"; font.pixelSize: Math.max(22, view.height * 0.031); font.weight: Font.DemiBold
+            style: Text.Outline; styleColor: "#16181c"; elide: Text.ElideRight
         }
     }
 
@@ -2644,7 +2689,7 @@ Item {
         }
         Rectangle {
             anchors.fill: parent
-            opacity: platformVideo.playing ? 0.32 : 1
+            opacity: view.cinematicWheel ? (platformVideo.playing ? 0.08 : 0.5) : platformVideo.playing ? 0.32 : 1
             gradient: Gradient {
                 orientation: Gradient.Horizontal
                 GradientStop { position: 0; color: view.withAlpha(view.background, 0.96) }
@@ -2660,15 +2705,46 @@ Item {
             Behavior on scale { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
             Behavior on opacity { NumberAnimation { duration: 220 } }
             anchors.centerIn: parent
-            width: parent.width - 100
-            height: parent.height - 90
+            width: view.cinematicWheel ? parent.width : parent.width - 100
+            height: view.cinematicWheel ? parent.height : parent.height - 90
             radius: Math.min(32, view.cardRadius + 10)
-            color: view.withAlpha(view.panel, platformVideo.playing ? 0.22 : 0.97)
+            color: view.cinematicWheel ? "transparent" : view.withAlpha(view.panel, platformVideo.playing ? 0.22 : 0.97)
             border.color: view.withAlpha(view.muted, 0.58)
-            border.width: 1
+            border.width: view.cinematicWheel ? 0 : 1
             clip: true
 
+            Item {
+                anchors { left: parent.left; right: parent.right; top: parent.top }
+                height: 150; z: 3
+                HoverHandler { id: platformToolbarHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad }
+            }
+            SemanticIcon {
+                objectName: "couchPlatformWheelPointer"
+                visible: view.cinematicWheel
+                anchors { right: parent.right; rightMargin: 12; verticalCenter: parent.verticalCenter }
+                width: Math.max(28, view.width * 0.025); height: width * 1.4
+                name: "play"; filled: true; color: "#fff3dc"; rotation: 180
+                z: 1
+            }
+            Column {
+                visible: view.cinematicWheel
+                anchors { left: parent.left; leftMargin: parent.width * 0.035; bottom: parent.bottom; bottomMargin: 70 }
+                width: parent.width * 0.50; spacing: 8
+                Text {
+                    width: parent.width; text: platformPresentation.platform
+                    color: "white"; font.pixelSize: Math.max(24, view.height * 0.035); font.weight: Font.DemiBold
+                    style: Text.Outline; styleColor: "#16181c"; wrapMode: Text.WordWrap
+                }
+                Text {
+                    text: "ENTER  BROWSE GAMES   ·   D  SYSTEM MEDIA"
+                    color: "#dedee4"; font.pixelSize: 12
+                    style: Text.Outline; styleColor: "#16181c"
+                }
+            }
+
             Rectangle {
+                visible: !view.wheelBrowseOnly
+                z: 2
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.top: parent.top
@@ -2734,13 +2810,12 @@ Item {
 
             CouchPlatformBrowser {
                 id: platformWheel
-                anchors.left: parent.left
-                anchors.leftMargin: 24
-                width: parent.width * (view.cinematicWheel ? 0.48 : 0.62)
+                x: view.cinematicWheel ? parent.width - width : 24
+                width: parent.width * (view.cinematicWheel ? 0.44 : 0.62)
                 anchors.top: parent.top
-                anchors.topMargin: 128
+                anchors.topMargin: view.cinematicWheel ? 0 : 128
                 anchors.bottom: parent.bottom
-                anchors.bottomMargin: 82
+                anchors.bottomMargin: view.cinematicWheel ? 0 : 82
                 library: view.library
                 viewStyle: view.library.couch_view_style
                 panel: view.panel; ink: view.ink; muted: view.muted; accent: view.accent
@@ -2756,6 +2831,7 @@ Item {
             }
 
             Rectangle {
+                visible: !view.cinematicWheel
                 x: platformInfo.x - 16; y: platformInfo.y - 16
                 width: platformInfo.width + 32
                 height: Math.min(platformInfo.height + 32, platformPresentation.height + 32)
@@ -2765,6 +2841,7 @@ Item {
             }
             MomentumFlickable {
                 id: platformInfo
+                visible: !view.cinematicWheel
                 anchors { left: platformWheel.right; right: parent.right; top: parent.top; bottom: parent.bottom; topMargin: 145; bottomMargin: 90; leftMargin: 40; rightMargin: 40 }
                 clip: true; contentWidth: width; contentHeight: platformPresentation.height
               Column {
@@ -2845,8 +2922,8 @@ Item {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                height: 72
-                color: view.withAlpha(view.background, 0.86)
+                height: view.cinematicWheel ? 46 : 72
+                color: view.withAlpha(view.background, view.cinematicWheel ? 0.5 : 0.86)
 
                 Row {
                     anchors.centerIn: parent

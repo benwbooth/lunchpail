@@ -4808,7 +4808,7 @@ ApplicationWindow {
                     } else if (root.couchSmoothnessUiProbe) {
                         library.save_couch_view_style("wheel")
                         root.selectedPlatform = "Nintendo Entertainment System"
-                        searchField.text = "Mario"
+                        searchField.text = root.argumentValue("--hyperspin-wheel-check") === "true" ? "" : "Mario"
                         library.apply_filter(searchField.text, root.selectedPlatform, "")
                     } else if (root.couchDownloadUiProbe) {
                         root.beginCouchDownloadProbe()

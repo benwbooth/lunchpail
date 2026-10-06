@@ -74,7 +74,8 @@ Item {
         id: presentation
         anchors.fill: parent
         active: browser.visible
-        sourceComponent: browser.viewStyle === "wall" ? wall : browser.viewStyle === "shelf" ? shelf : carouselComponent
+        sourceComponent: browser.viewStyle === "wall" ? wall : browser.viewStyle === "shelf" ? shelf
+                         : browser.viewStyle === "wheel" ? wheelComponent : carouselComponent
         onLoaded: {
             browser.selectionPending = true
             browser.applySelection()
@@ -136,18 +137,18 @@ Item {
             }
         }
     }
-    Component {
-        id: carouselComponent
-        PathView {
+    Component { id: wheelComponent; AnimatedPath { wheel: true } }
+    Component { id: carouselComponent; AnimatedPath { wheel: false } }
+    component AnimatedPath: PathView {
             id: carousel
             objectName: "couchPlatformCarousel"
-            readonly property bool wheel: browser.viewStyle === "wheel"
+            property bool wheel: false
             model: browser.count; clip: true
             pathItemCount: 11
-            cacheItemCount: 2
+            cacheItemCount: wheel ? 12 : 2
             preferredHighlightBegin: 0.5; preferredHighlightEnd: 0.5
             highlightRangeMode: PathView.StrictlyEnforceRange
-            highlightMoveDuration: wheel ? 280 : 340
+            highlightMoveDuration: wheel ? 160 : 340
             snapMode: PathView.SnapToItem
             dragMargin: width; flickDeceleration: 450
             path: wheel ? wheelPath : flowPath
@@ -157,7 +158,31 @@ Item {
                     if (index >= 0) browser.activated(index)
                 }
             }
-            delegate: CouchPlatformCard {
+            delegate: wheel ? wheelDelegate : coverDelegate
+            Component {
+                id: wheelDelegate
+                CouchWheelLogo {
+                    required property int index
+                    property string platformName: browser.library.platform_name_at(index)
+                    width: carousel.width * 0.94
+                    height: carousel.height * 0.21
+                    title: platformName
+                    source: {
+                        browser.library.media_revision
+                        return browser.library.platform_media_url(platformName, "clear-logo")
+                    }
+                    selected: PathView.isCurrentItem
+                    ink: browser.ink
+                    scale: PathView.itemScale ?? 1
+                    opacity: PathView.itemOpacity ?? 1
+                    z: PathView.itemDepth ?? 0
+                    rotation: PathView.itemAngle ?? 0
+                    Accessible.onPressAction: browser.activated(index)
+                }
+            }
+            Component {
+              id: coverDelegate
+              CouchPlatformCard {
                 id: card
                 library: browser.library
                 width: carousel.wheel ? carousel.width * 0.76 : Math.min(carousel.height * 0.68, carousel.width * 0.30)
@@ -175,6 +200,7 @@ Item {
                 }
                 onActivated: index => browser.activated(index)
                 onHoverMoved: (index, position) => browser.movePathPointer(position)
+              }
             }
             CouchWheelPath {
                 id: wheelPath
@@ -184,6 +210,5 @@ Item {
                 id: flowPath
                 viewportWidth: carousel.width; viewportHeight: carousel.height
             }
-        }
     }
 }

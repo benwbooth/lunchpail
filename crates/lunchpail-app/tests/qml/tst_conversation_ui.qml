@@ -136,4 +136,28 @@ TestCase {
         captions.enabledCaptions = false; verify(!captions.visible)
         captions.enabledCaptions = true; captions.expanded = true; verify(!captions.visible)
     }
+    SignalSpy { id: conversationRequested; signalName: "conversationRequested" }
+    function test_caption_buttons_use_application_controls_and_keep_actions() {
+        const ai = createTemporaryObject(backend, test)
+        const output = createTemporaryObject(voice, test)
+        const captions = createTemporaryObject(captionComponent, test, {assistant:ai,speechOutput:output})
+        captions.showRecent()
+        const open = findChild(captions, "captionConversationButton")
+        const stop = findChild(captions, "captionStopButton")
+        for (const button of [open, stop]) {
+            verify(button)
+            compare(button.background.radius, 7)
+            compare(button.background.color, "#202a39")
+            compare(button.font.pixelSize, 13)
+            verify(button.implicitHeight >= 32)
+        }
+        conversationRequested.target = captions; conversationRequested.clear()
+        open.clicked()
+        compare(conversationRequested.count, 1)
+        ai.busy = true; output.speaking = true
+        verify(stop.visible); compare(stop.text, "Stop reply")
+        stop.clicked()
+        verify(!ai.busy); verify(!output.speaking)
+        conversationRequested.target = null
+    }
 }

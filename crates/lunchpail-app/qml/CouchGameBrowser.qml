@@ -120,7 +120,8 @@ Item {
         anchors.fill: parent
         active: browser.visible
         sourceComponent: browser.viewStyle === "wall" ? wall
-                         : browser.viewStyle === "shelf" ? shelf : animatedPath
+                         : browser.viewStyle === "shelf" ? shelf
+                         : browser.viewStyle === "wheel" ? animatedWheel : animatedPath
         onLoaded: {
             browser.selectionPending = true
             browser.reportedGameId = ""
@@ -198,9 +199,9 @@ Item {
             }
         }
     }
-    Component {
-        id: animatedPath
-        PathView {
+    Component { id: animatedWheel; AnimatedPath { wheel: true } }
+    Component { id: animatedPath; AnimatedPath { wheel: false } }
+    component AnimatedPath: PathView {
             id: carousel
             objectName: "couchGameCarousel"
             VisibleArtworkPriority {
@@ -209,15 +210,15 @@ Item {
                 viewId: "couch-path"
                 artworkType: carousel.wheel ? "clear-logo" : "box-front"
             }
-            readonly property bool wheel: browser.viewStyle === "wheel"
+            property bool wheel: false
             model: browser.library
             clip: true
             pathItemCount: 11
-            cacheItemCount: 2
+            cacheItemCount: wheel ? 12 : 2
             preferredHighlightBegin: 0.5
             preferredHighlightEnd: 0.5
             highlightRangeMode: PathView.StrictlyEnforceRange
-            highlightMoveDuration: wheel ? 280 : 340
+            highlightMoveDuration: wheel ? 160 : 340
             snapMode: PathView.SnapToItem
             dragMargin: width
             flickDeceleration: 450
@@ -228,7 +229,38 @@ Item {
                     if (index >= 0) browser.cardActivated(index)
                 }
             }
-            delegate: CouchGameCard {
+            delegate: wheel ? wheelDelegate : coverDelegate
+            Component {
+                id: wheelDelegate
+                CouchWheelLogo {
+                    required property int index
+                    required property string gameId
+                    required property string gameTitle
+                    required property string gameCanonicalTitle
+                    required property string gamePlatform
+                    required property bool gameLocal
+                    required property bool gameDownloadable
+                    required property int gameDatabaseId
+                    required property double gameMediaId
+                    width: carousel.width * 0.94
+                    height: carousel.height * 0.21
+                    title: gameTitle
+                    source: {
+                        browser.library.media_revision
+                        return browser.library.exact_artwork_url(gameMediaId, "clear-logo")
+                    }
+                    selected: PathView.isCurrentItem
+                    ink: browser.ink
+                    scale: PathView.itemScale ?? 1
+                    opacity: PathView.itemOpacity ?? 1
+                    z: PathView.itemDepth ?? 0
+                    rotation: PathView.itemAngle ?? 0
+                    Accessible.onPressAction: browser.cardActivated(index)
+                }
+            }
+            Component {
+              id: coverDelegate
+              CouchGameCard {
                 id: pathCard
                 library: browser.library
                 width: carousel.wheel ? carousel.width * 0.76 : Math.min(carousel.height * 0.60, carousel.width * 0.25)
@@ -253,6 +285,7 @@ Item {
                 }
                 onActivated: index => browser.cardActivated(index)
                 onHoverMoved: (index, position) => browser.movePathPointer(position)
+              }
             }
             CouchWheelPath {
                 id: wheelPath
@@ -262,6 +295,5 @@ Item {
                 id: albumPath
                 viewportWidth: carousel.width; viewportHeight: carousel.height
             }
-        }
     }
 }

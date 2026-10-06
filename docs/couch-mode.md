@@ -11,7 +11,7 @@ keyboard, or mouse. Open it from the main window's Couch Mode control.
 | --- | --- |
 | Cover wall | Seeing many covers at once. |
 | Cover flow | Browsing angled covers around a prominent selected game. |
-| Logo wheel | A curved, animated list of game logos beside a video preview. Missing logos use readable titles. |
+| Logo wheel | A classic HyperSpin-style, full-height right-hand logo arc over the theme. Missing logos use readable titles. |
 | Cover shelf | A horizontal cover row with stable spacing and a selected-game preview. |
 
 Use the view button, **Library & settings**, or the Couch Mode section in
@@ -39,8 +39,22 @@ same game through asynchronous filtering; an older saved Couch shelf does not
 replace it. A game hidden by an additional library filter is identified explicitly
 instead of silently selecting another title.
 
-The logo wheel packs eleven entries onto a curved path: neighbors tilt and shrink,
-while the selected logo glides forward and enlarges. Cover flow stacks angled
+The logo wheel packs eleven entries onto a full-height curved path. Neighboring
+logos remain opaque and tilt toward an offscreen hub on the right; the selected
+logo enlarges beside a fixed pointer. Up/down wraps around both the game and
+system lists. The wheel uses lightweight cached logo textures, preloads adjacent
+entries, and leaves theme artwork unobstructed. Move the mouse to the top edge
+for the toolbar, or press Left to reveal actions and navigate up to categories.
+Ctrl+V, F3, and the existing controller shortcuts remain available.
+
+The classic arc and size relationship are based on the
+[HyperSpin Classic wheel reference](https://hyperspin-fe.com/forums/topic/11431-change-game-info-font/)
+and [normal-wheel settings](https://hyperspin-fe.com/forums/topic/14838-how-to-change-the-wheel-setting-from-vertical-to-circle/).
+Actual theme artwork varies by game; this is not a Flash theme-package renderer.
+
+![Classic logo wheel over an animated game theme](images/couch-logo-wheel.png)
+
+Cover flow stacks angled
 covers around a larger front-facing selection with fading floor reflections. The
 wall brings cards in with a staggered zoom and gently lifts the selection and its
 neighbors. These effects apply to games and platforms, with readable wordmarks
@@ -60,6 +74,22 @@ both directions through the wall. Select a game to see its actions, then choose
 Play or download options.
 
 The Game Menu includes favorite, release, view, and attract-mode choices.
+
+For an isolated native frame-time check, run the developer app with
+`--couch-smoothness-ui-probe --hyperspin-wheel-check true`, a copied state/media
+profile, and `--screenshot-output /tmp/wheel.png`. It measures rapid game and
+platform scrolling and animated-theme playback at 1080p, excluding screenshot
+readback and warmup. It fails if the 95th-percentile frame exceeds 20 ms or any
+measured frame exceeds 50 ms. Use the real GPU/display session; software-rendered
+test servers do not establish desktop frame pacing.
+
+The October 6, 2026 check used an isolated 60 Hz KWin virtual display with
+RX 7900 XTX OpenGL rendering, the 203,893-game loaded catalog, and 1,729 NES
+entries. Game scrolling, animated-theme playback, and platform scrolling had
+95th-percentile frame times of 17.557, 17.547, and 17.559 ms respectively. The
+worst sample was 33.478 ms (one sample above 33.34 ms across 1,321 measured
+frames). This is a measured render test, not a guarantee of zero dropped frames
+on every display or workload.
 
 ## Search with a keyboard or microphone
 

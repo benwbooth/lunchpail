@@ -39,8 +39,8 @@ Rectangle {
         Text { Layout.fillWidth: true; text: "You: " + captions.playerText; visible: !!captions.playerText; color: captions.accentColor; textFormat: Text.PlainText; wrapMode: Text.WordWrap; font.pixelSize: 19; maximumLineCount: 2; elide: Text.ElideRight }
         Text { Layout.fillWidth: true; text: "Lunchpail: " + captions.assistantText; visible: !!captions.assistantText; color: captions.inkColor; textFormat: Text.PlainText; wrapMode: Text.WordWrap; font.pixelSize: 19; maximumLineCount: 4; elide: Text.ElideRight }
         RowLayout {
-            Button { text: "Conversation"; onClicked: captions.conversationRequested() }
-            Button { text: captions.assistant.busy ? "Stop reply" : "Stop voice"; visible: captions.assistant.busy || captions.speechOutput.speaking; onClicked: { captions.speechOutput.stop(); if (captions.assistant.busy) captions.assistant.cancel() } }
+            LbButton { objectName: "captionConversationButton"; text: "Conversation"; onClicked: captions.conversationRequested() }
+            LbButton { objectName: "captionStopButton"; text: captions.assistant.busy ? "Stop reply" : "Stop voice"; visible: captions.assistant.busy || captions.speechOutput.speaking; onClicked: { captions.speechOutput.stop(); if (captions.assistant.busy) captions.assistant.cancel() } }
         }
     }
 }

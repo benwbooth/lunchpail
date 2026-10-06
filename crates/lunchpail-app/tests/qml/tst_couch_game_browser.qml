@@ -137,7 +137,11 @@ TestCase {
         verify(focused.z > neighbor.z, "The focused entry must draw in front")
         if (data.style === "wheel") {
             verify(Math.abs(neighbor.rotation) > 8, "Neighboring logos must rotate along the arc")
-            compare(findChild(focused, "couchGameCardFrame").color.a, 0)
+            compare(focused.objectName, "couchWheelLogo")
+            compare(focused.opacity, 1)
+            verify(!findChild(focused, "couchGameCardFrame"), "Wheel must not instantiate heavyweight cards")
+            verify((neighbor.y > focused.y && neighbor.rotation < 0)
+                   || (neighbor.y < focused.y && neighbor.rotation > 0), "Logos tilt toward the offscreen right hub")
         } else verify(focused.coverFlow)
     }
     function test_overlapping_neighbor_can_be_clicked_data() {
