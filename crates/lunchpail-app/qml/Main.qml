@@ -5526,8 +5526,15 @@ ApplicationWindow {
         repeat: true
         running: root.couchDownloadUiProbe && !root.couchModeProbeCaptured
         onTriggered: {
-            if (!root.couchModeActive || !couchModeView.detailsCurrent
-                    || gameDetails.loading)
+            if (!root.couchModeActive || !couchModeView.selectedGameId)
+                return
+            // Browsing now loads lightweight previews; source discovery starts
+            // only when the user explicitly opens the selected game's details.
+            if (!couchModeView.detailsCurrent) {
+                couchModeView.requestDetails()
+                return
+            }
+            if (gameDetails.loading)
                 return
             const count = gameDetails.download_candidate_count()
             if (root.couchDownloadProbeStage === 0) {
