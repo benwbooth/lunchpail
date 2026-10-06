@@ -77,4 +77,13 @@ TestCase {
         item.speech.listening = false
         verify(!item.capturingCommand)
     }
+    function test_open_conversation_suppresses_preview_dialogue_until_capture_ends() {
+        const item = controller(); item.wakeWordRequired = false; item.allowed = true
+        item.speech.listening = true
+        verify(item.capturingCommand)
+        item.speech.awake = false
+        verify(item.capturingCommand, "Trailer dialogue must not become a user request")
+        item.speech.listening = false
+        verify(!item.capturingCommand, "Suppression is temporary, not a saved mute preference")
+    }
 }

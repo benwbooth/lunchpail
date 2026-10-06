@@ -1,0 +1,206 @@
+import QtQuick
+import QtTest
+import "../../qml" as Lunchpail
+
+TestCase {
+    id: test
+    name: "ConversationTools"
+    when: windowShown
+    Component {
+        id: component
+        Lunchpail.CouchAssistantController {
+            app: QtObject {
+                property bool couchModeActive: true
+                property string selectedGameId: "mario"
+                property bool confirmation: false
+                property bool filterPending: false
+                property string opened: ""
+                function enterCouchMode() { couchModeActive = true }
+                function exitCouchMode() { couchModeActive = false }
+                function assistantScreenContext() { return {confirmation_open: confirmation, filtering: filterPending} }
+                function assistantBrowse(query, platform, shelf) { opened = "browse:" + query + ":" + platform + ":" + shelf }
+                function openSettingsFor(section) { opened = "settings:" + section }
+                function couchTool(panel) { opened = "panel:" + panel }
+                function openCouchGameTool(section) { opened = "game:" + section }
+                function assistantFullscreen(action) { opened = action }
+            }
+            view: QtObject {
+                property string selectedGameId: "mario"
+                property string searchText: "Mario"
+                property bool platformWheelOpen: false
+                property bool launchStatusOverlayOpen: false
+                property int launches: 0
+                property int closes: 0
+                property int detailRequests: 0
+                property var gameVideoPreview: ({paused: false, playing: true})
+                property var systemVideoPreview: ({paused: false, playing: true})
+                function closeSearch() { closes++ }
+                function focusGameById(id) { selectedGameId = id; return true }
+                function beginGameHandoff(id, platform) { selectedGameId = id }
+                function requestDetails() { detailRequests++ }
+                function launchRequested() { launches++ }
+                function openPlatformWheel() { platformWheelOpen = true }
+                function openCollectionWheel() {}
+                function handleNavigation(action) {}
+            }
+            library: QtObject {
+                property bool filtering: false
+                property int filtered_count: 2
+                property bool installed: true
+                property bool favorite: false
+                property bool favoritePending: false
+                property string favorite_message: "Save failed"
+                property bool collection_busy: false
+                property string collection_message: "Save failed"
+                property int collection_count: 1
+                property bool collectionExists: true
+                property bool member: false
+                property string couch_view_style: "wheel"
+                property bool couch_music_enabled: true
+                property int couch_music_volume: 45
+                function conversation_games_json() { return JSON.stringify([{id:"mario",title:"Super Mario Bros.",platform:"NES"}]) }
+                function display_title_for_game(id) { return id === "mario" ? "Super Mario Bros." : "" }
+                function platform_for_game(id) { return "NES" }
+                function local_for_game(id) { return installed }
+                function downloadable_for_game(id) { return !installed }
+                function row_for_game(id) { return id === "mario" ? 0 : -1 }
+                function is_favorite(id) { return favorite }
+                function favorite_pending(id) { return favoritePending }
+                function set_favorite(id, value) { favoritePending = true; favorite = value }
+                function collection_id_at(i) { return "collection" }
+                function collection_name_at(i) { return "Favorites" }
+                function collection_description_at(i) { return "Test" }
+                function collection_kind_at(i) { return "manual" }
+                function collection_game_count_at(i) { return 1 }
+                function collection_exists(id) { return collectionExists && id === "collection" }
+                function collection_contains(id, game) { return member }
+                function delete_collection(id) { collectionExists = false; collection_count = 0 }
+                function set_collection_membership(id, game, value) { member = value }
+                function save_couch_view_style(style) { couch_view_style = style; return true }
+                function save_couch_audio_settings(enabled, volume) { couch_music_enabled = enabled; couch_music_volume = volume; return true }
+            }
+            details: QtObject {
+                property bool game_running: false
+                property bool launch_busy: false
+                property bool loading: false
+                property bool launch_discovery_busy: false
+                property string game_id: "mario"
+                property string session_title: "Super Mario Bros."
+                property string launch_status: ""
+                property int stops: 0
+                function stop_emulator() { stops++; game_running = false }
+            }
+            assistant: QtObject {
+                property bool busy: true
+                property string config_json: JSON.stringify({spoken_replies:true,captions:true,wake_word:false,voice_rate:0,voice_volume:0.85})
+                property string history_json: "[]"
+                property int turn_number: 1
+                property var replies: []
+                signal tool_requested(string id, string name, string arguments)
+                function complete_tool(id, result) { replies = replies.concat([{id:id,result:JSON.parse(result)}]) }
+                function configure(value) { config_json = value }
+            }
+            ai: QtObject {
+                property bool hands_free: false
+                property bool speech_ready: true
+                function enable_hands_free(value) { hands_free = value }
+            }
+            feedbackSettings: QtObject {
+                property bool soundsEnabled: true
+                property real soundVolume: 0.22
+                function sync() {}
+            }
+            videoPreferences: QtObject {
+                property bool couchMuted: false
+                property bool normalMuted: true
+                function toggle(couch) { if (couch) couchMuted = !couchMuted; else normalMuted = !normalMuted }
+            }
+        }
+    }
+    function controller() { const c = createTemporaryObject(component, test); verify(c); return c }
+    function call(c, name, args) { c.assistant.tool_requested("call-" + c.assistant.replies.length, name, JSON.stringify(args || {})) }
+    function result(c) { return c.assistant.replies[c.assistant.replies.length - 1].result }
+    function finish(c) { c.waiting.started -= 400; c.pollAction() }
+    function test_context_returns_real_selection_and_bounded_results() {
+        const c = controller(); call(c, "get_context")
+        compare(result(c).selected_game.id, "mario")
+        compare(result(c).games[0].title, "Super Mario Bros.")
+        compare(result(c).game_running, false)
+    }
+    function test_natural_search_tool_waits_for_debounced_filter() {
+        const c = controller(); c.app.filterPending = true
+        call(c, "browse_library", {query:"super mario bros",platform:"",shelf:"all"})
+        compare(c.app.opened, "browse:super mario bros::all")
+        finish(c); compare(c.assistant.replies.length, 0)
+        c.app.filterPending = false; c.pollAction()
+        compare(result(c).total_results, 2)
+        compare(c.view.launches, 0)
+    }
+    function test_play_uses_selected_game_and_normal_workflow_not_optimistic_success() {
+        const c = controller(); call(c, "play_game", {})
+        compare(c.view.launches, 1); compare(c.view.closes, 1)
+        finish(c); compare(c.assistant.replies.length, 0)
+        c.details.game_running = true; c.pollAction()
+        compare(result(c).status, "running"); compare(result(c).game.id, "mario")
+    }
+    function test_launch_confirmation_is_not_running() {
+        const c = controller(); call(c, "play_game")
+        c.app.confirmation = true; finish(c)
+        compare(result(c).status, "user_action_required")
+        compare(c.details.game_running, false)
+    }
+    function test_missing_game_opens_setup_without_download_or_launch() {
+        const c = controller(); c.library.installed = false; call(c, "play_game")
+        compare(c.view.launches, 0); compare(c.view.detailRequests, 1)
+        compare(result(c).status, "setup_required")
+    }
+    function test_running_game_is_never_toggled_off_by_play() {
+        const c = controller(); c.details.game_running = true; call(c, "play_game")
+        verify(!!result(c).error); compare(c.details.stops, 0); compare(c.view.launches, 0)
+    }
+    function test_confirmation_cannot_be_self_approved_and_decline_does_nothing() {
+        const c = controller(); c.details.game_running = true
+        call(c, "stop_game"); compare(result(c).status, "confirmation_required")
+        call(c, "confirm_action", {approve:true}); verify(!!result(c).error); compare(c.details.stops, 0)
+        c.assistant.turn_number++; call(c, "confirm_action", {approve:false})
+        compare(result(c).status, "declined"); compare(c.details.stops, 0)
+    }
+    function test_later_confirmation_stops_through_existing_save_exit_handler() {
+        const c = controller(); c.details.game_running = true; call(c, "stop_game")
+        c.assistant.turn_number++; call(c, "confirm_action", {approve:true}); finish(c)
+        compare(c.details.stops, 1); compare(result(c).status, "stopped")
+    }
+    function test_favorite_waits_for_persistence() {
+        const c = controller(); call(c, "set_favorite", {favorite:true}); finish(c)
+        compare(c.assistant.replies.length, 0)
+        c.library.favoritePending = false; c.pollAction()
+        compare(result(c).status, "saved"); compare(result(c).favorite, true)
+    }
+    function test_separate_video_modes_are_preserved() {
+        const c = controller(); call(c, "control_media", {name:"mute"})
+        compare(c.videoPreferences.couchMuted, true); compare(c.videoPreferences.normalMuted, true)
+        call(c, "control_media", {name:"unmute"})
+        compare(c.videoPreferences.couchMuted, false); compare(c.videoPreferences.normalMuted, true)
+    }
+    function test_microphone_enable_requires_later_confirmation() {
+        const c = controller(); call(c, "set_preference", {name:"hands_free",value:true})
+        compare(c.ai.hands_free, false); compare(result(c).status, "confirmation_required")
+        c.assistant.turn_number++; call(c, "confirm_action", {approve:true})
+        compare(c.ai.hands_free, true)
+    }
+    function test_settings_opening_does_not_claim_setup_completed() {
+        const c = controller(); call(c, "open_settings", {name:"local-ai"})
+        compare(c.app.opened, "settings:local-ai"); compare(result(c).status, "opened")
+        verify(result(c).message.indexOf("not yet completed") >= 0)
+    }
+    function test_cancel_discards_pending_action_result_without_undoing_effects() {
+        const c = controller(); call(c, "play_game"); c.assistant.busy = false
+        compare(c.waiting, null); compare(c.assistant.replies.length, 0); compare(c.view.launches, 1)
+    }
+    function test_delete_collection_retains_game_and_requires_confirmation() {
+        const c = controller(); call(c, "delete_collection", {collection_id:"collection"})
+        compare(c.library.collectionExists, true)
+        c.assistant.turn_number++; call(c, "confirm_action", {approve:true}); finish(c)
+        compare(result(c).status, "deleted"); compare(c.library.installed, true)
+    }
+}

@@ -33,8 +33,8 @@ set up controllers, and launch games from one place—at your desk or on the cou
 - **Move to the couch.** Cover wall, 3D album, animated logo wheel and classic
   shelf views, with themes, attract mode and access to all game and library tools.
 
-Development builds also include [local voice and game recommendations](docs/couch-mode.md#local-assistant-setup):
-select models in Settings to download them automatically, then use **Ask AI** in
+Development builds also include [voice and text conversations](docs/couch-mode.md#assistant-and-voice-setup):
+choose a bundled model, Codex, Claude Code, Ollama or API provider in Settings, then talk to Lunchpail in
 Couch Mode. Bundled CPU/GPU runtimes require no separate Ollama installation.
 
 Experimental local AI translation is also available for supported RetroArch

@@ -53,7 +53,7 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: win64_msvc2022_64
-          modules: qtimageformats qtmultimedia qtquick3d qtshadertools
+          modules: qtimageformats qtmultimedia qtquick3d qtshadertools qtspeech
           cache: true
       - name: Fetch the pinned MAME CHD archive
         shell: pwsh
@@ -130,7 +130,7 @@ jobs:
         with:
           version: ${{ env.QT_VERSION }}
           arch: clang_64
-          modules: qtimageformats qtmultimedia qtquick3d qtshadertools
+          modules: qtimageformats qtmultimedia qtquick3d qtshadertools qtspeech
           cache: true
       - name: Fetch the pinned MAME CHD archive
         run: |
@@ -249,13 +249,27 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Install native build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev libgl1-mesa-dev libpulse-dev libudev-dev libwayland-dev libxkbcommon-dev patchelf libvulkan-dev glslc libclang-dev
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev libgl1-mesa-dev libpulse-dev libudev-dev libwayland-dev libxkbcommon-dev patchelf libvulkan-dev glslc libclang-dev flite1-dev libspeechd-dev
       - uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}
           arch: linux_gcc_64
-          modules: qtimageformats qtmultimedia qtquick3d qtshadertools
+          modules: qtimageformats qtmultimedia qtquick3d qtshadertools qtspeech
           cache: true
+      - name: Build relocatable offline speech engine
+        run: |
+          # Qt's stock Flite plugin reads an empty QProcessEnvironment, so it
+          # cannot discover voices bundled in the AppImage's LD_LIBRARY_PATH.
+          # Keep this source version aligned with QT_VERSION above.
+          test "$QT_VERSION" = 6.8.3
+          speech_source="$(mktemp -d "$RUNNER_TEMP/lunchpail-speech.XXXXXX")"
+          curl --fail --location --retry 3 https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qtspeech-everywhere-src-6.8.3.tar.xz -o "$speech_source/source.tar.xz"
+          echo "b0dd3e3bf993e15dc03d3486ee1b452c2b92f0460a621eb32d261eecc040504b  $speech_source/source.tar.xz" | sha256sum -c -
+          tar -xJf "$speech_source/source.tar.xz" -C "$speech_source" --strip-components=1
+          sed -i 's/const QProcessEnvironment pe;/const auto pe = QProcessEnvironment::systemEnvironment();/' "$speech_source/src/plugins/tts/flite/qtexttospeech_flite_processor.cpp"
+          qt-cmake -S "$speech_source" -B "$speech_source/build" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$QT_ROOT_DIR" -DQT_BUILD_TESTS=OFF -DQT_BUILD_EXAMPLES=OFF -DFEATURE_flite=ON -DFEATURE_speechd=ON
+          cmake --build "$speech_source/build" --parallel 3
+          cmake --install "$speech_source/build"
       - name: Fetch the pinned MAME CHD archive
         run: |
           ARCHIVE="$RUNNER_TEMP/libchdman_rs.a"
@@ -274,6 +288,11 @@ jobs:
           install -m 0755 target/release/lunchpail-controller-probe dist/AppDir/usr/bin/lunchpail-controller-probe
           install -m 0755 target/inference/lunchpail-*-cpu target/inference/lunchpail-*-gpu dist/AppDir/usr/bin/
           cp -R packaging/inference-licenses dist/AppDir/usr/share/lunchpail/
+          # Flite discovers voice libraries at runtime; they are not ELF
+          # dependencies of the Qt plugin and linuxdeploy cannot infer them.
+          mkdir -p dist/AppDir/usr/lib
+          cp -L /usr/lib/x86_64-linux-gnu/libflite*.so* dist/AppDir/usr/lib/
+          install -m 0644 /usr/share/doc/libflite1/copyright dist/AppDir/usr/share/lunchpail/flite-COPYRIGHT
           install -m 0644 assets/lunchpail.svg dist/appimage-assets/io.github.benwbooth.Lunchpail.svg
           cargo run --locked --release --package lunchpail-db -- extract --archive artifacts/lunchpail.db.7z --output dist/AppDir/usr/share/lunchpail
           test -f dist/AppDir/usr/share/lunchpail/lunchpail.db
@@ -287,7 +306,7 @@ jobs:
       - name: Build AppImage
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
-          EXTRA_QT_PLUGINS: imageformats;multimedia
+          EXTRA_QT_PLUGINS: imageformats;multimedia;texttospeech
           OUTPUT: dist/Lunchpail-linux-x86_64.AppImage
           QML_SOURCES_PATHS: crates/lunchpail-app/qml
         run: |

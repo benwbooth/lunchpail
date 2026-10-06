@@ -12,6 +12,10 @@ Item {
     required property var downloadQueue
     required property var speech
     property var assistant: null
+    property var speechOutput: null
+    readonly property var conversationConfig: assistant ? JSON.parse(assistant.config_json || "{}") : ({})
+    readonly property bool assistantSpeaking: !!speechOutput && speechOutput.speaking
+    property bool conversationCoolingDown: false
     property var ai: null
     property bool windowActive: true
     property string installAction: ""
@@ -22,17 +26,35 @@ Item {
     readonly property string movementCue: cinematicWheel ? "wheel" : wallView ? "wall" : albumView ? "flow" : "move"
     signal searchRequested(string text)
     readonly property bool audioSuppressedForVoice: handsFreeController.capturingCommand
-        || searchOverlay.microphoneBusy
+        || searchOverlay.microphoneBusy || assistantSpeaking
     readonly property bool handsFreeAllowed: !!ai && ai.hands_free && active && visible && windowActive && inputEnabled
         && !details.game_running && !launchStatusOverlayOpen && !downloadOverlayOpen
-        && !overlayOpen && (!searchOpen || !searchOverlay.askMode) && !modelInstall.visible
+        && !overlayOpen && !searchOverlay.microphoneBusy && !modelInstall.visible
+        && (!assistant || !assistant.busy) && !assistantSpeaking && !conversationCoolingDown
     CouchHandsFreeController {
         id: handsFreeController
         speech: view.speech
         allowed: view.handsFreeAllowed
+        wakeWordRequired: !!view.conversationConfig.wake_word
         onSearchRequested: text => {
-            searchOverlay.askMode = false
-            view.openSearch(text, false)
+            if (!view.assistant || !view.assistant.ready) {
+                view.settingsRequested("local-ai")
+                return
+            }
+            view.speech.cancel()
+            view.assistant.ask(text)
+        }
+    }
+    Timer { id: voiceCooldown; interval: 900; onTriggered: view.conversationCoolingDown = false }
+    onAssistantSpeakingChanged: {
+        conversationCoolingDown = true
+        if (!assistantSpeaking) voiceCooldown.restart()
+        else voiceCooldown.stop()
+    }
+    Connections {
+        target: view.assistant; ignoreUnknownSignals: true
+        function onBusyChanged() {
+            if (!view.assistant.busy) { view.conversationCoolingDown = true; voiceCooldown.restart() }
         }
     }
     function toggleHandsFree() {
@@ -297,7 +319,7 @@ Item {
         variantWheelOpen = false
         searchOpen = true
         searchOverlay.open(initialText)
-        if (initialText !== searchText) searchRequested(initialText)
+        if (!searchOverlay.askMode && initialText !== searchText) searchRequested(initialText)
         if (microphone) searchOverlay.microphone()
         else feedback.play("confirm")
         noteActivity()
@@ -329,6 +351,8 @@ Item {
         visible: view.searchOpen && view.active
         speech: view.speech
         assistant: view.assistant
+        askMode: true
+        speechOutput: view.speechOutput
         query: view.searchText
         resultCount: shelf.count
         panelColor: view.panel
@@ -340,6 +364,10 @@ Item {
         onFeedbackRequested: kind => feedback.play(kind)
         onSettingsRequested: { view.closeSearch(); view.settingsRequested("local-ai") }
         onInstallationRequested: assistantModel => {
+            if (assistantModel && view.conversationConfig.provider && view.conversationConfig.provider !== "builtin") {
+                view.settingsRequested("local-ai")
+                return
+            }
             view.installAction = assistantModel ? "assistant" : "microphone"
             modelInstall.request(assistantModel, false)
         }
@@ -352,6 +380,22 @@ Item {
             view.selectedDownloadable = game.downloadable
             view.selectedMediaId = view.library.media_id_for_game(game.id)
             view.requestDetails()
+        }
+    }
+
+    Loader {
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.bottom: parent.bottom; anchors.bottomMargin: 85
+        width: Math.min(1080, parent.width - 100)
+        z: 98
+        active: view.active && !!view.assistant && !!view.speechOutput
+        sourceComponent: ConversationCaptions {
+            width: parent.width
+            assistant: view.assistant; speech: view.speech; speechOutput: view.speechOutput
+            enabledCaptions: view.conversationConfig.captions !== false
+            expanded: view.searchOpen
+            inkColor: view.ink; accentColor: view.accent
+            onConversationRequested: { searchOverlay.askMode = true; view.openSearch("", false) }
         }
     }
 

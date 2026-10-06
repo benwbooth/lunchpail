@@ -156,6 +156,7 @@ fn main() {
             .depend("QtQuick.Layouts")
             .depend("QtCore")
             .depend("QtMultimedia")
+            .depend("QtTextToSpeech")
             .qml_files([
                 "qml/AcceleratedWheelHandler.qml",
                 "qml/VisibleArtworkPriority.qml",
@@ -223,6 +224,11 @@ fn main() {
                 "qml/CollectionMemberPresentationDialog.qml",
                 "qml/CouchAudioSettings.qml",
                 "qml/LocalAiSettings.qml",
+                "qml/AssistantSettings.qml",
+                "qml/AssistantSpeechOutput.qml",
+                "qml/ConversationCaptions.qml",
+                "qml/CouchAssistantController.qml",
+                "qml/ConversationProbe.qml",
                 "qml/LocalModelInstall.qml",
                 "qml/LocalAiProbe.qml",
                 "qml/CouchFeedback.qml",

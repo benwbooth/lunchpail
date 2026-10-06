@@ -7,6 +7,7 @@ FocusScope {
     id: search
     required property var speech
     property var assistant: null
+    property var speechOutput: null
     property bool askMode: false
     property string query: ""
     property int resultCount: 0
@@ -23,6 +24,7 @@ FocusScope {
     signal installationRequested(bool assistantModel)
     signal gameChosen(var game)
     readonly property var answer: assistant ? JSON.parse(assistant.result_json || "{}") : ({})
+    readonly property var conversation: assistant && assistant.history_json ? JSON.parse(assistant.history_json) : []
     readonly property var resultRows: (answer.games || []).map(g => ({kind: "game", data: g}))
         .concat((answer.patches || []).map(p => ({kind: "patch", data: p})))
     readonly property int baseActionCount: assistant ? 4 : 3
@@ -50,11 +52,12 @@ FocusScope {
     }
     function close() {
         cancelVoice()
-        if (assistant && assistant.busy) assistant.cancel()
         feedbackRequested("back")
         closeRequested()
     }
     function microphone() {
+        if (speechOutput) speechOutput.stop()
+        if (assistant && assistant.busy) assistant.cancel()
         if (speech.hands_free) speech.cancel()
         if (speech.busy) {
             if (acceptingVoice && speech.listening) speech.stop()
@@ -85,7 +88,7 @@ FocusScope {
         if (!askMode) { close(); return }
         if (!assistant || !assistant.ready) { installationRequested(true); return }
         if (assistant.busy) assistant.cancel()
-        else { cancelVoice(); assistant.ask(field.text) }
+        else { cancelVoice(); if (speechOutput) speechOutput.stop(); assistant.ask(field.text); field.text = "" }
     }
     function chooseRow(index) {
         const row = resultRows[index]
@@ -120,7 +123,7 @@ FocusScope {
         }
         return true // Search owns controller input; never launch a hidden game.
     }
-    onVisibleChanged: if (!visible) { cancelVoice(); if (assistant && assistant.busy) assistant.cancel() }
+    onVisibleChanged: if (!visible) cancelVoice()
     Keys.onEscapePressed: event => { close(); event.accepted = true }
     Keys.onPressed: event => {
         if (event.key === Qt.Key_F2) {
@@ -146,7 +149,7 @@ FocusScope {
         function onCompleted(text) {
             if (!search.visible || !search.acceptingVoice) return
             search.acceptingVoice = false
-            if (search.askMode && search.assistant && text.trim().length) search.submit()
+            if (search.askMode && search.assistant && text.trim().length) { field.text = text; search.submit() }
         }
     }
     Timer { interval: 50; repeat: true; running: search.speech.busy; onTriggered: search.speech.poll() }
@@ -162,7 +165,7 @@ FocusScope {
         anchors.margins: 26
         spacing: 14
         Text {
-            text: search.askMode ? "ASK LUNCHPAIL  ·  LOCAL AI" : "SEARCH GAMES  ·  " + search.resultCount + " RESULTS"
+            text: search.askMode ? "TALK TO LUNCHPAIL" : "SEARCH GAMES  ·  " + search.resultCount + " RESULTS"
             color: search.inkColor; font.pixelSize: 20; font.bold: true
         }
         TextField {
@@ -172,7 +175,7 @@ FocusScope {
             Layout.preferredHeight: 62
             font.pixelSize: 28
             color: search.inkColor
-            placeholderText: search.askMode ? "Find me a SNES JRPG with an English patch" : "Type or speak a game title"
+            placeholderText: search.askMode ? "Search for Super Mario Bros… or play the game" : "Type or speak a game title"
             placeholderTextColor: search.mutedColor
             selectByMouse: true
             onTextEdited: { search.cancelVoice(); search.edit(text) }
@@ -189,7 +192,7 @@ FocusScope {
             spacing: 12
             Repeater {
                 model: [search.speech.hands_free ? "Speak · F2" : search.speech.busy ? (search.acceptingVoice ? (search.speech.listening ? "Stop microphone" : "Cancel transcription") : "Cancel download")
-                        : search.speech.ready ? "Speak · F2" : "Download speech model", search.askMode ? "New question" : "Clear search",
+                        : search.speech.ready ? "Speak · F2" : "Download speech model", search.askMode ? "New conversation" : "Clear search",
                         search.askMode ? (!search.assistant || !search.assistant.ready ? "Install & ask" : search.assistant.busy ? "Cancel answer" : "Ask") : "Browse results"]
                         .concat(search.assistant ? [search.askMode ? "Search titles" : "Ask AI"] : [])
                 delegate: Button {
@@ -235,7 +238,7 @@ FocusScope {
         }
         Text {
             Layout.fillWidth: true
-            text: search.askMode ? "Enter to ask · F2 to speak · Esc to close · Read-only recommendations" : "Local speech recognition · Audio is never saved or uploaded · Enter / Esc to browse"
+            text: search.askMode ? "Enter to send · F2 to speak · Esc to browse · Follow up naturally: ‘play that one’" : "Direct title filter · Enter / Esc to browse"
             color: search.mutedColor; font.pixelSize: 13; wrapMode: Text.WordWrap
         }
         Text {
@@ -246,7 +249,7 @@ FocusScope {
         }
         ColumnLayout {
             Layout.fillWidth: true
-            visible: search.askMode && (search.answer.message || "").length > 0
+            visible: search.askMode && !search.conversation.length && (search.answer.message || "").length > 0
             spacing: 8
             Text {
                 objectName: "assistantEvidenceSummary"
@@ -261,10 +264,32 @@ FocusScope {
             }
         }
         ListView {
+            id: transcript
+            objectName: "conversationTranscript"
+            Layout.fillWidth: true; Layout.fillHeight: true
+            visible: search.askMode && search.conversation.length > 0
+            clip: true; spacing: 10; model: search.conversation
+            onCountChanged: Qt.callLater(() => transcript.positionViewAtEnd())
+            delegate: Rectangle {
+                id: bubble
+                required property var modelData
+                width: transcript.width
+                height: message.implicitHeight + 22
+                radius: 10; color: modelData.role === "user" ? "#27384b" : "#162a28"
+                Text {
+                    id: message; anchors { left: parent.left; right: parent.right; top: parent.top; margins: 11 }
+                    text: (bubble.modelData.role === "user" ? "You: " : "Lunchpail: ") + bubble.modelData.content
+                    textFormat: Text.PlainText; wrapMode: Text.WordWrap; font.pixelSize: 18
+                    color: bubble.modelData.role === "user" ? search.accentColor : search.inkColor
+                }
+            }
+            ScrollBar.vertical: ScrollBar {}
+        }
+        ListView {
             id: results
             objectName: "assistantResults"
             Layout.fillWidth: true; Layout.fillHeight: true
-            visible: search.askMode
+            visible: search.askMode && !search.conversation.length
             clip: true; spacing: 10
             model: search.resultRows
             delegate: Button {

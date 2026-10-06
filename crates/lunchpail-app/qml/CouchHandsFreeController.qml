@@ -4,10 +4,12 @@ Item {
     id: controller
     required property var speech
     property bool allowed: false
-    // The wake-word listener stays open between commands. Only an actual
-    // command (or push-to-talk capture) should suppress the user's audio.
+    property bool wakeWordRequired: true
+    // A wake-word listener can keep previews audible between commands. In
+    // open conversation mode, suppress them for the whole capture session so
+    // the app cannot mistake its own trailer dialogue for a user request.
     readonly property bool capturingCommand: speech.listening
-        && (!speech.hands_free || speech.awake)
+        && (!speech.hands_free || !wakeWordRequired || speech.awake)
     signal searchRequested(string text)
     function reconcile() {
         if (allowed && speech.ready && !speech.busy && !speech.faulted)

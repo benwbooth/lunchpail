@@ -179,21 +179,22 @@ impl qobject::CouchSpeechModel {
                 Event::Listening => {
                     self.as_mut().set_listening(true);
                     let status = if *self.hands_free() {
-                        "Microphone on locally. Say ‘Lunchpail’ and a game title."
+                        "Microphone on locally. Speak naturally to Lunchpail."
                     } else {
-                        "Listening locally… Speak a game title. Stops after a pause or 15 seconds."
+                        "Listening locally… Speak naturally. Stops after a pause or 15 seconds."
                     };
                     self.as_mut().set_status(QString::from(status));
                 }
                 Event::Wake(awake) => {
                     self.as_mut().set_awake(awake);
                     self.as_mut().set_status(QString::from(if awake {
-                        "I'm listening. Say a game title…"
+                        "I'm listening…"
                     } else {
-                        "Microphone on locally. Say ‘Lunchpail’ and a game title."
+                        "Microphone on locally. Ready for your next request."
                     }));
                 }
                 Event::Command(text) => {
+                    self.as_mut().set_transcript(QString::from(&text));
                     self.as_mut().search_requested(QString::from(text));
                 }
                 Event::Decoding => {

@@ -52,12 +52,22 @@
           url = "https://github.com/danifunker/libchdman-rs/releases/download/v0.289.0/${chdmanArchives.${system}.name}";
           hash = chdmanArchives.${system}.hash;
         };
+        # Qt 6.11's Flite discovery accidentally reads an empty environment.
+        # Without this correction it ignores LD_LIBRARY_PATH and cannot find
+        # Nix's voice libraries (there is deliberately no /usr/lib fallback).
+        qtSpeech = if pkgs.stdenv.hostPlatform.isLinux then pkgs.qt6.qtspeech.overrideAttrs (old: {
+          postPatch = (old.postPatch or "") + ''
+            substituteInPlace src/plugins/tts/flite/qtexttospeech_flite_processor.cpp \
+              --replace-warn 'const QProcessEnvironment pe;' 'const auto pe = QProcessEnvironment::systemEnvironment();'
+          '';
+        }) else pkgs.qt6.qtspeech;
         qtModules = with pkgs.qt6; [
           qtbase
           qtdeclarative
           qtimageformats
           qtmultimedia
           qtquick3d
+          qtSpeech
           qtsvg
         ] ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
           qtwayland
@@ -193,6 +203,9 @@
             qtWrapperArgs+=(--set ORT_DYLIB_PATH "${onnxruntimeForHost}/lib/${if pkgs.stdenv.hostPlatform.isDarwin then "libonnxruntime.dylib" else "libonnxruntime.so"}")
           '' + pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
             qtWrapperArgs+=(--prefix PATH : "${pkgs.lib.makeBinPath [ dwarfs ]}")
+            # Qt discovers Flite voice libraries dynamically rather than via
+            # the engine plugin's RPATH. Nix has no /usr/lib fallback.
+            qtWrapperArgs+=(--prefix LD_LIBRARY_PATH : "${pkgs.lib.getLib pkgs.flite}/lib")
           '';
           meta = with pkgs.lib; {
             description = "Native Rust and Qt game library frontend";
@@ -296,6 +309,7 @@
             # default linker so sandboxed derivations stay reproducible.
             ${pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
               export RUSTFLAGS="''${RUSTFLAGS:-} -C link-arg=-fuse-ld=mold"
+              export LD_LIBRARY_PATH="${pkgs.lib.getLib pkgs.flite}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
             ''}
             # Incremental dev loop: rebuild the app on any code change and
             # restart it, instead of waiting on a release build or CI. The

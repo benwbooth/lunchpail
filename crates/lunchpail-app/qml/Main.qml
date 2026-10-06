@@ -350,6 +350,7 @@ ApplicationWindow {
     readonly property bool couchPolishUiProbe: couchViewsUiProbe || Qt.application.arguments.indexOf("--couch-polish-ui-probe") >= 0
     readonly property bool couchSearchUiProbe: Qt.application.arguments.indexOf("--couch-search-ui-probe") >= 0
     readonly property bool localAiUiProbe: Qt.application.arguments.indexOf("--local-ai-ui-probe") >= 0
+    readonly property bool conversationUiProbe: Qt.application.arguments.indexOf("--conversation-ui-probe") >= 0
     readonly property bool couchModeUiProbe: couchMediaUiProbe || couchSearchUiProbe || couchPolishUiProbe || couchSmoothnessUiProbe || couchGamepadUiProbe || couchPlatformUiProbe
                                              || couchCollectionUiProbe
                                              || couchVariantUiProbe
@@ -725,7 +726,25 @@ ApplicationWindow {
     CouchSpeechModel { id: couchSpeech }
     LocalAiModel { id: localAi }
     AssistantModel { id: localAssistant }
-    Timer { interval: 60; repeat: true; running: localAssistant.busy; onTriggered: localAssistant.poll() }
+    AssistantSpeechOutput {
+        id: assistantVoice
+        config: JSON.parse(localAssistant.config_json || "{}")
+        allowed: (root.couchModeActive || settingsDialog.visible) && !gameDetails.game_running
+        onSpeakingChanged: if (speaking) couchSpeech.cancel()
+    }
+    CouchAssistantController {
+        id: couchAssistant
+        app: root; view: couchModeView; library: library; details: gameDetails
+        assistant: localAssistant; ai: localAi
+        readOnlyProbe: root.conversationUiProbe
+        feedbackSettings: couchFeedbackSettings; videoPreferences: videoAudioPreferences
+    }
+    Connections {
+        target: localAssistant
+        function onReplied(text) { if (root.couchModeActive || settingsDialog.visible) assistantVoice.say(text) }
+        function onConfig_jsonChanged() { if (couchSpeech.hands_free) couchSpeech.cancel() }
+    }
+    Timer { interval: 60; repeat: true; running: localAssistant.busy || localAssistant.setup_busy; onTriggered: localAssistant.poll() }
     Timer { interval: 100; repeat: true; running: localAi.busy; onTriggered: localAi.poll() }
     Connections {
         target: localAi
@@ -912,6 +931,34 @@ ApplicationWindow {
         Qt.callLater(function() {
             Qt.callLater(root.positionRequestedSettingsSection)
         })
+    }
+
+    // Narrow, non-sensitive view state for the conversational app tools.
+    function assistantScreenContext() {
+        return {mode: couchModeActive ? "couch" : "normal", settings_open: settingsDialog.visible,
+            game_panel_open: couchGameToolDialog.visible, downloads_open: downloadsDrawer.visible,
+            confirmation_open: saveSyncRemoteDeviceDialog.visible || saveSyncConflictDialog.visible
+                || cloudSyncErrorDialog.visible || firmwareSetupPage.visible,
+            launch_pending: pendingCardLaunchGameId.length > 0 || cloudLaunchPending || saveSync.busy,
+            filtering: filterDelay.running || library.filtering,
+            input_suspended: couchInputSuspended}
+    }
+    function assistantBrowse(query, platform, shelf) {
+        if (!couchModeActive) enterCouchMode()
+        selectNavigationShelf(shelf === "all" ? "" : shelf)
+        if (platform) selectedPlatform = platform
+        searchField.text = query
+        rememberPlatformSearch(false)
+        scheduleFilter()
+    }
+    function assistantFullscreen(action) {
+        if (action === "close_fullscreen") mediaFullscreen.close()
+        else {
+            const source = couchModeView.platformWheelOpen ? couchModeView.systemVideoPreview.source : couchModeView.gameVideoPreview.source
+            if (!source.toString()) throw new Error("No preview video is available")
+            couchFullscreenVideoUrl = source
+            mediaFullscreen.open(); gameVideoPlayer.play()
+        }
     }
 
     // Settings save themselves: edits mark the pane dirty and a short
@@ -11746,6 +11793,13 @@ ApplicationWindow {
         }
     }
     Loader {
+        active: root.conversationUiProbe
+        sourceComponent: ConversationProbe {
+            app: root; view: couchModeView; library: library; assistant: localAssistant
+            speech: couchSpeech; settingsDialog: settingsDialog
+        }
+    }
+    Loader {
         active: root.couchSearchUiProbe
         sourceComponent: CouchSearchProbe {
             app: root; view: couchModeView; library: library; speech: couchSpeech
@@ -11772,6 +11826,7 @@ ApplicationWindow {
         videoMuted: videoAudioPreferences.couchMuted
         speech: couchSpeech
         assistant: localAssistant
+        speechOutput: assistantVoice
         ai: localAi
         windowActive: root.active
         searchText: searchField.text
@@ -23360,6 +23415,8 @@ ApplicationWindow {
                     id: localAiSettingsSection
                     Layout.fillWidth: true
                     ai: localAi
+                    assistant: localAssistant
+                    speechOutput: assistantVoice
                     inkColor: root.ink
                     mutedColor: root.muted
                     accentColor: root.accent

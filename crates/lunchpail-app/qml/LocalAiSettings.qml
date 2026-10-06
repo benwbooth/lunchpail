@@ -6,6 +6,8 @@ import QtQuick.Layouts
 ColumnLayout {
     id: pane
     required property var ai
+    property var assistant: null
+    property var speechOutput: null
     required property color inkColor
     required property color mutedColor
     required property color accentColor
@@ -17,10 +19,18 @@ ColumnLayout {
     readonly property var speechModels: [{id: "", name: "Disabled"}].concat(catalog.filter(m => !m.assistant))
     function indexOfModel(list, id) { return Math.max(0, list.findIndex(m => m.id === id)) }
     function description(id) { const m = catalog.find(m => m.id === id); return m ? m.description + " License: " + m.license + "." : "No model selected." }
+    Loader {
+        Layout.fillWidth: true
+        active: !!pane.assistant && !!pane.speechOutput
+        sourceComponent: AssistantSettings {
+            assistant: pane.assistant; speechOutput: pane.speechOutput
+            inkColor: pane.inkColor; mutedColor: pane.mutedColor; accentColor: pane.accentColor
+        }
+    }
     Text { text: "LOCAL AI & VOICE"; color: pane.inkColor; font.bold: true; font.pixelSize: 16 }
     Text {
         Layout.fillWidth: true
-        text: "Choose Yes when Lunchpail asks to install a model. Download, setup and CPU/GPU selection are automatic. No account or separate server is needed. Prompts and microphone audio stay on this device."
+        text: "Choose Yes when Lunchpail asks to install a bundled model. Download, setup and CPU/GPU selection are automatic. Bundled models need no account or separate server and process prompts and microphone audio on this device."
         color: pane.mutedColor; wrapMode: Text.WordWrap; font.pixelSize: 12
     }
     RowLayout {
@@ -30,7 +40,7 @@ ColumnLayout {
     CheckBox {
         id: handsFreeToggle
         objectName: "handsFreePreference"
-        text: "Hands-free Couch search · Say ‘Lunchpail’ or ‘OK Lunchpail’"
+        text: "Hands-free Couch conversation · microphone on"
         checked: !!pane.ai.hands_free
         onClicked: {
             if (!checked) pane.ai.enable_hands_free(false)
@@ -39,7 +49,7 @@ ColumnLayout {
     }
     Text {
         Layout.fillWidth: true; wrapMode: Text.WordWrap; color: pane.mutedColor; font.pixelSize: 11
-        text: "When enabled, the microphone listens locally while Couch mode is focused, pauses for games and dialogs, and shows a Mic on indicator. Audio is never saved or uploaded. Other speech is ignored until the wake phrase. F2 still works for push-to-talk."
+        text: "When enabled, the microphone listens locally while Couch mode is focused, pauses for games, dialogs and spoken replies, and shows a Mic on indicator. Audio is never saved or uploaded. Transcripts are sent to your chosen AI provider. Use a headset or the optional wake phrase to avoid picking up room/preview audio. F2 still works for push-to-talk."
     }
     LocalModelInstall {
         id: installer; ai: pane.ai

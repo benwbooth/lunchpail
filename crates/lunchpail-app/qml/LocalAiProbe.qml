@@ -65,7 +65,7 @@ Item {
             } else if (probe.step === 8) {
                 if (probe.assistant.busy) return
                 const result = JSON.parse(probe.assistant.result_json || "{}")
-                if (!result.games || !result.games.length) { probe.fail(probe.assistant.status); return }
+                if (result.error || !result.message || JSON.parse(probe.assistant.history_json).length < 2) { probe.fail(probe.assistant.status); return }
                 console.log("LUNCHPAIL_LOCAL_AI_ANSWER " + JSON.stringify(result))
                 probe.capture(probe.view, "answer-1080p")
             } else if (probe.step === 9) {
@@ -73,10 +73,9 @@ Item {
             } else if (probe.step === 10) {
                 probe.capture(probe.view, "answer-720p")
             } else if (probe.step === 11) {
-                probe.view.searchPanel.controllerIndex = probe.view.searchPanel.baseActionCount
-                probe.view.searchPanel.handleNavigation("accept")
-                if (!probe.view.overlayOpen || probe.view.searchOpen) { probe.fail("controller result navigation"); return }
-                console.log("LUNCHPAIL_LOCAL_AI_READY models=verified inference=real controller=details-only microphone=off")
+                probe.view.searchPanel.handleNavigation("back")
+                if (probe.view.searchOpen) { probe.fail("controller conversation navigation"); return }
+                console.log("LUNCHPAIL_LOCAL_AI_READY models=verified inference=real controller=conversation microphone=off")
                 Qt.quit()
             }
         }

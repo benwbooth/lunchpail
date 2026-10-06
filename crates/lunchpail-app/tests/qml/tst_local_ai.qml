@@ -114,14 +114,16 @@ TestCase {
         pane.speech.completed("duplicate")
         compare(pane.assistant.calls, 1)
     }
-    function test_cancel_rejects_late_voice_and_stops_assistant() {
+    function test_closing_panel_rejects_late_voice_but_keeps_app_action_alive() {
         const pane = panel()
         pane.toggleMode(); pane.microphone(); pane.cancelVoice()
         pane.speech.completed("late")
         compare(pane.assistant.calls, 0)
         pane.assistant.ask("question"); pane.close()
+        verify(pane.assistant.busy)
+        compare(pane.assistant.cancels, 0)
+        pane.assistant.cancel()
         verify(!pane.assistant.busy)
-        compare(pane.assistant.cancels, 1)
     }
     function test_microphone_action_cancels_decoding_after_recording_has_stopped() {
         const pane = panel()

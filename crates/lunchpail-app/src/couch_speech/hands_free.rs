@@ -50,8 +50,12 @@ impl WakeGate {
     }
 }
 
-fn deliver(gate: &mut WakeGate, text: &str, tx: &mpsc::Sender<Event>) {
-    let (awake, command) = gate.accept(text, Instant::now());
+fn accepted(gate: &mut WakeGate, text: &str, wake_word: bool) -> (bool, Option<String>) {
+    if wake_word { gate.accept(text, Instant::now()) }
+    else { (false, (!text.trim().is_empty()).then(|| text.trim().to_owned())) }
+}
+fn deliver(gate: &mut WakeGate, text: &str, wake_word: bool, tx: &mpsc::Sender<Event>) {
+    let (awake, command) = accepted(gate, text, wake_word);
     let _ = tx.send(Event::Wake(awake));
     if let Some(query) = command {
         let _ = tx.send(Event::Command(query));
@@ -61,6 +65,7 @@ fn deliver(gate: &mut WakeGate, text: &str, tx: &mpsc::Sender<Event>) {
 pub fn listen_hands_free(control: Arc<AtomicU8>, tx: &mpsc::Sender<Event>) -> Result<String> {
     use lunchpail_ai::{Request, models, worker};
     let settings = crate::local_ai::settings()?;
+    let wake_word = crate::conversation::settings::load()?.wake_word;
     let model = models::find(&settings.speech)?;
     let whisper = model.engine == models::Engine::Whisper;
     // Load/verify before opening the microphone. No hidden secondary model.
@@ -113,6 +118,7 @@ pub fn listen_hands_free(control: Arc<AtomicU8>, tx: &mpsc::Sender<Event>) -> Re
     let mut gate = WakeGate::default();
     let mut audio = Vec::new();
     let mut last_voice = None;
+    let mut last_text = String::new();
     while control.load(Ordering::Relaxed) == 0 {
         if let Ok(error) = error_rx.try_recv() {
             bail!("Microphone disconnected: {error}");
@@ -129,17 +135,21 @@ pub fn listen_hands_free(control: Arc<AtomicU8>, tx: &mpsc::Sender<Event>) -> Re
             while recognizer.is_ready(stream_ref) && control.load(Ordering::Relaxed) == 0 {
                 recognizer.decode(stream_ref);
             }
+            let text = recognizer.get_result(stream_ref).map(|r| r.text).unwrap_or_default();
+            if !wake_word && !text.is_empty() && text != last_text {
+                let _ = tx.send(Event::Wake(true));
+                let _ = tx.send(Event::Text(text.clone()));
+                last_text = text.clone();
+            }
             if recognizer.is_endpoint(stream_ref) {
-                let text = recognizer
-                    .get_result(stream_ref)
-                    .map(|r| r.text)
-                    .unwrap_or_default();
-                deliver(&mut gate, &text, tx);
+                deliver(&mut gate, &text, wake_word, tx);
+                last_text.clear();
                 stream = Some(recognizer.create_stream());
             }
         } else {
             let energy = samples.iter().map(|x| x * x).sum::<f32>() / samples.len().max(1) as f32;
             if energy > 0.000036 {
+                if last_voice.is_none() && !wake_word { let _ = tx.send(Event::Wake(true)); }
                 last_voice = Some(Instant::now());
             }
             audio.extend(
@@ -171,7 +181,7 @@ pub fn listen_hands_free(control: Arc<AtomicU8>, tx: &mpsc::Sender<Event>) -> Re
                 if control.load(Ordering::Relaxed) != 0 {
                     break;
                 }
-                deliver(&mut gate, &reply.text, tx);
+                deliver(&mut gate, &reply.text, wake_word, tx);
                 audio.clear();
                 last_voice = None;
                 // Don't interpret queued audio from the inference interval as a new command.
@@ -186,6 +196,15 @@ pub fn listen_hands_free(control: Arc<AtomicU8>, tx: &mpsc::Sender<Event>) -> Re
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn conversation_mode_preserves_natural_requests_without_a_prefix() {
+        let mut gate = WakeGate::default();
+        for text in ["search for super mario bros", "play the game", "yes please", "turn the music down"] {
+            assert_eq!(accepted(&mut gate, text, false), (false, Some(text.into())));
+        }
+        assert_eq!(accepted(&mut gate, "   ", false), (false, None));
+        assert_eq!(accepted(&mut gate, "play the game", true), (false, None));
+    }
     #[test]
     fn only_prefix_wake_phrases_allow_commands() {
         let now = Instant::now();

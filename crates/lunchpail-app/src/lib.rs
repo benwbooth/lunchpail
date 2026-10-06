@@ -16,6 +16,7 @@ mod local_ai_model;
 mod assistant_tools;
 mod assistant;
 mod assistant_model;
+mod conversation;
 mod mcp_server;
 mod catalog;
 mod collection_identity;
@@ -413,6 +414,12 @@ fn needs_widget_application(
 
 pub fn run() -> i32 {
     app_paths::import_legacy_environment();
+    if std::env::args().any(|arg| arg == "--conversation-mcp-stdio") {
+        return match conversation::bridge::run() {
+            Ok(()) => 0,
+            Err(error) => { eprintln!("Lunchpail conversation bridge: {error:#}"); 1 }
+        };
+    }
     if std::env::args().any(|arg| arg == "--mcp-stdio") {
         return match mcp_server::run() {
             Ok(()) => 0,
