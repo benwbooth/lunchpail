@@ -98,6 +98,23 @@ TestCase {
         compare(pane.assistant.lastQuestion, "help me set up my controller")
         compare(input.text, "")
     }
+    function test_assistant_controls_share_the_settings_theme() {
+        const pane = settingsPane()
+        for (const name of ["conversationProvider", "conversationVoice", "conversationTestInput",
+                            "conversationTestVoice", "conversationTestButton"]) {
+            const control = findChild(pane, name)
+            verify(control, name)
+            compare(control.background.radius, 7, name)
+            compare(control.background.color, "#202a39", name)
+            compare(control.font.pixelSize, 13, name)
+        }
+        const provider = findChild(pane, "conversationProvider")
+        compare(provider.implicitHeight, 34)
+        compare(provider.popup.background.color, "#151d29")
+        provider.popup.open()
+        tryVerify(() => provider.popup.visible)
+        provider.popup.close()
+    }
     function test_captions_show_both_sides_and_partial_recognition() {
         const ai = createTemporaryObject(backend, test)
         const output = createTemporaryObject(voice, test)

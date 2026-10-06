@@ -36,7 +36,7 @@ ColumnLayout {
         Layout.fillWidth: true; wrapMode: Text.WordWrap; color: pane.mutedColor; font.pixelSize: 12
         text: "Say or type ‘search for Super Mario Bros’, ‘play the game’, or ask for help with settings. Every provider uses the same app tools and conversation. Microphone audio is recognized locally; with a cloud provider, your transcript and relevant library/tool results are sent to that provider. Replies use your computer's speech voices."
     }
-    ComboBox {
+    LbComboBox {
         objectName: "conversationProvider"
         Layout.fillWidth: true; model: pane.providers; textRole: "name"
         currentIndex: Math.max(0, pane.providers.findIndex(p => p.id === pane.provider))
@@ -51,14 +51,14 @@ ColumnLayout {
             : pane.provider === "ollama" ? "Run Ollama locally, download a tool-capable model, then refresh the model list. Lunchpail does not start the server or download a model for you."
             : "Choose the endpoint and a tool-capable model. Save your key in the OS keyring, never in chat. API use may incur charges. Refreshing models checks connectivity, not conversation capability."
     }
-    TextField {
+    LbTextField {
         objectName: "conversationExecutable"
         Layout.fillWidth: true; visible: pane.cli; text: pane.profile.executable || ""
         placeholderText: "CLI executable name or full path"; selectByMouse: true
         onEditingFinished: pane.saveProfile("executable", text)
         Accessible.name: "Provider executable"
     }
-    TextField {
+    LbTextField {
         objectName: "conversationEndpoint"
         Layout.fillWidth: true; visible: pane.provider !== "builtin" && !pane.cli; text: pane.profile.endpoint || ""
         placeholderText: "Server URL"; selectByMouse: true
@@ -67,16 +67,16 @@ ColumnLayout {
     }
     RowLayout {
         Layout.fillWidth: true; visible: pane.provider !== "builtin"
-        TextField {
+        LbTextField {
             objectName: "conversationModel"
             Layout.fillWidth: true; text: pane.profile.model || ""; selectByMouse: true
             placeholderText: pane.cli ? "Model override (optional)" : "Model ID (required)"
             onEditingFinished: pane.saveProfile("model", text)
             Accessible.name: "AI model"
         }
-        Button { text: "Refresh models"; visible: !pane.cli; enabled: !pane.assistant.setup_busy; onClicked: pane.assistant.discover_models() }
+        LbButton { text: "Refresh models"; visible: !pane.cli; enabled: !pane.assistant.setup_busy; onClicked: pane.assistant.discover_models() }
     }
-    ComboBox {
+    LbComboBox {
         objectName: "conversationAvailableModels"
         Layout.fillWidth: true; visible: pane.models.length > 0 && !pane.cli && pane.provider !== "builtin"
         model: pane.models
@@ -86,29 +86,31 @@ ColumnLayout {
     }
     RowLayout {
         Layout.fillWidth: true; visible: pane.apiKey
-        TextField {
+        LbTextField {
             id: keyField; objectName: "conversationApiKey"
             Layout.fillWidth: true; echoMode: TextInput.Password; selectByMouse: true
             placeholderText: pane.assistant.key_saved ? "Key stored · enter a replacement" : "API key (stored only in the OS keyring)"
             Accessible.name: "Private API key"
         }
-        Button { text: "Save key"; enabled: keyField.text.length > 0; onClicked: { pane.assistant.save_api_key(keyField.text); keyField.text = "" } }
-        Button { text: "Clear key"; enabled: pane.assistant.key_saved; onClicked: pane.assistant.save_api_key("") }
+        LbButton { text: "Save key"; enabled: keyField.text.length > 0; onClicked: { pane.assistant.save_api_key(keyField.text); keyField.text = "" } }
+        LbButton { text: "Clear key"; enabled: pane.assistant.key_saved; onClicked: pane.assistant.save_api_key("") }
     }
     Text { Layout.fillWidth: true; text: pane.assistant.setup_status; color: pane.accentColor; wrapMode: Text.WordWrap; textFormat: Text.PlainText; font.pixelSize: 12 }
     RowLayout {
-        CheckBox { objectName: "spokenReplies"; text: "Speak replies"; checked: pane.config.spoken_replies !== false; onClicked: pane.save("spoken_replies", checked) }
-        CheckBox { objectName: "conversationCaptions"; text: "Player + assistant captions"; checked: pane.config.captions !== false; onClicked: pane.save("captions", checked) }
+        LbCheckBox { objectName: "spokenReplies"; text: "Speak replies"; checked: pane.config.spoken_replies !== false; onClicked: pane.save("spoken_replies", checked) }
+        LbCheckBox { objectName: "conversationCaptions"; text: "Player + assistant captions"; checked: pane.config.captions !== false; onClicked: pane.save("captions", checked) }
     }
-    CheckBox { objectName: "conversationWakeWord"; text: "Require ‘Lunchpail’ before hands-free requests"; checked: !!pane.config.wake_word; onClicked: pane.save("wake_word", checked) }
-    ComboBox {
+    LbCheckBox { objectName: "conversationWakeWord"; text: "Require ‘Lunchpail’ before hands-free requests"; checked: !!pane.config.wake_word; onClicked: pane.save("wake_word", checked) }
+    LbComboBox {
+        objectName: "conversationSpeechEngine"
         Layout.fillWidth: true; visible: pane.speechOutput.engines.length > 1
         model: ["System default"].concat(pane.speechOutput.engines)
         currentIndex: Math.max(0, pane.speechOutput.engines.indexOf(pane.config.voice_engine || "") + 1)
         onActivated: pane.save("voice_engine", currentIndex ? pane.speechOutput.engines[currentIndex - 1] : "")
         Accessible.name: "Speech engine"
     }
-    ComboBox {
+    LbComboBox {
+        objectName: "conversationVoice"
         Layout.fillWidth: true; model: ["System default voice"].concat(pane.speechOutput.voiceNames)
         currentIndex: Math.max(0, pane.speechOutput.voiceNames.indexOf(pane.config.voice || "") + 1)
         onActivated: pane.save("voice", currentIndex ? pane.speechOutput.voiceNames[currentIndex - 1] : "")
@@ -117,21 +119,21 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true
         Text { text: "Speed"; color: pane.inkColor }
-        Slider { Layout.fillWidth: true; from: -1; to: 1; stepSize: 0.05; value: pane.config.voice_rate || 0; onMoved: pane.save("voice_rate", value); Accessible.name: "Speaking speed" }
+        LbSlider { Layout.fillWidth: true; from: -1; to: 1; stepSize: 0.05; value: pane.config.voice_rate || 0; onMoved: pane.save("voice_rate", value); Accessible.name: "Speaking speed" }
         Text { text: "Volume"; color: pane.inkColor }
-        Slider { Layout.fillWidth: true; from: 0; to: 1; stepSize: 0.05; value: pane.config.voice_volume === undefined ? 0.85 : pane.config.voice_volume; onMoved: pane.save("voice_volume", value); Accessible.name: "Voice volume" }
-        Button { text: pane.speechOutput.speaking ? "Stop voice" : "Test voice"; onClicked: pane.speechOutput.speaking ? pane.speechOutput.stop() : pane.speechOutput.test() }
+        LbSlider { Layout.fillWidth: true; from: 0; to: 1; stepSize: 0.05; value: pane.config.voice_volume === undefined ? 0.85 : pane.config.voice_volume; onMoved: pane.save("voice_volume", value); Accessible.name: "Voice volume" }
+        LbButton { objectName: "conversationTestVoice"; text: pane.speechOutput.speaking ? "Stop voice" : "Test voice"; onClicked: pane.speechOutput.speaking ? pane.speechOutput.stop() : pane.speechOutput.test() }
     }
     Text { Layout.fillWidth: true; visible: !!pane.speechOutput.error; text: pane.speechOutput.error; color: pane.accentColor; wrapMode: Text.WordWrap }
     RowLayout {
         Layout.fillWidth: true
-        TextField {
+        LbTextField {
             id: testMessage; objectName: "conversationTestInput"
             Layout.fillWidth: true; placeholderText: "Ask a question or test: What can you help me do?"
             onAccepted: if (text.trim()) { pane.assistant.ask(text); text = "" }
             Accessible.name: "Assistant test message"
         }
-        Button { text: pane.assistant.busy ? "Stop" : "Test conversation"; onClicked: {
+        LbButton { objectName: "conversationTestButton"; text: pane.assistant.busy ? "Stop" : "Test conversation"; onClicked: {
             if (pane.assistant.busy) pane.assistant.cancel()
             else { pane.assistant.ask(testMessage.text.trim() || "What can you help me do? Do not change anything for this test."); testMessage.text = "" }
         } }

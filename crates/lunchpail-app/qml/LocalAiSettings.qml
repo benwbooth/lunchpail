@@ -34,10 +34,10 @@ ColumnLayout {
         color: pane.mutedColor; wrapMode: Text.WordWrap; font.pixelSize: 12
     }
     RowLayout {
-        Button { text: pane.ai.assistant_ready ? "Assistant installed" : "Install assistant…"; enabled: !pane.ai.busy; onClicked: { pane.enableVoiceAfterInstall = false; installer.request(true, false) } }
-        Button { text: pane.ai.speech_ready ? "Voice model installed" : "Install voice…"; enabled: !pane.ai.busy; onClicked: { pane.enableVoiceAfterInstall = false; installer.request(false, false) } }
+        LbButton { text: pane.ai.assistant_ready ? "Assistant installed" : "Install assistant…"; enabled: !pane.ai.busy; onClicked: { pane.enableVoiceAfterInstall = false; installer.request(true, false) } }
+        LbButton { text: pane.ai.speech_ready ? "Voice model installed" : "Install voice…"; enabled: !pane.ai.busy; onClicked: { pane.enableVoiceAfterInstall = false; installer.request(false, false) } }
     }
-    CheckBox {
+    LbCheckBox {
         id: handsFreeToggle
         objectName: "handsFreePreference"
         text: "Hands-free Couch conversation · microphone on"
@@ -56,11 +56,11 @@ ColumnLayout {
         onReady: { if (pane.enableVoiceAfterInstall) pane.ai.enable_hands_free(true); pane.enableVoiceAfterInstall = false }
         onDeclined: { pane.enableVoiceAfterInstall = false; handsFreeToggle.checked = Qt.binding(() => !!pane.ai.hands_free) }
     }
-    Button { objectName: "advancedAiOptions"; text: pane.advanced ? "Hide advanced options" : "Advanced options"; onClicked: pane.advanced = !pane.advanced }
+    LbButton { objectName: "advancedAiOptions"; text: pane.advanced ? "Hide advanced options" : "Advanced options"; onClicked: pane.advanced = !pane.advanced }
     ColumnLayout {
       Layout.fillWidth: true; visible: pane.advanced; spacing: 12
     Text { text: "Assistant model"; color: pane.inkColor; font.bold: true }
-    ComboBox {
+    LbComboBox {
         objectName: "assistantModelChoice"
         Layout.fillWidth: true; model: pane.assistants; textRole: "name"
         currentIndex: pane.indexOfModel(pane.assistants, pane.ai.assistant_model)
@@ -69,7 +69,7 @@ ColumnLayout {
     }
     Text { Layout.fillWidth: true; text: pane.description(pane.ai.assistant_model); color: pane.mutedColor; wrapMode: Text.WordWrap; font.pixelSize: 11 }
     Text { text: "Speech recognition model"; color: pane.inkColor; font.bold: true }
-    ComboBox {
+    LbComboBox {
         objectName: "speechModelChoice"
         Layout.fillWidth: true; model: pane.speechModels; textRole: "name"
         currentIndex: pane.indexOfModel(pane.speechModels, pane.ai.speech_model)
@@ -78,7 +78,7 @@ ColumnLayout {
     }
     Text { Layout.fillWidth: true; text: pane.description(pane.ai.speech_model); color: pane.mutedColor; wrapMode: Text.WordWrap; font.pixelSize: 11 }
     Text { text: "Compute device"; color: pane.inkColor; font.bold: true }
-    ComboBox {
+    LbComboBox {
         objectName: "computeChoice"
         Layout.fillWidth: true
         model: ["Automatic · Prefer GPU, fall back to CPU", "CPU only", "GPU required · Report an error if unavailable"]
@@ -93,8 +93,8 @@ ColumnLayout {
     }
     RowLayout {
         Layout.fillWidth: true
-        Button { text: pane.ai.busy ? "Cancel" : "Download / repair selected models"; onClicked: pane.ai.busy ? pane.ai.cancel() : pane.ai.download_selected() }
-        Button { text: "Check hardware"; enabled: !pane.ai.busy; onClicked: pane.ai.detect_hardware() }
+        LbButton { text: pane.ai.busy ? "Cancel" : "Download / repair selected models"; onClicked: pane.ai.busy ? pane.ai.cancel() : pane.ai.download_selected() }
+        LbButton { text: "Check hardware"; enabled: !pane.ai.busy; onClicked: pane.ai.detect_hardware() }
     }
     }
     ProgressBar { Layout.fillWidth: true; visible: pane.ai.busy; value: pane.ai.progress }

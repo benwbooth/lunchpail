@@ -18,6 +18,7 @@ Item {
         const selected = voices.find(v => v.name === (config.voice || ""))
         if (selected) tts.voice = selected
         if (tts.state === TextToSpeech.Error) error = "Speech playback unavailable: " + tts.errorString()
+        else if (voices.length) error = ""
     }
     function say(text) {
         if (!allowed || config.spoken_replies === false || !text.trim().length) return
@@ -45,6 +46,7 @@ Item {
         volume: output.config.voice_volume === undefined ? 0.85 : output.config.voice_volume
         onEngineChanged: output.refreshVoices()
         onStateChanged: (state) => {
+            if (state === TextToSpeech.Ready) output.refreshVoices()
             if (state === TextToSpeech.Speaking) { output.queued = false; startTimeout.stop() }
             if (state === TextToSpeech.Ready && !output.queued) output.finished()
         }

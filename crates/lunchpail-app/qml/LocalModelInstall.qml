@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
-Dialog {
+LbDialog {
     id: dialog
     property var ai: null
     property bool assistantModel: false
@@ -14,6 +14,7 @@ Dialog {
     anchors.centerIn: parent
     width: Math.min(540, parent ? parent.width - 40 : 540)
     closePolicy: Popup.NoAutoClose
+    onRejected: decline()
     title: "Install a model?"
     readonly property var modelInfo: {
         if (!ai) return ({})
@@ -63,14 +64,14 @@ Dialog {
         Label {
             Layout.fillWidth: true; wrapMode: Text.WordWrap
             text: "The download needs internet. Speech and prompts stay on this device."
-                  + (dialog.microphoneConsent ? " After installation, the microphone will listen locally for ‘Lunchpail’ while you browse Couch mode. You can turn it off at any time." : "")
+                  + (dialog.microphoneConsent ? " After installation, the microphone will listen locally for requests while you browse Couch mode. You can turn it off at any time." : "")
         }
         ProgressBar { Layout.fillWidth: true; visible: dialog.pending; value: dialog.ai ? dialog.ai.progress : 0 }
         Label { Layout.fillWidth: true; wrapMode: Text.WordWrap; visible: dialog.pending || (dialog.ai && !dialog.ai.busy); text: dialog.ai ? dialog.ai.status : "" }
         RowLayout {
             Layout.alignment: Qt.AlignRight
-            Button { objectName: "installModelNo"; text: dialog.pending ? "Cancel" : "No"; onClicked: dialog.decline() }
-            Button { objectName: "installModelYes"; text: "Yes"; enabled: dialog.ai && !dialog.ai.busy; visible: !dialog.pending; onClicked: dialog.install() }
+            LbButton { objectName: "installModelNo"; text: dialog.pending ? "Cancel" : "No"; onClicked: dialog.decline() }
+            LbButton { objectName: "installModelYes"; text: "Yes"; enabled: dialog.ai && !dialog.ai.busy; visible: !dialog.pending; onClicked: dialog.install() }
         }
     }
 }

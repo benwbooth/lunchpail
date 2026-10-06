@@ -68,7 +68,8 @@ Item {
             } else if (probe.step === 8) {
                 probe.app.positionRequestedSettingsSection(); probe.step++
             } else if (probe.step === 9) {
-                probe.capture(probe.settingsDialog.contentItem, "settings")
+                // Include the header, close/window controls and scrollbar.
+                probe.capture(probe.settingsDialog.parent, "settings")
             } else {
                 console.log("LUNCHPAIL_CONVERSATION_READY provider=ollama model=" + JSON.parse(probe.assistant.config_json).profiles.ollama.model
                     + " transport=real-http navigation=real followup=verified microphone=off launches=blocked")

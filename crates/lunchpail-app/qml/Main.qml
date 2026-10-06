@@ -2,7 +2,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Controls.impl as ControlsImpl
 import QtQuick.Layouts
 import QtMultimedia
 import QtCore
@@ -20789,6 +20788,7 @@ ApplicationWindow {
         id: settingsDialog
         parent: Overlay.overlay
         modal: true
+        focus: true
         dim: false
         x: 0
         y: 0
@@ -20822,58 +20822,16 @@ ApplicationWindow {
             radius: 0
         }
 
-        header: Rectangle {
+        header: SettingsWindowHeader {
             width: parent.width
             height: 72
-            color: root.panelRaised
-            border.color: root.line
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 24
-                anchors.rightMargin: 16
-                spacing: 10
-                ColumnLayout {
-                    spacing: 1
-                    Text {
-                        text: "SETTINGS"
-                        color: root.ink
-                        font.pixelSize: 18
-                        font.weight: Font.Bold
-                        font.letterSpacing: 0.8
-                    }
-                    Text {
-                        text: "Library, downloads, accounts, emulators, and presentation"
-                        color: root.muted
-                        font.pixelSize: 10
-                    }
-                }
-                Item { Layout.fillWidth: true }
-                LbButton {
-                    text: "Setup guide"
-                    flat: true
-                    font.pixelSize: 9
-                    font.weight: Font.Bold
-                    onClicked: onboardingPage.open()
-                }
-                Text {
-                    Layout.alignment: Qt.AlignVCenter
-                    text: appSettings.busy ? "SAVING…"
-                          : root.settingsDirty ? "UNSAVED CHANGES · SAVING SOON…"
-                          : "CHANGES SAVE AUTOMATICALLY"
-                    color: appSettings.busy || root.settingsDirty ? root.accentCool : root.muted
-                    font.pixelSize: 9
-                    font.weight: Font.Bold
-                    font.letterSpacing: 0.8
-                    visible: settingsDialog.visible
-                }
-                LbRoundButton {
-                    text: "×"
-                    flat: true
-                    font.pixelSize: 20
-                    onClicked: settingsDialog.close()
-                    Accessible.name: "Close settings"
-                }
-            }
+            applicationWindow: root
+            saveStatus: appSettings.busy ? "SAVING…"
+                        : root.settingsDirty ? "UNSAVED CHANGES · SAVING SOON…"
+                        : "CHANGES SAVE AUTOMATICALLY"
+            saving: appSettings.busy || root.settingsDirty
+            onSetupRequested: onboardingPage.open()
+            onCloseSettingsRequested: settingsDialog.close()
         }
 
         contentItem: RowLayout {
@@ -20999,7 +20957,15 @@ ApplicationWindow {
                 contentWidth: width
                 contentHeight: settingsContentColumn.height + 64
                 boundsBehavior: Flickable.StopAtBounds
-                ScrollBar.vertical: LbScrollBar { policy: ScrollBar.AsNeeded }
+                ScrollBar.vertical: LbScrollBar {
+                    objectName: "settingsScrollBar"
+                    persistent: true
+                    policy: ScrollBar.AlwaysOn
+                    visible: settingsScroll.contentHeight > settingsScroll.height
+                    active: true
+                    z: 10
+                    Accessible.name: "Scroll settings"
+                }
                 AcceleratedWheelHandler { scroller: settingsScroll; blocking: true }
 
                 ColumnLayout {
@@ -27356,127 +27322,17 @@ ApplicationWindow {
         }
     }
 
-    component WindowControlButton: ToolButton {
-        id: windowControl
-        property bool destructive: false
-        property bool previewHover: false
-        readonly property bool showHover: hovered || previewHover
-        flat: true
-        display: AbstractButton.IconOnly
-        icon.width: 18
-        icon.height: 18
-        icon.color: windowControl.destructive && windowControl.showHover
-                    ? "#ffffff" : "#d9e4ef"
-        contentItem: Item {
-            ControlsImpl.IconImage {
-                anchors.centerIn: parent
-                width: 18
-                height: 18
-                sourceSize.width: 18
-                sourceSize.height: 18
-                fillMode: Image.PreserveAspectFit
-                name: windowControl.icon.name
-                source: windowControl.icon.source
-                color: windowControl.icon.color
-            }
-        }
-        background: Rectangle {
-            radius: width / 2
-            color: windowControl.down
-                   ? (windowControl.destructive ? "#8d2735" : "#34445a")
-                   : windowControl.showHover
-                     ? (windowControl.destructive ? "#b33342" : "#2b394b")
-                     : "transparent"
-            border.width: windowControl.visualFocus ? 1 : 0
-            border.color: root.accentCool
-        }
-    }
-
     // Frameless windows still need the native compositor's resize operation.
     // Only the narrow outer rim handles it; content and top-bar buttons retain
     // their ordinary pointer interactions.
-    component ResizeArea: MouseArea {
-        required property int edges
-        acceptedButtons: Qt.LeftButton
-        onPressed: root.startSystemResize(edges)
-    }
-
-    Item {
+    WindowResizeFrame {
+        objectName: "windowResizeFrame"
+        applicationWindow: root
+        // Modal settings would otherwise intercept the window's outer rim.
+        parent: settingsDialog.visible ? settingsDialog.header.parent : root.contentItem
         anchors.fill: parent
         z: 1100
         visible: root.visibility === Window.Windowed
 
-        ResizeArea {
-            edges: Qt.TopEdge
-            cursorShape: Qt.SizeVerCursor
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.leftMargin: 10
-            anchors.rightMargin: 10
-            height: 5
-        }
-        ResizeArea {
-            edges: Qt.BottomEdge
-            cursorShape: Qt.SizeVerCursor
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            anchors.leftMargin: 10
-            anchors.rightMargin: 10
-            height: 7
-        }
-        ResizeArea {
-            edges: Qt.LeftEdge
-            cursorShape: Qt.SizeHorCursor
-            anchors.left: parent.left
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            anchors.topMargin: 10
-            anchors.bottomMargin: 10
-            width: 6
-        }
-        ResizeArea {
-            edges: Qt.RightEdge
-            cursorShape: Qt.SizeHorCursor
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            anchors.topMargin: 10
-            anchors.bottomMargin: 10
-            width: 6
-        }
-        ResizeArea {
-            edges: Qt.TopEdge | Qt.LeftEdge
-            cursorShape: Qt.SizeFDiagCursor
-            anchors.left: parent.left
-            anchors.top: parent.top
-            width: 10
-            height: 10
-        }
-        ResizeArea {
-            edges: Qt.TopEdge | Qt.RightEdge
-            cursorShape: Qt.SizeBDiagCursor
-            anchors.right: parent.right
-            anchors.top: parent.top
-            width: 10
-            height: 10
-        }
-        ResizeArea {
-            edges: Qt.BottomEdge | Qt.LeftEdge
-            cursorShape: Qt.SizeBDiagCursor
-            anchors.left: parent.left
-            anchors.bottom: parent.bottom
-            width: 10
-            height: 10
-        }
-        ResizeArea {
-            edges: Qt.BottomEdge | Qt.RightEdge
-            cursorShape: Qt.SizeFDiagCursor
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            width: 10
-            height: 10
-        }
     }
 }

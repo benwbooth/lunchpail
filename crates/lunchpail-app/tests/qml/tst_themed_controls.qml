@@ -14,6 +14,19 @@ TestCase {
     property int buttonClicks: 0
     property int comboActivations: 0
     property int dialogAccepts: 0
+    Lunchpail.MomentumFlickable {
+        id: settingsScroll
+        width: 300; height: 180
+        visible: false
+        contentHeight: 1800
+        Controls.ScrollBar.vertical: Lunchpail.LbScrollBar {
+            id: settingsBar
+            persistent: true
+            policy: Controls.ScrollBar.AlwaysOn
+            active: true
+            z: 10
+        }
+    }
 
     Component {
         id: positiveButtonComponent
@@ -127,6 +140,20 @@ TestCase {
         mouseClick(button)
         compare(buttonClicks, 1)
         verify(toolButton.background !== null)
+    }
+    function test_persistent_settings_scrollbar_stays_visible_and_drags() {
+        settingsScroll.visible = true
+        settingsScroll.z = 100
+        wait(100)
+        verify(settingsBar.visible)
+        compare(settingsBar.width, 14)
+        compare(settingsBar.opacity, 1)
+        verify(settingsBar.contentItem.opacity > 0)
+        verify(settingsBar.background.color.toString() !== "#00000000")
+        const previous = settingsScroll.contentY
+        mouseDrag(settingsBar, settingsBar.width / 2, 8, 0, 80)
+        verify(settingsScroll.contentY > previous)
+        settingsScroll.visible = false
     }
 
     function test_fixed_height_button_uses_standard_label_size() {

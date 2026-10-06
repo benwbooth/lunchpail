@@ -325,6 +325,9 @@ fn main() {
                 "qml/WatchedTorrentInbox.qml",
                 "qml/BuiltInCollectionScope.qml",
                 "qml/Main.qml",
+                "qml/WindowControlButton.qml",
+                "qml/WindowResizeFrame.qml",
+                "qml/SettingsWindowHeader.qml",
             ]),
     )
     .crate_include_root(Some("include".to_owned()))

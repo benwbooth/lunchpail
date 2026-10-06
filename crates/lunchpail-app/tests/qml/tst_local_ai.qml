@@ -92,6 +92,17 @@ TestCase {
         compare(pane.ai.compute, "gpu")
         compare(pane.ai.selections, 2)
     }
+    function test_advanced_settings_use_the_same_themed_controls() {
+        const pane = createTemporaryObject(settingsComponent, test)
+        verify(pane)
+        pane.advanced = true
+        for (const name of ["assistantModelChoice", "speechModelChoice", "computeChoice", "advancedAiOptions"]) {
+            const control = findChild(pane, name)
+            verify(control, name)
+            compare(control.background.radius, 7, name)
+            compare(control.background.color, "#202a39", name)
+        }
+    }
     function test_ask_typing_does_not_filter_shelf_or_auto_submit() {
         const pane = panel()
         pane.toggleMode()
