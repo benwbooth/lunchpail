@@ -14,6 +14,7 @@ Item {
     readonly property var paths: ({
         menu: "M4 6 H20 M4 12 H20 M4 18 H20",
         games: "M3 3 H9 V9 H3 Z M15 3 H21 V9 H15 Z M3 15 H9 V21 H3 Z M15 15 H21 V21 H15 Z",
+        dice: "M6 3 H18 Q21 3 21 6 V18 Q21 21 18 21 H6 Q3 21 3 18 V6 Q3 3 6 3 Z M7.8 8 H8.2 M15.8 8 H16.2 M11.8 12 H12.2 M7.8 16 H8.2 M15.8 16 H16.2",
         collection: "M3 5 H8 L10 8 H21 V20 H3 Z M7 12 H17 M7 16 H14",
         favorite: "M12 3 L15 9 L22 10 L17 15 L18 22 L12 18 L6 22 L7 15 L2 10 L9 9 Z",
         recent: "M12 3 A9 9 0 1 1 11.99 3 M12 7 V12 L16 14",

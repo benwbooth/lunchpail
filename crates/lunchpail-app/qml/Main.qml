@@ -13039,6 +13039,20 @@ ApplicationWindow {
                         font.pixelSize: 12
                     }
                 }
+                RandomGameButton {
+                    libraryModel: library
+                    selectedGameId: root.selectedGameId
+                    filterPending: filterDelay.running
+                    compact: content.width < 700
+                    onGameChosen: gameId => {
+                        root.openGame(gameId, library.database_id_for_game(gameId),
+                                      library.display_title_for_game(gameId),
+                                      library.platform_for_game(gameId),
+                                      library.local_for_game(gameId),
+                                      library.downloadable_for_game(gameId))
+                        root.reanchorSelectedGame()
+                    }
+                }
                 HeaderButton {
                     text: root.activeFilterCount > 0
                           ? "Filters  " + root.activeFilterCount : "Filters"
