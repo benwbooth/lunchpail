@@ -31,6 +31,7 @@ TestCase {
     SignalSpy { id: settingsClosed; target: header; signalName: "closeSettingsRequested" }
     Lunchpail.LbDialog {
         id: dialog
+        parent: Controls.Overlay.overlay
         width: 700; height: 250
         x: 100; y: 30; padding: 0
         modal: true; focus: true
