@@ -91,6 +91,13 @@ worst sample was 33.478 ms (one sample above 33.34 ms across 1,321 measured
 frames). This is a measured render test, not a guarantee of zero dropped frames
 on every display or workload.
 
+The developer-only `--couch-smoothness-ui-probe --couch-hover-check true`
+check requires QtTest and the same isolated profile. It moves and parks the
+pointer across every game/platform toolbar button at 1080p and 720p, checking
+each rendered frame for toolbar/scrim visibility changes and uninterrupted
+background video. The reveal listener observes the common parent of the
+controls, so buttons cannot hide their own toolbar by consuming sibling hover.
+
 ## Search with a keyboard or microphone
 
 Start typing, press **F3**, or choose Search to open the conversation panel.

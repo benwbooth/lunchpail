@@ -16,6 +16,11 @@ Item {
     property var toolSections: ["display", "mods", "achievements", "files"]
     property int toolIndex: 0
     readonly property bool wheelCheck: app.argumentValue("--hyperspin-wheel-check") === "true"
+    readonly property bool hoverCheck: app.argumentValue("--couch-hover-check") === "true"
+    Loader {
+        active: probe.hoverCheck
+        sourceComponent: CouchHoverProbe { app: probe.app; view: probe.view; library: probe.library }
+    }
     property bool capturing: false
     readonly property string mario: "9697a5eb-e0b4-4f24-8d43-672701414ee7"
     function fail(message) { console.error("LUNCHPAIL_COUCH_SMOOTHNESS_FAILED " + message); Qt.exit(2) }
@@ -109,7 +114,7 @@ Item {
         }
     }
     Timer {
-        interval: probe.wheelCheck ? 100 : 200; repeat: true; running: true
+        interval: probe.wheelCheck ? 100 : 200; repeat: true; running: !probe.hoverCheck
         onTriggered: {
             if (!probe.library.ready || probe.library.loading || probe.library.filtering || !probe.view.active) return
             if (probe.wheelCheck) { probe.wheelTick(); return }
@@ -178,5 +183,5 @@ Item {
             }
         }
     }
-    Timer { interval: probe.wheelCheck ? 120000 : 60000; running: true; onTriggered: probe.fail("Timed out at stage " + probe.stage) }
+    Timer { interval: probe.wheelCheck ? 120000 : 60000; running: !probe.hoverCheck; onTriggered: probe.fail("Timed out at stage " + probe.stage) }
 }

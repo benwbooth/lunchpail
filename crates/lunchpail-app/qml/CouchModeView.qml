@@ -1730,16 +1730,15 @@ Item {
         }
     }
 
-    Item {
+    CouchToolbarHoverArea {
+        id: wheelToolbarHover
+        objectName: "couchGameToolbarHover"
         // Mouse users reveal the same navigation controls at the top edge;
         // controller/keyboard users reveal them by moving left to actions.
-        anchors { left: parent.left; right: parent.right; top: parent.top }
-        height: 150
-        z: 30
-        HoverHandler { id: wheelToolbarHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad }
     }
     Row {
         id: headerActions
+        objectName: "couchHeaderActions"
         visible: !view.wheelBrowseOnly
         z: 31
         anchors.right: parent.right
@@ -2713,10 +2712,9 @@ Item {
             border.width: view.cinematicWheel ? 0 : 1
             clip: true
 
-            Item {
-                anchors { left: parent.left; right: parent.right; top: parent.top }
-                height: 150; z: 3
-                HoverHandler { id: platformToolbarHover; acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad }
+            CouchToolbarHoverArea {
+                id: platformToolbarHover
+                objectName: "couchPlatformToolbarHover"
             }
             SemanticIcon {
                 objectName: "couchPlatformWheelPointer"
@@ -2743,6 +2741,7 @@ Item {
             }
 
             Rectangle {
+                objectName: "couchPlatformHeader"
                 visible: !view.wheelBrowseOnly
                 z: 2
                 anchors.left: parent.left
