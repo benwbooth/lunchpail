@@ -29,6 +29,15 @@ pub struct GameRef {
 }
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct ResolveGame {
+    /// Exact spoken game title. Punctuation and Brothers/Bros are normalized.
+    pub title: String,
+    /// Explicitly requested platform or alias; empty searches all platforms.
+    #[serde(default)]
+    pub platform: String,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Favorite {
     #[serde(default)]
     pub game_id: String,
@@ -93,8 +102,9 @@ pub enum Call {
     GameDetails(GameDetails),
     TranslationPatches(TranslationPatches),
     BrowseLibrary(Browse),
+    ResolveGame(ResolveGame),
     SelectGame(GameRef),
-    PlayGame(GameRef),
+    PlayGame(GameDetails),
     StopGame(Empty),
     Navigate(Named),
     OpenSettings(Named),
@@ -228,6 +238,14 @@ pub fn parse(name: &str, arguments: Value) -> Result<Call> {
         );
     }
     match &call {
+        Call::ResolveGame(a) => ensure!(
+            !a.title.trim().is_empty() && a.title.len() <= 160 && a.platform.len() <= 100,
+            "Enter a game title of at most 160 characters"
+        ),
+        Call::PlayGame(a) => ensure!(
+            !a.game_id.trim().is_empty() && a.game_id.len() <= 200,
+            "Launching requires an explicit game ID from the current tools; never fall back to the selection"
+        ),
         Call::BrowseLibrary(a) => {
             ensure!(
                 a.query.len() <= 160 && a.platform.len() <= 100 && a.collection_id.len() <= 200,
@@ -324,10 +342,18 @@ pub fn definitions() -> Vec<rmcp::model::Tool> {
         false,
     );
     add(
+        "resolve_game",
+        "Resolve an exact named title across the entire current catalog, independently of the highlighted game and active filters. Returns all-match count and up to 20 matching games, never sequels or remakes with different titles. Multiple matches require clarification. Does not change selection or launch anything.",
+        schemars::schema_for!(ResolveGame).to_value(),
+        &["title"],
+        true,
+        false,
+    );
+    add(
         "play_game",
-        "Launch the requested exact game, or the current selection for an empty ID, through Lunchpail's normal save/resume/launch workflow. Use only when the user asks to play. Report success only if the result says running; missing games may require download/setup.",
-        schemars::schema_for!(GameRef).to_value(),
-        &[],
+        "Launch the requested exact game ID through Lunchpail's normal save/resume/launch workflow. An explicit nonempty ID from current tools is mandatory. For a named title, resolve that title first; the highlighted game is not evidence for it. Use only when the user asks to play. Report success only if the result says running; missing games may require download/setup.",
+        schemars::schema_for!(GameDetails).to_value(),
+        &["game_id"],
         false,
         false,
     );
@@ -481,7 +507,7 @@ mod tests {
     fn local_grammar_chooses_the_action_before_its_arguments() {
         let schema = local_schema(false);
         let variants = schema["oneOf"].as_array().unwrap();
-        assert_eq!(variants.len(), 22);
+        assert_eq!(variants.len(), 23);
         for variant in variants {
             let properties = variant["properties"].as_object().unwrap();
             assert_eq!(properties.len(), 1);
@@ -522,12 +548,14 @@ mod tests {
         ] {
             assert!(parse(name, args).is_err(), "{name}");
         }
-        assert!(parse("play_game", json!({})).is_ok());
+        assert!(parse("play_game", json!({})).is_err());
+        assert!(parse("play_game", json!({"game_id":""})).is_err());
+        assert!(parse("play_game", json!({"game_id":"mario"})).is_ok());
         assert!(parse("set_preference", json!({"name":"captions","value":false})).is_ok());
         for style in ["grid", "list", "wheel", "shelf", "wall", "album"] {
             assert!(parse("set_preference", json!({"name":"view_style","value":style})).is_ok());
         }
         assert!(parse("set_preference", json!({"name":"view_style","value":"desktop"})).is_err());
-        assert_eq!(definitions().len(), 21);
+        assert_eq!(definitions().len(), 22);
     }
 }

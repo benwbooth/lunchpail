@@ -97,9 +97,25 @@ fn key(text: &str) -> String {
     catalog::normalize_platform_key(text).replace('-', "")
 }
 
-fn spoken_title_key(title: &str) -> String {
+pub(crate) fn spoken_title_key(title: &str) -> String {
     title.to_lowercase().split(|c: char| !c.is_alphanumeric())
         .map(|word| if word == "brothers" { "bros" } else { word }).collect()
+}
+
+/// Resolve against the already-loaded catalog, not the selected game or a
+/// truncated search sample. Keep the full count so ambiguity cannot disappear.
+pub(crate) fn resolve_game(catalog: &Catalog, title: &str, platform: &str) -> Value {
+    let title = spoken_title_key(title);
+    let matches: Vec<_> = catalog.games.iter().filter(|game| {
+        !title.is_empty() && !game.adult && !game.non_retail
+            && platform_matches(&game.platform, platform)
+            && spoken_title_key(&game.title) == title
+    }).collect();
+    let rows: Vec<_> = matches.iter().take(20).map(|game| json!({
+        "id":game.id,"title":game.title,"platform":game.platform,
+        "local":game.local,"downloadable":game.downloadable,
+    })).collect();
+    json!({"games":rows,"total_matches":matches.len()})
 }
 
 /// Keep exact title matches in the bounded assistant context even when a
@@ -385,5 +401,33 @@ mod tests {
                 })
                 .is_err()
         );
+    }
+    #[test]
+    fn exact_resolution_ignores_selection_sequels_and_hidden_entries_and_keeps_ambiguity() {
+        let mut catalog = Catalog::default();
+        for (id, title, platform, adult, non_retail) in [
+            ("fax", "Faxanadu", "Nintendo Entertainment System", false, false),
+            ("mario", "Super Mario Bros.", "Nintendo Entertainment System", false, false),
+            ("mario2", "Super Mario Bros. 2", "Nintendo Entertainment System", false, false),
+            ("bundle", "Super Mario Bros. / Duck Hunt", "Nintendo Entertainment System", false, false),
+            ("hidden", "Super Mario Bros.", "Nintendo Entertainment System", true, false),
+            ("hack", "Super Mario Bros.", "Nintendo Entertainment System", false, true),
+            ("other", "Super Mario Bros.", "Other Platform", false, false),
+        ] {
+            catalog.games.push(crate::catalog::Game {id:id.into(),title:title.into(),platform:platform.into(),adult,non_retail,..Default::default()});
+        }
+        let all = resolve_game(&catalog, "Super Mario Brothers", "");
+        assert_eq!(all["total_matches"], 2);
+        assert_eq!(all["games"][0]["id"], "mario");
+        let nes = resolve_game(&catalog, "super mario brothers", "NES");
+        assert_eq!(nes["total_matches"], 1);
+        assert_eq!(nes["games"][0]["id"], "mario");
+        assert_eq!(resolve_game(&catalog, "Super Mario", "")["total_matches"], 0);
+        for index in 0..25 {
+            catalog.games.push(crate::catalog::Game {id:format!("duplicate-{index}"),title:"Super Mario Bros.".into(),..Default::default()});
+        }
+        let many = resolve_game(&catalog, "Super Mario Brothers", "");
+        assert_eq!(many["total_matches"], 27);
+        assert_eq!(many["games"].as_array().unwrap().len(), 20);
     }
 }

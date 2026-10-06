@@ -71,6 +71,7 @@ TestCase {
                 property bool couch_music_enabled: true
                 property int couch_music_volume: 45
                 function conversation_games_json() { return JSON.stringify([{id:"mario",title:"Super Mario Bros.",platform:"NES"}]) }
+                function conversation_resolve_game_json(title, platform) { return JSON.stringify({games:[{id:"mario",title:"Super Mario Bros.",platform:"NES"}],total_matches:1}) }
                 function display_title_for_game(id) { return id === "mario" ? "Super Mario Bros." : "" }
                 function platform_for_game(id) { return "NES" }
                 function local_for_game(id) { return installed }
@@ -130,7 +131,10 @@ TestCase {
         }
     }
     function controller() { const c = createTemporaryObject(component, test); verify(c); return c }
-    function call(c, name, args) { c.assistant.tool_requested("call-" + c.assistant.replies.length, name, JSON.stringify(args || {})) }
+    function call(c, name, args) {
+        if (name === "play_game" && args === undefined) args = {game_id:"mario"}
+        c.assistant.tool_requested("call-" + c.assistant.replies.length, name, JSON.stringify(args || {}))
+    }
     function result(c) { return c.assistant.replies[c.assistant.replies.length - 1].result }
     function finish(c) { c.waiting.started -= 400; c.pollAction() }
     function test_context_returns_real_selection_and_bounded_results() {
@@ -148,12 +152,35 @@ TestCase {
         compare(result(c).total_results, 2)
         compare(c.view.launches, 0)
     }
-    function test_play_uses_selected_game_and_normal_workflow_not_optimistic_success() {
-        const c = controller(); call(c, "play_game", {})
+    function test_play_uses_explicit_game_and_normal_workflow_not_optimistic_success() {
+        const c = controller(); call(c, "play_game", {game_id:"mario"})
         compare(c.view.launches, 1); compare(c.view.closes, 1)
         finish(c); compare(c.assistant.replies.length, 0)
         c.details.game_running = true; c.pollAction()
         compare(result(c).status, "running"); compare(result(c).game.id, "mario")
+    }
+    function test_empty_id_never_launches_the_highlighted_game() {
+        for (const couch of [false, true]) {
+            const c = controller(); c.app.couchModeActive = couch
+            call(c, "play_game", {})
+            verify(!!result(c).error); compare(c.view.launches, 0); compare(c.app.launches, 0)
+            call(c, "play_game", {game_id:" "})
+            verify(!!result(c).error); compare(c.view.launches, 0); compare(c.app.launches, 0)
+        }
+    }
+    function test_exact_resolution_does_not_change_selection_or_launch() {
+        const c = controller()
+        call(c, "resolve_game", {title:"super mario brothers",platform:""})
+        compare(result(c).games[0].id, "mario"); compare(result(c).total_matches, 1)
+        compare(c.view.launches, 0); compare(c.app.launches, 0); compare(c.app.opened, "")
+    }
+    function test_diagnostic_checks_explicit_target_before_blocking_launch() {
+        const c = controller(); c.readOnlyProbe = true
+        c.app.selectedGameId = "faxanadu"; c.view.selectedGameId = "faxanadu"
+        call(c, "play_game", {game_id:"mario"})
+        compare(result(c).status, "launch_blocked"); compare(result(c).game.id, "mario")
+        compare(c.view.launches, 0); compare(c.app.launches, 0)
+        compare(c.view.selectedGameId, "faxanadu"); compare(c.app.selectedGameId, "faxanadu")
     }
     function test_launch_confirmation_is_not_running() {
         const c = controller(); call(c, "play_game")

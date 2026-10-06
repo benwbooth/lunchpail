@@ -2,6 +2,7 @@
 //! GUI mutations run on the main thread and return observed application state.
 pub mod bridge;
 mod cli;
+mod commands;
 mod http;
 pub mod settings;
 pub mod tools;
@@ -36,6 +37,7 @@ pub struct Runtime<'a> {
     pub cancel: &'a AtomicBool,
     pub events: &'a mpsc::Sender<Event>,
     calls: usize,
+    resolved_ids: std::collections::HashSet<String>,
     catalog: Option<crate::assistant_tools::ToolContext>,
     started: Instant,
 }
@@ -45,6 +47,7 @@ impl<'a> Runtime<'a> {
             cancel,
             events,
             calls: 0,
+            resolved_ids: Default::default(),
             catalog: None,
             started: Instant::now(),
         }
@@ -101,10 +104,12 @@ impl<'a> Runtime<'a> {
             .and_then(Value::as_str)
             .filter(|s| !s.is_empty())
         {
-            if self.catalog.is_none() {
-                self.catalog = Some(crate::assistant_tools::ToolContext::load()?);
+            if !self.resolved_ids.contains(id) {
+                if self.catalog.is_none() {
+                    self.catalog = Some(crate::assistant_tools::ToolContext::load()?);
+                }
+                self.catalog.as_ref().unwrap().game(id)?;
             }
-            self.catalog.as_ref().unwrap().game(id)?;
         }
         let (tx, rx) = mpsc::channel();
         self.events.send(Event::Tool {
@@ -121,7 +126,17 @@ impl<'a> Runtime<'a> {
                 "App action timed out; its final state is unknown. Check get_context before retrying."
             );
             match rx.recv_timeout(Duration::from_millis(50)) {
-                Ok(value) => return Ok(value),
+                Ok(value) => {
+                    // This tool resolves visible retail IDs from the live UI's
+                    // loaded catalog. Do not reload the entire database merely
+                    // to revalidate an ID it just returned.
+                    if name == "resolve_game" && value.get("error").is_none() {
+                        if let Some(games) = value["games"].as_array() {
+                            self.resolved_ids.extend(games.iter().filter_map(|g| g["id"].as_str().map(str::to_owned)));
+                        }
+                    }
+                    return Ok(value);
+                },
                 Err(mpsc::RecvTimeoutError::Timeout) => (),
                 Err(e) => return Err(e.into()),
             }
@@ -142,6 +157,10 @@ pub fn ask(
             && m.content.len() <= 4000),
         "Enter a message of at most 4,000 characters"
     );
+    if let Some(reply) = commands::try_play(&history.last().unwrap().content, runtime)? {
+        runtime.check()?;
+        return Ok(reply);
+    }
     runtime.status(format!("Thinking with {}…", settings.provider.label()));
     let reply = match settings.provider {
         settings::Provider::Builtin => local(history, runtime),

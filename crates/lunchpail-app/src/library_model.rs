@@ -461,6 +461,8 @@ pub mod qobject {
 
         #[qinvokable]
         fn conversation_games_json(self: &LibraryModel) -> QString;
+        #[qinvokable]
+        fn conversation_resolve_game_json(self: &LibraryModel, title: QString, platform: QString) -> QString;
 
         #[qinvokable]
         fn database_id_for_game(self: &LibraryModel, game_uid: QString) -> i32;
@@ -5127,6 +5129,11 @@ impl qobject::LibraryModel {
                 "favorite":self.rust().favorite_game_ids.contains(&game.id),
             })).collect();
         qstring(serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into()))
+    }
+
+    pub fn conversation_resolve_game_json(&self, title: QString, platform: QString) -> QString {
+        qstring(crate::assistant_tools::resolve_game(
+            &self.rust().catalog, &title.to_string(), &platform.to_string()).to_string())
     }
 
     pub fn game_id_for_row(&self, row: i32) -> QString {

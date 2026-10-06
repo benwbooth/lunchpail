@@ -71,11 +71,13 @@ Item {
     }
     function execute(id, name, args, confirmed) {
         if (readOnlyProbe) console.log("LUNCHPAIL_CONVERSATION_TOOL " + name + " " + JSON.stringify(args))
-        if (readOnlyProbe && ["get_context", "browse_library", "select_game", "get_preferences", "get_collections", "open_settings", "navigate"].indexOf(name) < 0)
+        if (readOnlyProbe && ["get_context", "resolve_game", "play_game", "browse_library", "select_game", "get_preferences", "get_collections", "open_settings", "navigate"].indexOf(name) < 0)
             throw new Error("This diagnostic only permits read-only navigation, never launch or saved changes")
         if (waiting) throw new Error("Another app action is still pending")
         switch (name) {
         case "get_context": complete(id, context()); break
+        case "resolve_game":
+            complete(id, JSON.parse(library.conversation_resolve_game_json(args.title, args.platform || ""))); break
         case "browse_library":
             if (app.couchModeActive) view.closeSearch()
             if (args.collection_id && !library.collection_exists(args.collection_id)) throw new Error("Collection no longer exists; read get_collections for current IDs")
@@ -86,9 +88,14 @@ Item {
             focusGame(game); defer(id, "select", {game: game}); break
         }
         case "play_game": {
+            if (!args.game_id || !args.game_id.trim()) throw new Error("Launching requires an explicit game ID; the highlighted game is not a fallback")
             if (details.game_running) throw new Error("A game is already running. Ask the user whether to stop it first.")
             if (details.launch_busy) throw new Error("A launch is already in progress. Check its status instead of launching again.")
             const game = selected(args.game_id)
+            if (readOnlyProbe) {
+                complete(id, {status: "launch_blocked", game: game, message: "Diagnostic verified the launch target; no emulator or download was started."})
+                break
+            }
             focusGame(game)
             if (!game.local) {
                 if (app.couchModeActive) view.requestDetails()
