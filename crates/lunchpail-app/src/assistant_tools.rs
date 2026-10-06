@@ -96,6 +96,30 @@ pub struct ToolContext {
 fn key(text: &str) -> String {
     catalog::normalize_platform_key(text).replace('-', "")
 }
+
+fn spoken_title_key(title: &str) -> String {
+    title.to_lowercase().split(|c: char| !c.is_alphanumeric())
+        .map(|word| if word == "brothers" { "bros" } else { word }).collect()
+}
+
+/// Keep exact title matches in the bounded assistant context even when a
+/// crowded alphabetical result list would otherwise truncate them away.
+/// This reorders only the tool's sample, never the user's browser or selection.
+pub(crate) fn conversation_indices(catalog: &Catalog, indices: &[usize], query: &str) -> Vec<usize> {
+    let query = spoken_title_key(query);
+    if query.is_empty() { return indices.iter().copied().take(16).collect(); }
+    let mut exact = Vec::new();
+    let mut others = Vec::new();
+    for &index in indices {
+        let Some(game) = catalog.games.get(index) else { continue; };
+        if spoken_title_key(&game.title) == query {
+            exact.push(index);
+            if exact.len() == 16 { break; }
+        } else if others.len() < 16 { others.push(index); }
+    }
+    exact.extend(others.into_iter().take(16 - exact.len()));
+    exact
+}
 fn platform_matches(platform: &str, query: &str) -> bool {
     query.is_empty()
         || key(platform) == key(query)
@@ -280,6 +304,25 @@ pub fn parse_call(name: &str, arguments: Value) -> Result<ToolCall> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn conversation_context_prioritizes_exact_spoken_titles_without_reordering_the_library() {
+        use crate::catalog::Game;
+        let mut catalog = Catalog::default();
+        for number in 0..20 {
+            catalog.games.push(Game { title:format!("New Super Mario Bros. edition {number}"), ..Game::default() });
+        }
+        catalog.games.push(Game {title:"Super Mario Bros.".into(), ..Game::default()});
+        catalog.games.push(Game {title:"Super Mario Bros.".into(), platform:"Other platform".into(), ..Game::default()});
+        catalog.games.push(Game {title:"Super Mario Bros. 2".into(), ..Game::default()});
+        let indices: Vec<_> = (0..catalog.games.len()).collect();
+        let sample = conversation_indices(&catalog, &indices, "SUPER MARIO BROTHERS");
+        assert_eq!(sample.len(), 16);
+        assert_eq!(&sample[..2], &[20, 21]); // Keep both exact matches; don't silently choose a platform.
+        assert_eq!(&sample[2..], &(0..14).collect::<Vec<_>>());
+        assert_eq!(indices, (0..23).collect::<Vec<_>>());
+        assert_eq!(conversation_indices(&catalog, &indices, ""), (0..16).collect::<Vec<_>>());
+        assert_ne!(spoken_title_key("brotherhood"), spoken_title_key("brothers"));
+    }
     #[test]
     fn aliases_and_tool_boundaries() {
         assert!(platform_matches(

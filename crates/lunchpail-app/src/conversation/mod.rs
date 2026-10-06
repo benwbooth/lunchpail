@@ -168,13 +168,13 @@ fn local(history: &[Message], runtime: &mut Runtime<'_>) -> Result<String> {
     let mut session = Session::new(&worker::bundled_directory()?, Kind::Llm, &local.compute)?;
     // Ground the first decision in actual app state, even when a small model
     // skips the system prompt's request to call get_context first.
-    let context = runtime.invoke("get_context", json!({}));
+    let context = initial_context(runtime.invoke("get_context", json!({})));
     let mut observations = vec![json!({"tool":"get_context","arguments":{},"result":context})];
     for step in 0..16 {
         runtime.check()?;
         let reply = session.request(&Request::Generate {
             model: path.clone(), device: None,
-            system: format!("{SYSTEM} Respond ONLY with one JSON object matching the schema. Its single key is the tool name and its value is the arguments object. Example: {{\"browse_library\":{{\"query\":\"game title\"}}}}. To answer, use {{\"answer\":{{\"message\":\"your reply\"}}}}. Do not echo the user request; perform the requested action using tools. Choose the NEXT action using the completed tool results. Do not repeat a completed call. If a requested game was found, play_game launches it; browsing alone does not fulfill a request to open or play it. If multiple games could match, ask which one. If an action requires user input, explain that rather than retrying. Available app tools:\n{}\n{}", serde_json::to_string(&tools::definitions())?, if step == 15 {"You must now answer."} else {""}),
+            system: format!("{SYSTEM} Respond ONLY with one JSON object matching the schema. Its single key is the tool name and its value is the arguments object. Example: {{\"browse_library\":{{\"query\":\"game title\"}}}}. To answer, use {{\"answer\":{{\"message\":\"your reply\"}}}}. Do not echo the user request; perform the requested action using tools. Choose the NEXT action using the completed tool results. Do not repeat a completed call. If a requested game was found, play_game launches it; browsing alone does not fulfill a request to open or play it. If multiple games could match, ask which one. If an action requires user input, explain that rather than retrying. For a named-title request, search all platforms unless the user explicitly names a platform. Never infer a platform from unrelated visible games or the current selection. Use an empty platform field for the initial title search. Prefer an exact title match to sequels, bundles, remakes or special editions; if multiple exact matches remain, ask the user which platform. Available app tools:\n{}\n{}", serde_json::to_string(&tools::definitions())?, if step == 15 {"You must now answer."} else {""}),
             prompt: String::new(), messages: local_messages(history, &observations),
             schema: tools::local_schema(step == 15), max_tokens: 1000,
         }, runtime.cancel)?;
@@ -183,7 +183,7 @@ fn local(history: &[Message], runtime: &mut Runtime<'_>) -> Result<String> {
         if let tools::Call::Answer(reply) = call {
             return Ok(reply.message);
         }
-        ensure!(!observations.last().is_some_and(|o| o["tool"] == name && o["arguments"] == args),
+        ensure!(name == "get_context" || !observations.last().is_some_and(|o| o["tool"] == name && o["arguments"] == args),
             "The local model repeated a completed action instead of making progress. No duplicate action was performed; try rephrasing the request.");
         let result = runtime.invoke(&name, args.clone());
         observations.push(json!({"tool":name,"arguments":args,"result":result}));
@@ -191,6 +191,18 @@ fn local(history: &[Message], runtime: &mut Runtime<'_>) -> Result<String> {
     anyhow::bail!(
         "Local model reached its tool limit. Try a more specific request or a larger model."
     )
+}
+
+fn initial_context(mut context: Value) -> Value {
+    if context["query"].as_str().is_some_and(|query| query.trim().is_empty()) {
+        if let Some(object) = context.as_object_mut() {
+            // An arbitrary alphabetic slice of the whole library is not
+            // evidence for a named-title request. Keep the selected game for
+            // "play this", but let actual searches supply candidate titles.
+            object.remove("games");
+        }
+    }
+    context
 }
 
 fn local_messages(history: &[Message], observations: &[Value]) -> Vec<lunchpail_ai::ChatMessage> {
@@ -212,6 +224,17 @@ fn local_messages(history: &[Message], observations: &[Value]) -> Vec<lunchpail_
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unsearched_background_games_do_not_bias_local_title_resolution() {
+        let context = json!({"query":"","games":[{"platform":"Nintendo Wii","title":"Unrelated"}],
+            "selected_game":{"id":"current"},"screen":{"mode":"normal"}});
+        let compact = initial_context(context.clone());
+        assert!(compact.get("games").is_none());
+        assert_eq!(compact["selected_game"], context["selected_game"]);
+        assert_eq!(compact["screen"], context["screen"]);
+        let searched = json!({"query":"Mario","games":[{"id":"mario"}]});
+        assert_eq!(initial_context(searched.clone()), searched);
+    }
     #[test]
     fn local_tool_results_are_turns_not_another_user_request() {
         let history = [Message {role:"user".into(), content:"open up super mario brothers".into()}];

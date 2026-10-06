@@ -5117,7 +5117,9 @@ impl qobject::LibraryModel {
     }
 
     pub fn conversation_games_json(&self) -> QString {
-        let rows: Vec<_> = self.rust().filtered_indices.iter().take(16)
+        let indices = crate::assistant_tools::conversation_indices(
+            &self.rust().catalog, &self.rust().filtered_indices, &self.rust().current_search);
+        let rows: Vec<_> = indices.iter()
             .filter_map(|index| self.rust().catalog.games.get(*index))
             .map(|game| serde_json::json!({
                 "id":game.id, "title":self.display_title_for_game(qstring(&game.id)).to_string(),

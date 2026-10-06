@@ -301,7 +301,7 @@ pub fn definitions() -> Vec<rmcp::model::Tool> {
     };
     add(
         "get_context",
-        "Read the current screen, selected game, visible results, running game and any pending confirmation. Call before acting on 'this game', 'it', or 'play the game'.",
+        "Read the current screen, selected game, a bounded sample of matching results (exact title matches first), running game and any pending confirmation. Call before acting on 'this game', 'it', or 'play the game'.",
         schemars::schema_for!(Empty).to_value(),
         &[],
         true,

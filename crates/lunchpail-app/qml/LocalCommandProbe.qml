@@ -25,10 +25,10 @@ Item {
     }
     Connections {
         target: probe.assistant
-        function onTool_requested(id, name, arguments) {
+        function onTool_requested(id, name, argumentsJson) {
             probe.calls = probe.calls.concat([name])
             if (name === "play_game") {
-                const args = JSON.parse(arguments)
+                const args = JSON.parse(argumentsJson)
                 probe.launchId = args.game_id || (probe.couch ? probe.view.selectedGameId : probe.app.selectedGameId)
             }
         }
