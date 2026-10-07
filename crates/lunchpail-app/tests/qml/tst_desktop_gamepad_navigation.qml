@@ -16,7 +16,11 @@ TestCase {
     property int activated: -1
     property int navigationStarts: 0
 
-    Item { id: contents; anchors.fill: parent }
+    Item {
+        id: contents; anchors.fill: parent
+        ToolTip { id: hoverTip; text: "Contextual help"; timeout: -1 }
+        Popup { id: protectedPopup; modal: true; focus: true; closePolicy: Popup.NoAutoClose }
+    }
     Item { id: windowFocusContainer; parent: contents; anchors.fill: parent }
     QtObject {
         id: host
@@ -122,7 +126,21 @@ TestCase {
         checkbox.checked = false
         combo.currentIndex = 0
     }
-    function cleanup() { combo.popup.close(); indexedOverlay.visible = false }
+    function cleanup() { combo.popup.close(); hoverTip.close(); protectedPopup.close(); indexedOverlay.visible = false }
+    function test_tooltip_does_not_steal_back_or_focus() {
+        hoverTip.open()
+        tryCompare(hoverTip, "visible", true)
+        compare(router.findOpenPopup(), null)
+        verify(!router.focusOpenPopup())
+        verify(!router.closeFocusedPopup())
+    }
+    function test_protected_modal_still_blocks_back() {
+        protectedPopup.open()
+        tryCompare(protectedPopup, "visible", true)
+        compare(router.findOpenPopup(), protectedPopup)
+        verify(router.closeFocusedPopup())
+        verify(protectedPopup.visible)
+    }
     function test_grid_navigation_and_open() {
         verify(router.handle("right")); compare(grid.currentIndex, 1)
         router.handle("down"); compare(grid.currentIndex, 5)

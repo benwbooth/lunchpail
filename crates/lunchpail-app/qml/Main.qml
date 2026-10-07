@@ -116,6 +116,9 @@ ApplicationWindow {
     // Shared management panes stay in the fullscreen couch session. They are
     // not reduced copies of desktop features and retain all nested dialogs.
     property string couchWorkspace: ""
+    // TapHandlers take passive grabs. A couch click must never also activate
+    // the desktop card or platform button underneath the fullscreen surface.
+    readonly property bool desktopWorkspaceEnabled: !couchModeActive || couchWorkspace === "library"
     readonly property real couchUiScale: Math.max(1, root.height / 1000)
     readonly property bool couchInputSuspended: couchModeActive
         && (couchWorkspace.length > 0 || fullscreenMedia.opened
@@ -12213,6 +12216,14 @@ ApplicationWindow {
     }
 
     Loader {
+        active: Qt.application.arguments.indexOf("--couch-install-ui-probe") >= 0
+        sourceComponent: CouchInstallProbe {
+            app: root; view: couchModeView; library: library; details: gameDetails
+            desktopContent: content; desktopDetails: detailsPane
+        }
+    }
+
+    Loader {
         active: root.couchMediaUiProbe
         sourceComponent: CouchMediaProbe {
             app: root; view: couchModeView; library: library
@@ -12539,6 +12550,7 @@ ApplicationWindow {
 
     Rectangle {
         id: header
+        enabled: root.desktopWorkspaceEnabled
         objectName: "unifiedTopBar"
         anchors.left: parent.left
         anchors.right: parent.right
@@ -12770,6 +12782,7 @@ ApplicationWindow {
 
     Rectangle {
         id: sidebar
+        enabled: root.desktopWorkspaceEnabled
         anchors.left: parent.left
         anchors.top: header.bottom
         anchors.bottom: statusBar.top
@@ -13201,6 +13214,7 @@ ApplicationWindow {
 
     Item {
         id: content
+        enabled: root.desktopWorkspaceEnabled
         anchors.left: sidebar.right
         anchors.right: parent.right
         anchors.rightMargin: root.couchWorkspace === "game" ? 0 : detailsPane.width
@@ -13559,6 +13573,7 @@ ApplicationWindow {
 
     Item {
         id: detailsResizeHandle
+        enabled: root.desktopWorkspaceEnabled
         anchors.right: parent.right
         anchors.rightMargin: root.couchWorkspace === "game" ? 0 : detailsPane.width
         anchors.top: header.bottom
@@ -13634,6 +13649,7 @@ ApplicationWindow {
 
     Rectangle {
         id: detailsPane
+        enabled: root.desktopWorkspaceEnabled || root.couchWorkspace === "game"
         parent: root.couchModeActive && root.couchWorkspace === "game"
                 ? couchDetailsHost : root.contentItem
         z: root.couchModeActive && root.couchWorkspace === "game" ? 1002 : 0
@@ -27628,6 +27644,7 @@ ApplicationWindow {
 
     Rectangle {
         id: statusBar
+        enabled: root.desktopWorkspaceEnabled
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom

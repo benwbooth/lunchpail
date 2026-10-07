@@ -242,6 +242,7 @@ fn main() {
                 "qml/CouchEntrySelection.qml",
                 "qml/CouchEntryProbe.qml",
                 "qml/CouchJourneyProbe.qml",
+                "qml/CouchInstallProbe.qml",
                 "qml/CouchActionButton.qml",
                 "qml/CouchMediaStatus.qml",
                 "qml/CouchMediaProbe.qml",

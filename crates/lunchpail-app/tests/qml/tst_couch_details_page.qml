@@ -3,10 +3,16 @@ import QtTest
 import "../../qml" as Lunchpail
 
 TestCase {
+    id: testCase
     name: "CouchDetailsPage"
     when: windowShown
     visible: true
     width: 1280; height: 800
+    property int backgroundClicks: 0
+    Item {
+        anchors.fill: parent
+        TapHandler { onTapped: testCase.backgroundClicks++ }
+    }
     QtObject {
         id: info
         property int variant_count: 3
@@ -37,6 +43,13 @@ TestCase {
     SignalSpy { id: managed; signalName: "manageRequested" }
     SignalSpy { id: played; signalName: "primaryRequested" }
     SignalSpy { id: closed; signalName: "closeRequested" }
+
+    function test_loading_page_blocks_background_mouse_actions() {
+        const page = createTemporaryObject(pageComponent, this, {ready: false})
+        backgroundClicks = 0
+        mouseClick(page, 400, 100)
+        compare(backgroundClicks, 0)
+    }
 
     function test_controller_can_reach_all_tools() {
         const page = createTemporaryObject(pageComponent, this)

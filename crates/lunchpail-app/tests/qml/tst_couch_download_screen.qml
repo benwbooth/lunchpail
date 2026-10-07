@@ -6,13 +6,21 @@ TestCase {
     id: testCase
     name: "CouchDownloadScreen"
     when: windowShown
+    visible: true
+    width: 1920; height: 1200
 
     Component {
         id: hostComponent
 
         Item {
+            id: host
             width: 1920
             height: 1200
+            property int backgroundClicks: 0
+            Item {
+                anchors.fill: parent
+                TapHandler { onTapped: host.backgroundClicks++ }
+            }
 
             QtObject {
                 id: detailsState
@@ -124,6 +132,21 @@ TestCase {
             property alias playSpy: playSpy
             property alias setupSpy: setupSpy
         }
+    }
+
+    function test_pointer_does_not_reach_game_wheel_behind_screen() {
+        const host = createTemporaryObject(hostComponent, testCase)
+        verify(waitForRendering(host))
+        mouseClick(host.downloadScreen, 400, 100)
+        compare(host.backgroundClicks, 0)
+        compare(host.detailsState.queuedIndex, -1)
+        const proceed = findChild(host.downloadScreen, "couchInstallContinue")
+        verify(proceed)
+        mouseClick(proceed, proceed.width / 2, proceed.height / 2)
+        compare(host.downloadScreen.phase, "review")
+        compare(host.detailsState.selectedIndex, 0)
+        compare(host.detailsState.queuedIndex, -1)
+        compare(host.backgroundClicks, 0)
     }
 
     function test_controller_flow_reviews_setup_and_queues_exact_candidate() {

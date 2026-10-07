@@ -4,6 +4,13 @@ import QtQuick.Controls
 FocusScope {
     id: screen
 
+    MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.AllButtons
+        hoverEnabled: true
+        onWheel: event => { event.accepted = true }
+    }
+
     required property var details
     property var downloadQueue: null
     property string gameId: ""

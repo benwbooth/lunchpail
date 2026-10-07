@@ -418,6 +418,14 @@ and captures the details and installation pages. Use an isolated state/media
 profile with QtTest available. This probe never queues a game download or launches
 an emulator; QML lifecycle tests separately cover progress, resume/retry and Play.
 
+`--couch-install-ui-probe` clicks the actual **Install & play** button for Faria
+and Action 52, including cold loads, reopening, switching games and real Escape
+keys. Run it with the same isolated profile setup at 1920×1080 and 5120×2160:
+the larger layout also checks that passive mouse handlers cannot activate a
+desktop game card underneath Couch Mode. It never confirms a download. Desktop
+controls are disabled while covered by Couch Mode, and hover tooltips do not
+count as dialogs that can consume Back/Escape.
+
 ## Attract mode, music, and themes
 
 Attract mode tours games from the current shelf. Start it from the Game Menu

@@ -75,6 +75,14 @@ Rectangle {
 
     objectName: "couchDetailsPage"
     color: background
+    // Consume pointer events not handled by the page's controls, including
+    // passive TapHandlers. The game wheel underneath must remain unchanged.
+    MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.AllButtons
+        hoverEnabled: true
+        onWheel: event => { event.accepted = true }
+    }
     Image {
         anchors.fill: parent; source: page.backgroundUrl
         asynchronous: true; fillMode: Image.PreserveAspectCrop

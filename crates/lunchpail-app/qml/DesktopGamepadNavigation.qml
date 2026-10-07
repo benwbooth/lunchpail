@@ -181,6 +181,9 @@ Item {
         let fallback = null
         function findPopup(object, depth) {
             if (!object || depth > 12) return null
+            // Hover help is a Popup too, but it is not a navigation scope.
+            // Its NoAutoClose policy must not swallow Escape or steal focus.
+            if (object instanceof ToolTip) return null
             if (object.visible && object.contentItem && typeof object.close === "function"
                     && typeof object.closePolicy === "number") {
                 if (scope && within(object.contentItem, scope)) return object
