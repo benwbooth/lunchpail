@@ -7890,7 +7890,7 @@ impl qobject::GameDetailsModel {
 
     pub fn bundle_file_size_at(&self, bundle_index: i32, file_index: i32) -> QString {
         self.bundle_file(bundle_index, file_index)
-            .map(|file| qstring(game_details::format_bytes(file.byte_size)))
+            .map(|file| qstring(game_details::format_bytes(candidate_game_bytes(file))))
             .unwrap_or_default()
     }
 
@@ -8227,8 +8227,10 @@ impl qobject::GameDetailsModel {
                     ))
                 } else if plan.is_exo_archive_set() {
                     qstring(format!(
-                        "{} exact archives · {} total · shared dependencies retained for installation",
+                        "{} exact archives · {} game + {} shared eXo packs · {} total",
                         plan.members.len(),
+                        game_details::format_bytes(plan.game_bytes()),
+                        game_details::format_bytes(plan.shared_dependency_bytes()),
                         game_details::format_bytes(plan.total_bytes())
                     ))
                 } else if plan.is_arcade_mame_layout() {
@@ -8507,6 +8509,14 @@ fn file_name_label(file: &TorrentFileCandidate) -> String {
     }
 }
 
+/// Size of what belongs to this game, excluding collection-wide eXo packs.
+fn candidate_game_bytes(file: &TorrentFileCandidate) -> u64 {
+    file.download_plan.as_ref().map_or(file.byte_size, |plan| {
+        file.byte_size
+            .saturating_sub(plan.shared_dependency_bytes())
+    })
+}
+
 fn file_detail_label(
     file: &TorrentFileCandidate,
     badge: Option<&str>,
@@ -8543,7 +8553,18 @@ fn file_detail_label(
         details.push(format!("matched as {}", file.matched_title));
     }
     details.push(format!("{:.0}% title match", file.match_score * 100.0));
-    details.push(game_details::format_bytes(file.byte_size));
+    match file
+        .download_plan
+        .as_ref()
+        .map(|plan| plan.shared_dependency_bytes())
+    {
+        Some(shared) if shared > 0 => details.push(format!(
+            "{} game + {} shared eXo packs",
+            game_details::format_bytes(candidate_game_bytes(file)),
+            game_details::format_bytes(shared)
+        )),
+        _ => details.push(game_details::format_bytes(file.byte_size)),
+    }
     details.push(format!("torrent file #{}", file.index));
     details.join(" · ")
 }

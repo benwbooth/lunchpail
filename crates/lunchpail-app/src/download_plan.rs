@@ -312,6 +312,25 @@ impl DownloadPlan {
         })
     }
 
+    /// eXo metadata and utilities packs are shared by every game in the
+    /// collection, so they must not be presented as the game's own size.
+    pub fn shared_dependency_bytes(&self) -> u64 {
+        if !self.is_exo_archive_set() {
+            return 0;
+        }
+        self.members
+            .iter()
+            .filter(|member| matches!(member.role.as_str(), "metadata" | "utilities"))
+            .fold(0_u64, |total, member| {
+                total.saturating_add(member.byte_size)
+            })
+    }
+
+    pub fn game_bytes(&self) -> u64 {
+        self.total_bytes()
+            .saturating_sub(self.shared_dependency_bytes())
+    }
+
     pub fn selection(&self) -> Vec<(usize, String)> {
         self.members
             .iter()
@@ -1304,6 +1323,8 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec!["primary", "metadata", "utilities"]
         );
+        assert_eq!(win9x_plan.shared_dependency_bytes(), 60);
+        assert_eq!(win9x_plan.game_bytes(), 30);
     }
 
     #[test]
