@@ -218,6 +218,7 @@ fn main() {
                 "qml/ArtworkMat.qml",
                 "qml/AuditMetric.qml",
                 "qml/CatalogLinkButton.qml",
+                "qml/ExpandableDescription.qml",
                 "qml/ClearableSearchField.qml",
                 "qml/CollectionMetric.qml",
                 "qml/GameFileIdentityDialog.qml",

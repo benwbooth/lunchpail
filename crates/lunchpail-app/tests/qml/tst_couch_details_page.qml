@@ -15,6 +15,7 @@ TestCase {
     }
     QtObject {
         id: info
+        property string game_id: "game-1"
         property int variant_count: 3
         property string description: "A game description long enough to check the dedicated couch layout."
         property string release_date: "1991"
@@ -43,6 +44,32 @@ TestCase {
     SignalSpy { id: managed; signalName: "manageRequested" }
     SignalSpy { id: played; signalName: "primaryRequested" }
     SignalSpy { id: closed; signalName: "closeRequested" }
+
+    function init() {
+        info.game_id = "game-1"
+        info.description = "A game description long enough to check the dedicated couch layout."
+    }
+
+    function test_description_can_expand_and_collapse_with_controller() {
+        info.description = "A short introduction.\n\nA longer explanation of the game and its story."
+        const page = createTemporaryObject(pageComponent, this)
+        const description = findChild(page, "couchDetailsDescription")
+        verify(description.canExpand)
+        verify(!description.expanded)
+        page.handleNavigation("right")
+        page.handleNavigation("down")
+        verify(findChild(description, "descriptionToggle").highlighted)
+        page.handleNavigation("accept")
+        verify(description.expanded)
+        page.handleNavigation("accept")
+        verify(!description.expanded)
+        page.handleNavigation("accept")
+        page.reset()
+        verify(!description.expanded)
+        description.toggle()
+        info.game_id = "game-2"
+        verify(!description.expanded)
+    }
 
     function test_loading_page_blocks_background_mouse_actions() {
         const page = createTemporaryObject(pageComponent, this, {ready: false})

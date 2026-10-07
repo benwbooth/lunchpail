@@ -14104,14 +14104,16 @@ ApplicationWindow {
                         font.weight: Font.Bold
                         wrapMode: Text.WordWrap
                     }
-                    Text {
+                    ExpandableDescription {
+                        objectName: "gameDetailsDescription"
                         width: parent.width
                         visible: gameDetails.description.length > 0
                         text: gameDetails.description
+                        contentKey: gameDetails.game_id
                         color: "#c0c8d4"
+                        linkColor: root.accent
                         font.pixelSize: 12
                         lineHeight: 1.35
-                        wrapMode: Text.WordWrap
                     }
                     Row {
                         width: parent.width

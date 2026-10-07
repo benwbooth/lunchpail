@@ -104,7 +104,7 @@ Rectangle {
             GradientStop { position: 1; color: page.background }
         }
     }
-    function reset() { tabIndex = 0; navigationArea = 0; actionIndex = 0; toolIndex = 0; overview.contentY = 0 }
+    function reset() { tabIndex = 0; navigationArea = 0; actionIndex = 0; toolIndex = 0; overview.contentY = 0; overviewDescription.expanded = false }
     function chooseTab(index) { tabIndex = Math.max(0, Math.min(tabs.length - 1, index)); toolIndex = 0; overview.contentY = 0; toolScroll.contentY = 0 }
     onToolIndexChanged: {
         const item = toolRepeater.itemAt(toolIndex)
@@ -145,6 +145,7 @@ Rectangle {
             else if (navigationArea === 1) navigationArea = 2
             else if (tools.length && ready) manageRequested(tools[toolIndex].key)
             else if (tabIndex === 3 && ready) manageRequested("activity")
+            else if (tabIndex === 0 && ready) overviewDescription.toggle()
         } else if (action === "home") reset()
         else return false
         return true
@@ -310,10 +311,27 @@ Rectangle {
                     Column {
                         id: copy
                         width: overview.width - 20; spacing: 24
-                        Text {
+                        ExpandableDescription {
+                            id: overviewDescription
+                            objectName: "couchDetailsDescription"
+                            visible: page.tabIndex === 0
                             width: parent.width
-                            text: !page.ready ? "Loading game information…" : page.tabIndex === 0
-                                  ? (page.details.description || "No description is available for this release.")
+                            text: !page.ready ? "Loading game information…"
+                                  : (page.details.description || "No description is available for this release.")
+                            contentKey: page.details.game_id || page.gameTitle
+                            color: page.ink; font.pixelSize: 21; lineHeight: 1.4
+                            linkColor: page.accent
+                            toggleHeight: 44
+                            highlighted: page.navigationArea === 2 && page.tabIndex === 0
+                            onToggled: {
+                                page.navigationArea = 2
+                                if (!expanded) overview.contentY = 0
+                            }
+                        }
+                        Text {
+                            visible: page.tabIndex === 3
+                            width: parent.width
+                            text: !page.ready ? "Loading game information…"
                                   : page.details.activity_visible ? page.details.play_count + " plays · " + page.details.play_time : "You haven’t played this game yet."
                             color: page.ink; font.pixelSize: 21; lineHeight: 1.4; wrapMode: Text.WordWrap
                         }
