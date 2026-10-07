@@ -237,6 +237,7 @@ fn main() {
                 "qml/LocalAiProbe.qml",
                 "qml/CouchFeedback.qml",
                 "qml/CouchSearchOverlay.qml",
+                "qml/CouchBrowseFilter.qml",
                 "qml/CouchHandsFreeController.qml",
                 "qml/MicrophoneActivity.qml",
                 "qml/CouchThemeRequest.qml",

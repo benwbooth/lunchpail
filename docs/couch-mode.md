@@ -113,12 +113,23 @@ or auto-hide region.
 
 ## Search with a keyboard or microphone
 
-Start typing, press **F3**, or choose Search to open the conversation panel.
+Start typing to filter the **current list** directly: platform names in the
+platform browser, game titles in the current platform or shelf. The small inline
+filter keeps the list visible, updates as you type, and never sends text to the
+assistant. Spaces inside the filter are ordinary spaces. **Enter** or **Esc**
+returns focus to the filtered list without opening or launching a result;
+**Back/Esc** from the list clears its filter before going back.
+
+Press **Space** from the list, **F3**, or choose **Assistant** to open the
+assistant for typing. With the microphone enabled, starting an accepted voice
+request opens that same conversation panel; idle or muted input does not. The
+underlying platform/game browser and its filter are retained when the panel
+closes. If a wake phrase is required, the voice request must pass that gate first.
 Say or type “search for Super Mario Bros”, then “play the game”. The assistant
 reads the actual selection and uses the same navigation and launch workflows as
 the controller. If several games could match, it can ask which you mean. Both
 sides of the conversation appear in the transcript and optional floating
-captions. **Search titles** switches to a direct, non-AI title filter.
+captions.
 
 The same agent is available in **normal mode** from **Ask AI** in the toolbar
 or **Ctrl+J**. Its compact, non-modal panel keeps the library usable and remains

@@ -26,9 +26,11 @@ TestCase {
         }
     }
     SignalSpy { id: searches; signalName: "searchRequested" }
+    SignalSpy { id: commands; signalName: "commandStarted" }
     function controller() {
         const item = createTemporaryObject(component, test)
         verify(item); searches.target = item; searches.clear()
+        commands.target = item; commands.clear()
         return item
     }
     function test_disabled_never_opens_microphone() {
@@ -87,5 +89,32 @@ TestCase {
         verify(!item.capturingCommand, "Audio must return between utterances")
         item.speech.listening = false
         verify(!item.capturingCommand, "Suppression is temporary, not a saved mute preference")
+    }
+    function test_assistant_opens_only_for_an_awake_hands_free_utterance() {
+        const item = controller(); item.allowed = true
+        item.speech.listening = true
+        compare(commands.count, 0, "Idle or muted capture must not open the assistant")
+        item.speech.awake = true
+        compare(commands.count, 1)
+        item.reconcile(); compare(commands.count, 1)
+        item.speech.awake = false
+        item.speech.awake = true
+        compare(commands.count, 2)
+        item.allowed = false
+        item.speech.listening = false
+        item.speech.listening = true
+        compare(commands.count, 2, "Suspended capture must not open the assistant")
+    }
+    function test_manual_capture_and_faults_do_not_open_another_panel() {
+        const item = controller()
+        item.speech.listening = true
+        compare(commands.count, 0)
+        item.speech.listening = false
+        item.speech.faulted = true
+        item.allowed = true
+        item.speech.hands_free = true
+        item.speech.awake = true
+        item.speech.listening = true
+        compare(commands.count, 0)
     }
 }

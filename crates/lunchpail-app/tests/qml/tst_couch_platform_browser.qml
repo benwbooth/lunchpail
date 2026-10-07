@@ -12,12 +12,17 @@ TestCase {
             width: 900; height: 530
             library: QtObject {
                 property int platform_count: 36
+                property int platform_revision: 0
+                property var filteredIndices: [7, 22]
+                property int filtered_platform_count: filteredIndices.length
                 property int media_revision: 0
                 property int logoRequests: 0
                 property string lastMediaKind: ""
                 function request_platform_logos() { logoRequests++ }
                 function platform_name_at(index) { return "Platform " + index }
                 function platform_game_count_at(index) { return index * 100 + 1 }
+                function filtered_platform_name_at(index) { return platform_name_at(filteredIndices[index]) }
+                function filtered_platform_game_count_at(index) { return platform_game_count_at(filteredIndices[index]) }
                 function platform_media_url(platform, type) { lastMediaKind = type; return "" }
             }
         }
@@ -135,5 +140,24 @@ TestCase {
             browser.viewStyle = style
             tryVerify(() => browser.currentItem && browser.currentItem.index === 0)
         }
+    }
+    function test_filtered_cards_track_identity_even_when_result_count_is_unchanged_data() {
+        return ["wall", "wheel", "album", "shelf"].map(style => ({tag: style, style: style}))
+    }
+    function test_filtered_cards_track_identity_even_when_result_count_is_unchanged(data) {
+        const browser = createTemporaryObject(browserComponent, this, {filtered: true, viewStyle: data.style})
+        compare(browser.count, 2)
+        tryVerify(() => browser.currentItem && browser.currentItem.platformName === "Platform 7")
+        if (data.style !== "wheel") compare(browser.currentItem.gameCount, 701)
+        browser.library.filteredIndices = [5, 8]
+        browser.library.platform_revision++
+        compare(browser.count, 2)
+        tryVerify(() => browser.currentItem && browser.currentItem.platformName === "Platform 5")
+        browser.currentIndex = 1
+        tryVerify(() => browser.currentItem && browser.currentItem.platformName === "Platform 8")
+        compare(browser.nameAt(browser.currentIndex), "Platform 8")
+        browser.library.filteredIndices = []
+        browser.library.platform_revision++
+        compare(browser.count, 0)
     }
 }

@@ -9,6 +9,11 @@ Item {
     readonly property bool capturingCommand: speech.listening
         && (!speech.hands_free || speech.awake)
     signal searchRequested(string text)
+    signal commandStarted()
+    onCapturingCommandChanged: {
+        if (capturingCommand && allowed && speech.hands_free && !speech.faulted)
+            commandStarted()
+    }
     function reconcile() {
         if (allowed && speech.ready && !speech.busy && !speech.faulted)
             speech.start_hands_free()

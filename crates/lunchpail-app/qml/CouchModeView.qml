@@ -26,6 +26,11 @@ Item {
     property real sfxVolume: 0.22
     readonly property string movementCue: cinematicWheel ? "wheel" : wallView ? "wall" : albumView ? "flow" : "move"
     signal searchRequested(string text)
+    signal platformSearchRequested(string text)
+    readonly property var filterPanel: browseFilter
+    readonly property bool browsingList: !overlayOpen && !downloadOverlayOpen
+        && !launchStatusOverlayOpen && !collectionWheelOpen && !variantWheelOpen
+    readonly property string browseQuery: platformWheelOpen ? library.platform_search : searchText
     readonly property bool audioSuppressedForVoice: handsFreeController.capturingCommand
         || searchOverlay.microphoneBusy || assistantSpeaking
     readonly property var handsFreeSetupController: handsFreeSetup
@@ -56,6 +61,7 @@ Item {
         && !!assistant && assistant.ready && !assistant.busy && !assistantSpeaking && !conversationCoolingDown
     function acceptVoiceRequest(text) {
         speech.cancel()
+        if (!searchOpen) openSearch("", false)
         if (!assistant || !assistant.ready) {
             searchOverlay.askMode = true
             searchOverlay.preserveRequest(text)
@@ -65,8 +71,10 @@ Item {
     }
     CouchHandsFreeController {
         id: handsFreeController
+        objectName: "couchHandsFreeController"
         speech: view.speech
         allowed: view.handsFreeAllowed
+        onCommandStarted: if (!view.searchOpen) view.openSearch("", false)
         onSearchRequested: text => view.acceptVoiceRequest(text)
     }
     Timer { id: voiceCooldown; interval: 900; onTriggered: view.conversationCoolingDown = false }
@@ -364,16 +372,50 @@ Item {
     function openSearch(initialText, microphone) {
         if (!active || !inputEnabled) return
         stopAttractMode()
-        overlayOpen = false
-        platformWheelOpen = false
-        collectionWheelOpen = false
-        variantWheelOpen = false
+        if (browseFilter.editing) browseFilter.finish()
         searchOpen = true
         searchOverlay.open(initialText)
-        if (!searchOverlay.askMode && initialText !== searchText) searchRequested(initialText)
         if (microphone) searchOverlay.microphone()
         else feedback.play("confirm")
         noteActivity()
+    }
+
+    function filterList(text) {
+        entrySelection.cancel()
+        if (platformWheelOpen) {
+            platformSearchRequested(text)
+            platformWheelIndex = 0
+            platformWheel.currentIndex = 0
+            platformWheel.positionViewAtBeginning()
+        } else searchRequested(text)
+        noteActivity()
+    }
+
+    function openFilter(text) {
+        if (!active || !inputEnabled || !browsingList || searchOpen) return
+        stopAttractMode()
+        browseFilter.open(text)
+        noteActivity()
+    }
+
+    CouchBrowseFilter {
+        id: browseFilter
+        z: 97
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: 144
+        width: Math.min(800, parent.width - 100)
+        height: implicitHeight
+        visible: view.active && view.browsingList && !view.searchOpen
+            && (editing || query.length > 0)
+        enabled: view.inputEnabled
+        query: view.browseQuery
+        scopeLabel: view.platformWheelOpen ? "platforms" : "games"
+        maximumLength: view.platformWheelOpen ? 80 : 200
+        resultCount: view.platformWheelOpen ? platformWheel.count : shelf.count
+        panelColor: view.panel; inkColor: view.ink; mutedColor: view.muted; accentColor: view.accent
+        onQueryEdited: text => view.filterList(text)
+        onFinished: if (view.active && view.inputEnabled) view.forceActiveFocus()
+        onNavigationRequested: action => view.handleNavigation(action)
     }
 
     function closeSearch() {
@@ -453,6 +495,7 @@ Item {
     }
 
     onInputEnabledChanged: {
+        if (!inputEnabled && browseFilter.editing) browseFilter.finish()
         if (!inputEnabled && searchOpen && !modelInstall.visible) closeSearch()
         else if (inputEnabled && active && searchOverlay.preservedRequest)
             Qt.callLater(function() {
@@ -612,8 +655,8 @@ Item {
     function platformIndexForName(name) {
         if (!name || name.length === 0)
             return 0
-        for (let index = 0; index < library.platform_count; ++index) {
-            if (library.platform_name_at(index) === name)
+        for (let index = 0; index < platformWheel.count; ++index) {
+            if (platformWheel.nameAt(index) === name)
                 return index
         }
         return 0
@@ -634,6 +677,8 @@ Item {
     }
 
     function focusPlatform(name) {
+        if (library.platform_search && platformWheel.nameAt(platformIndexForName(name)) !== name)
+            platformSearchRequested("")
         if (!platformWheelOpen)
             openPlatformWheel()
         platformWheelIndex = platformIndexForName(name)
@@ -649,11 +694,11 @@ Item {
     }
 
     function movePlatformWheel(delta) {
-        if (library.platform_count <= 0)
+        if (platformWheel.count <= 0)
             return
         platformWheelIndex = cinematicWheel
-            ? ((platformWheelIndex + delta) % library.platform_count + library.platform_count) % library.platform_count
-            : Math.max(0, Math.min(library.platform_count - 1, platformWheelIndex + delta))
+            ? ((platformWheelIndex + delta) % platformWheel.count + platformWheel.count) % platformWheel.count
+            : Math.max(0, Math.min(platformWheel.count - 1, platformWheelIndex + delta))
         platformWheel.currentIndex = platformWheelIndex
         platformWheel.positionViewAtIndex(platformWheelIndex, ListView.Contain)
     }
@@ -662,7 +707,7 @@ Item {
         entrySelection.cancel()
         feedback.play("confirm")
         noteActivity()
-        const platform = library.platform_name_at(index)
+        const platform = platformWheel.nameAt(index)
         if (platform.length === 0
                 || !library.save_couch_state("platform", platform))
             return
@@ -1039,7 +1084,7 @@ Item {
     }
 
     function menuActionLabel(index) {
-        if (index === 8) return "Search games · voice or keyboard"
+        if (index === 8) return "Filter this game list"
         if (index === 0)
             return primaryAction
         if (index === 1)
@@ -1059,7 +1104,7 @@ Item {
     }
 
     function menuActionDescription(index) {
-        if (index === 8) return "Search this shelf without leaving Couch Mode. Speak a title or type it."
+        if (index === 8) return "Type a title to filter this shelf. Press Space from the list to ask the assistant."
         if (index === 0) {
             if (details.can_launch)
                 return "Launch with the selected emulator and exact local file."
@@ -1106,7 +1151,7 @@ Item {
     }
 
     function activateMenuAction(index) {
-        if (index === 8) { openSearch(searchText, false); return }
+        if (index === 8) { overlayOpen = false; openFilter(searchText); return }
         if (index === 0) {
             closeOverlay()
             activateAction(0)
@@ -1138,6 +1183,10 @@ Item {
         shelf.cancelPointerSelection()
         platformWheel.cancelPointerSelection()
         if (searchOpen) return searchOverlay.handleNavigation(action)
+        if (browseFilter.editing) {
+            browseFilter.finish()
+            if (action === "back" || action === "accept") return true
+        }
         const handled = navigate(action)
         if (handled) feedback.play(action === "back" ? "back"
             : ["accept", "favorite", "details", "menu"].indexOf(action) >= 0 ? "confirm"
@@ -1210,9 +1259,10 @@ Item {
             return downloadScreen.handleNavigation(action)
         if (platformWheelOpen) {
             if (action === "back") {
-                exitRequested()
+                if (library.platform_search.length > 0) filterList("")
+                else exitRequested()
             } else if (action === "details") {
-                systemMediaRequested(library.platform_name_at(platformWheelIndex))
+                systemMediaRequested(platformWheel.nameAt(platformWheelIndex))
             } else if (action === "menu" || action === "cycle_zone") {
                 toggleViewStyle()
             } else if (action === "up") {
@@ -1485,6 +1535,7 @@ Item {
 
     onCurrentFilterKeyChanged: syncCategory()
     onCurrentPlatformNameChanged: syncCategory()
+    onPlatformWheelOpenChanged: if (browseFilter.editing) browseFilter.finish()
 
     Keys.onPressed: event => handleKey(event)
 
@@ -1495,16 +1546,23 @@ Item {
         if (searchOpen) return
         const shortcut = (event.modifiers & Qt.ControlModifier) !== 0
         if (event.key === Qt.Key_F3 || event.key === Qt.Key_F2) {
-            openSearch(searchText, event.key === Qt.Key_F2)
+            openSearch("", event.key === Qt.Key_F2)
             event.accepted = true
             return
         }
-        if (!(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
-                // Qt's JS engine does not implement Unicode property escapes.
-                && /^[a-z0-9]/i.test(event.text)
-                && !overlayOpen && !downloadOverlayOpen
-                && !launchStatusOverlayOpen) {
-            openSearch(event.text, false)
+        const plainKey = !(event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier))
+        if (plainKey && event.key === Qt.Key_Space && !browseFilter.inputFocused) {
+            openSearch("", false)
+            event.accepted = true
+            return
+        }
+        if (plainKey && browsingList && event.text.length > 0 && event.text.charCodeAt(0) > 32) {
+            openFilter(browseQuery + event.text)
+            event.accepted = true
+            return
+        }
+        if (plainKey && browsingList && event.key === Qt.Key_Backspace && browseQuery.length > 0) {
+            openFilter(browseQuery.slice(0, -1))
             event.accepted = true
             return
         }
@@ -1533,7 +1591,7 @@ Item {
                 attractCycleTimer.restart()
                 attractProgressAnimation.restart()
             } else if (platformWheelOpen) {
-                platformWheelIndex = Math.max(0, library.platform_count - 1)
+                platformWheelIndex = Math.max(0, platformWheel.count - 1)
                 platformWheel.currentIndex = platformWheelIndex
                 platformWheel.positionViewAtEnd()
             } else if (collectionWheelOpen) {
@@ -1550,8 +1608,7 @@ Item {
                 shelf.currentIndex = shelf.count - 1
             }
             event.accepted = true
-        } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter
-                   || event.key === Qt.Key_Space) {
+        } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
             action = "accept"
         } else if (event.key === Qt.Key_F && shortcut && !favoriteBusy) {
             action = "favorite"
@@ -1773,11 +1830,11 @@ Item {
         CouchActionButton {
             id: searchButton
             soundFeedback: feedback; soundCue: ""
-            text: "Assistant" + (view.speech.listening ? " · " + microphoneActivity.label : view.microphoneEnabled ? " · Mic on" : " · F3")
+            text: "Assistant" + (view.speech.listening ? " · " + microphoneActivity.label : view.microphoneEnabled ? " · Mic on" : " · Space")
             inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
             onClicked: view.openSearch("", false)
             ToolTip.visible: hovered
-            ToolTip.text: "Type or talk to Lunchpail" + (view.microphoneEnabled ? " · Mic on" : " · Mic off")
+            ToolTip.text: "Ask Lunchpail · Space / F3" + (view.microphoneEnabled ? " · Mic on" : " · Mic off")
             Accessible.name: "Open Lunchpail assistant"
         }
         CouchActionButton {
@@ -2772,7 +2829,7 @@ Item {
                         font.letterSpacing: 1.3
                     }
                     Text {
-                        text: view.library.platform_count + " platforms · " + view.viewLabel
+                        text: platformWheel.count + " platforms · " + view.viewLabel
                         color: view.muted
                         font.pixelSize: 11
                         font.weight: Font.DemiBold
@@ -2824,6 +2881,7 @@ Item {
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: view.cinematicWheel ? 0 : 82
                 library: view.library
+                filtered: true
                 viewStyle: view.library.couch_view_style
                 panel: view.panel; ink: view.ink; muted: view.muted; accent: view.accent
                 hoverSelectionEnabled: view.active && view.inputEnabled && view.platformWheelOpen
@@ -2857,8 +2915,8 @@ Item {
                 property string platform: {
                     // The first index can remain zero while the async catalog
                     // arrives; invokable calls do not track that data change.
-                    view.library.platform_count
-                    return view.library.platform_name_at(view.platformWheelIndex)
+                    platformWheel.count
+                    return platformWheel.nameAt(view.platformWheelIndex)
                 }
                 onPlatformChanged: if (view.active && view.platformWheelOpen) platformReveal.restart()
                 property url videoUrl: { view.mediaRevision; return view.library.platform_media_url(platform, "video") }

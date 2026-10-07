@@ -16,8 +16,12 @@ class CouchThemeWiring(unittest.TestCase):
 
     def test_platform_identity_refreshes_when_async_catalog_arrives(self):
         binding = self.qml.split("id: platformPresentation", 1)[1].split("onPlatformChanged:", 1)[0]
-        self.assertIn("view.library.platform_count", binding)
-        self.assertIn("return view.library.platform_name_at(view.platformWheelIndex)", binding)
+        self.assertIn("platformWheel.count", binding)
+        self.assertIn("return platformWheel.nameAt(view.platformWheelIndex)", binding)
+        browser = (Path(__file__).resolve().parents[1] / "qml" / "CouchPlatformBrowser.qml").read_text()
+        name_lookup = browser.split("function nameAt(index)", 1)[1].split("function gameCountAt", 1)[0]
+        self.assertIn("library.platform_revision", name_lookup)
+        self.assertIn("library.filtered_platform_name_at(index)", name_lookup)
         self.assertIn('platform: view.platformWheelOpen ? platformPresentation.platform : ""', self.qml)
 
 

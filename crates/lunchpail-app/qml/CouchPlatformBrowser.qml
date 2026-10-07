@@ -12,7 +12,16 @@ Item {
     property color accent: "#ffb454"
     property int currentIndex: 0
     property bool selectionPending: true
-    readonly property int count: library.platform_count
+    property bool filtered: false
+    readonly property int count: filtered ? library.filtered_platform_count : library.platform_count
+    function nameAt(index) {
+        library.platform_revision
+        return filtered ? library.filtered_platform_name_at(index) : library.platform_name_at(index)
+    }
+    function gameCountAt(index) {
+        library.platform_revision
+        return filtered ? library.filtered_platform_game_count_at(index) : library.platform_game_count_at(index)
+    }
     readonly property int columns: viewStyle === "wall" && presentation.item ? presentation.item.columnCount : 1
     readonly property var currentItem: !selectionPending && presentation.item ? presentation.item.currentItem : null
     property bool hoverSelectionEnabled: true
@@ -110,6 +119,8 @@ Item {
             ScrollBar.vertical: LbScrollBar { policy: ScrollBar.AsNeeded }
             delegate: CouchPlatformCard {
                 library: browser.library
+                platformName: browser.nameAt(index)
+                gameCount: browser.gameCountAt(index)
                 width: grid.cellWidth - 8; height: grid.cellHeight - 8
                 selected: GridView.isCurrentItem
                 animateEntrance: true
@@ -133,6 +144,8 @@ Item {
             boundsBehavior: Flickable.StopAtBounds
             delegate: CouchPlatformCard {
                 library: browser.library
+                platformName: browser.nameAt(index)
+                gameCount: browser.gameCountAt(index)
                 width: Math.min(260, row.width * 0.4); height: Math.min(row.height, 310)
                 y: (row.height - height) / 2
                 selected: ListView.isCurrentItem
@@ -169,7 +182,7 @@ Item {
                 id: wheelDelegate
                 CouchWheelLogo {
                     required property int index
-                    property string platformName: browser.library.platform_name_at(index)
+                    property string platformName: browser.nameAt(index)
                     width: carousel.width * 0.94
                     height: carousel.height * 0.21
                     title: platformName
@@ -191,6 +204,8 @@ Item {
               CouchPlatformCard {
                 id: card
                 library: browser.library
+                platformName: browser.nameAt(index)
+                gameCount: browser.gameCountAt(index)
                 width: carousel.wheel ? carousel.width * 0.76 : Math.min(carousel.height * 0.68, carousel.width * 0.30)
                 height: carousel.wheel ? Math.min(174, carousel.height * 0.25) : carousel.height * 0.74
                 wheel: carousel.wheel; selected: PathView.isCurrentItem

@@ -12140,6 +12140,11 @@ ApplicationWindow {
             root.rememberPlatformSearch(false)
             root.scheduleFilter()
         }
+        onPlatformSearchRequested: text => {
+            platformSearchField.text = text
+            library.filter_platforms(text)
+            platformSearchSaveTimer.restart()
+        }
         onVideoMuteRequested: videoAudioPreferences.toggle("couch")
         onSystemMediaRequested: platform => {
             couchSystemMediaDialog.platform = platform
