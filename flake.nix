@@ -122,6 +122,7 @@
             dwarfs
             pkgs.systemd
             pkgs.alsa-lib
+            pkgs.spirv-headers
             pkgs.vulkan-headers
             pkgs.vulkan-loader
           ];
@@ -285,6 +286,7 @@
             pkgs.systemd
             pkgs.alsa-lib
             pkgs.shaderc
+            pkgs.spirv-headers
             pkgs.vulkan-headers
             pkgs.vulkan-loader
           ];

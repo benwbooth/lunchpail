@@ -78,8 +78,10 @@ jobs:
           "SHERPA_ONNX_LIB_DIR=$stage\lib" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Build release executable with Qt-compatible CRT
         run: cargo build --locked --release --package lunchpail-app --package lunchpail-controller-probe --bin lunchpail --bin lunchpail-controller-probe
+      # ggml's nested Vulkan shader-generator build exceeds MAX_PATH under
+      # the checkout's target directory, so build the workers from a short root.
       - name: Build bundled CPU and Vulkan inference
-        run: python packaging/build-inference.py
+        run: python packaging/build-inference.py --target-root D:/li
       - name: Stage Qt runtime and database
         shell: pwsh
         run: |
@@ -249,7 +251,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Install native build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev libgl1-mesa-dev libpulse-dev libudev-dev libwayland-dev libxkbcommon-dev patchelf libvulkan-dev glslc libclang-dev flite1-dev libspeechd-dev
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libdbus-1-dev libgl1-mesa-dev libpulse-dev libudev-dev libwayland-dev libxkbcommon-dev patchelf libvulkan-dev glslc spirv-headers libclang-dev flite1-dev libspeechd-dev
       - uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}

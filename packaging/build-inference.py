@@ -54,8 +54,10 @@ def main():
             shutil.copy2(source, temporary)
             os.replace(temporary, destination)
     for engine in ('llm', 'speech'):
+        # macOS links Metal into every worker, and initialising it on a
+        # virtualised CI GPU can take well over 30 seconds.
         result = subprocess.run([str((args.output / f'lunchpail-{engine}-cpu{extension}').resolve())],
-                                input='{"operation":"probe"}\n', text=True, capture_output=True, check=True, timeout=30)
+                                input='{"operation":"probe"}\n', text=True, capture_output=True, check=True, timeout=300)
         import json
         reply = json.loads(result.stdout)
         if reply.get('error') or reply.get('device') != 'CPU':
