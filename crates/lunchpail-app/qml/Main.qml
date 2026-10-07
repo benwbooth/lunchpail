@@ -2818,7 +2818,7 @@ ApplicationWindow {
         }
     }
 
-    AudioOutput {
+    DefaultAudioOutput {
         id: gameSoundtrackAudio
         muted: desktopAssistant.audioSuppressedForVoice || couchModeView.audioSuppressedForVoice
         volume: 0.55

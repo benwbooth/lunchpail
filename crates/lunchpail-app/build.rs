@@ -322,6 +322,7 @@ fn main() {
                 "qml/PaneButton.qml",
                 "qml/PlatformSearchState.qml",
                 "qml/PreviewAudioCompanion.qml",
+                "qml/DefaultAudioOutput.qml",
                 "qml/VideoAudioPreferences.qml",
                 "qml/RomDownloadStatus.qml",
                 "qml/RomScanScheduleCard.qml",

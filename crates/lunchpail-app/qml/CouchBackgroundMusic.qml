@@ -89,7 +89,7 @@ Item {
         }
     }
 
-    AudioOutput {
+    DefaultAudioOutput {
         id: audioOutput
         muted: deck.microphoneActive
         volume: Math.max(0, Math.min(1, deck.library.couch_music_volume / 100.0))

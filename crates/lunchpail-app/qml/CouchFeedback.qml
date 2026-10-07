@@ -14,6 +14,7 @@ Item {
     readonly property var sounds: ({move, wheel, wall, flow, focus, confirm, back,
                                   "switch": switchView, enter, launch})
     signal played(string kind)
+    MediaDevices { id: audioDevices }
     CouchSoundPolicy { id: policy; active: feedback.active; muted: feedback.muted; volume: feedback.volume }
     function stop() { for (const effect of effects) effect.stop() }
     onActiveChanged: if (!active) stop()
@@ -31,14 +32,14 @@ Item {
         played(kind)
         return true
     }
-    SoundEffect { id: move; source: "qrc:/couch-sounds/move.wav"; volume: feedback.volume }
-    SoundEffect { id: wheel; source: "qrc:/couch-sounds/wheel.wav"; volume: feedback.volume }
-    SoundEffect { id: wall; source: "qrc:/couch-sounds/wall.wav"; volume: feedback.volume }
-    SoundEffect { id: flow; source: "qrc:/couch-sounds/flow.wav"; volume: feedback.volume }
-    SoundEffect { id: focus; source: "qrc:/couch-sounds/focus.wav"; volume: feedback.volume }
-    SoundEffect { id: confirm; source: "qrc:/couch-sounds/confirm.wav"; volume: feedback.volume }
-    SoundEffect { id: back; source: "qrc:/couch-sounds/back.wav"; volume: feedback.volume }
-    SoundEffect { id: switchView; source: "qrc:/couch-sounds/switch.wav"; volume: feedback.volume }
-    SoundEffect { id: enter; source: "qrc:/couch-sounds/enter.wav"; volume: feedback.volume }
-    SoundEffect { id: launch; source: "qrc:/couch-sounds/launch.wav"; volume: feedback.volume }
+    SoundEffect { id: move; source: "qrc:/couch-sounds/move.wav"; audioDevice: audioDevices.defaultAudioOutput; volume: feedback.volume }
+    SoundEffect { id: wheel; source: "qrc:/couch-sounds/wheel.wav"; audioDevice: audioDevices.defaultAudioOutput; volume: feedback.volume }
+    SoundEffect { id: wall; source: "qrc:/couch-sounds/wall.wav"; audioDevice: audioDevices.defaultAudioOutput; volume: feedback.volume }
+    SoundEffect { id: flow; source: "qrc:/couch-sounds/flow.wav"; audioDevice: audioDevices.defaultAudioOutput; volume: feedback.volume }
+    SoundEffect { id: focus; source: "qrc:/couch-sounds/focus.wav"; audioDevice: audioDevices.defaultAudioOutput; volume: feedback.volume }
+    SoundEffect { id: confirm; source: "qrc:/couch-sounds/confirm.wav"; audioDevice: audioDevices.defaultAudioOutput; volume: feedback.volume }
+    SoundEffect { id: back; source: "qrc:/couch-sounds/back.wav"; audioDevice: audioDevices.defaultAudioOutput; volume: feedback.volume }
+    SoundEffect { id: switchView; source: "qrc:/couch-sounds/switch.wav"; audioDevice: audioDevices.defaultAudioOutput; volume: feedback.volume }
+    SoundEffect { id: enter; source: "qrc:/couch-sounds/enter.wav"; audioDevice: audioDevices.defaultAudioOutput; volume: feedback.volume }
+    SoundEffect { id: launch; source: "qrc:/couch-sounds/launch.wav"; audioDevice: audioDevices.defaultAudioOutput; volume: feedback.volume }
 }

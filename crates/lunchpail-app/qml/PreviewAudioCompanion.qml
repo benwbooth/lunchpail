@@ -18,7 +18,7 @@ QtObject {
 
     onVideoPositionChanged: audioPlayer.syncPosition(false)
 
-    property AudioOutput output: AudioOutput {
+    property AudioOutput output: DefaultAudioOutput {
         id: soundOutput
         muted: !companion.unmuted
         volume: 0.34

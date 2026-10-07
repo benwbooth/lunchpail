@@ -59,6 +59,17 @@ class VideoAudioWiring(unittest.TestCase):
         self.assertIn("fullscreenOpen: mediaFullscreen.opened", self.qml)
         self.assertIn("suspended: gameDetails.game_running", self.qml)
 
+    def test_every_media_output_follows_the_current_system_device(self):
+        qml_dir = Path(__file__).resolve().parents[1] / "qml"
+        for name in ("PreviewAudioCompanion.qml", "CouchBackgroundMusic.qml", "Main.qml"):
+            source = (qml_dir / name).read_text()
+            self.assertIn("DefaultAudioOutput {", source, name)
+            self.assertNotRegex(source, r"(?<!Default)\bAudioOutput\s*\{", name)
+        output = (qml_dir / "DefaultAudioOutput.qml").read_text()
+        self.assertIn("device: mediaDevices.defaultAudioOutput", output)
+        feedback = (qml_dir / "CouchFeedback.qml").read_text()
+        self.assertEqual(feedback.count("audioDevice: audioDevices.defaultAudioOutput"), 10)
+
 
 if __name__ == "__main__":
     unittest.main()
