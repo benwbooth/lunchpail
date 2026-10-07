@@ -708,6 +708,7 @@ struct BundleCandidateGroup {
     error: String,
     prefer_self_contained: bool,
     is_retroachievements: bool,
+    source_priority: u8,
 }
 
 pub struct GameDetailsModelRust {
@@ -3833,6 +3834,12 @@ impl qobject::GameDetailsModel {
                     .bundles
                     .get(bundle_index)
                     .is_some_and(game_details::is_retroachievements_bundle);
+                let source_priority = self
+                    .as_ref()
+                    .rust()
+                    .bundles
+                    .get(bundle_index)
+                    .map_or(u8::MAX, game_details::bundle_source_priority);
                 if let Some(group) = self
                     .as_mut()
                     .rust_mut()
@@ -3844,6 +3851,7 @@ impl qobject::GameDetailsModel {
                     group.error.clear();
                     group.prefer_self_contained = prefer_self_contained;
                     group.is_retroachievements = is_retroachievements;
+                    group.source_priority = source_priority;
                 }
                 self.as_mut().rust_mut().files = files;
                 self.as_mut().set_file_count(count_i32(count));
@@ -3996,6 +4004,12 @@ impl qobject::GameDetailsModel {
                     .bundles
                     .get(bundle_index)
                     .is_some_and(game_details::is_retroachievements_bundle),
+                source_priority: self
+                    .as_ref()
+                    .rust()
+                    .bundles
+                    .get(bundle_index)
+                    .map_or(u8::MAX, game_details::bundle_source_priority),
             },
             Err(error) => BundleCandidateGroup {
                 loaded: true,
@@ -4003,6 +4017,7 @@ impl qobject::GameDetailsModel {
                 error,
                 prefer_self_contained: false,
                 is_retroachievements: false,
+                source_priority: u8::MAX,
             },
         };
         if let Some(target) = self
@@ -8434,8 +8449,10 @@ fn ranked_source_indices(groups: &[BundleCandidateGroup]) -> Vec<usize> {
         .filter(|&index| !groups[index].files.is_empty())
         .collect::<Vec<_>>();
     // Keep original bundle indices stable for asynchronous results and download
-    // selection. Exactness comes first; achievement-specific sets are fallbacks
-    // for equally good matches, even when their archives happen to be larger.
+    // selection. Exactness comes first, followed by the catalog's preservation
+    // source preference. Archive size must not promote an emulator-specific set
+    // above an equally exact No-Intro release (or an achievement-specific set
+    // above a standard one).
     indices.sort_by(|&left, &right| {
         groups[right].files[0]
             .match_score
@@ -8449,6 +8466,11 @@ fn ranked_source_indices(groups: &[BundleCandidateGroup]) -> Vec<usize> {
                 groups[right]
                     .prefer_self_contained
                     .cmp(&groups[left].prefer_self_contained)
+            })
+            .then_with(|| {
+                groups[left]
+                    .source_priority
+                    .cmp(&groups[right].source_priority)
             })
             .then_with(|| {
                 groups[right].files[0]
@@ -8675,7 +8697,7 @@ mod tests {
         validate_launch_profile_template,
     };
     use crate::emulator::effective_launch_preview_values;
-    use crate::game_details::{BundleMatchKind, MinervaBundle, TorrentFileCandidate};
+    use crate::game_details::{self, BundleMatchKind, MinervaBundle, TorrentFileCandidate};
 
     #[test]
     fn discovery_cache_requires_the_same_present_rom() {
@@ -8710,6 +8732,7 @@ mod tests {
             error: String::new(),
             prefer_self_contained: false,
             is_retroachievements: false,
+            source_priority: game_details::bundle_source_priority(&bundle("minerva")),
         }
     }
 
@@ -8725,6 +8748,17 @@ mod tests {
             total_size: 2,
             match_kind: BundleMatchKind::MappedName,
         }
+    }
+
+    fn source_candidate_group(collection: &str, platform: &str) -> BundleCandidateGroup {
+        let mut source = bundle("minerva");
+        source.collection = collection.to_owned();
+        source.provider_platform = platform.to_owned();
+        let mut group = candidate_group(true, true);
+        group.source_priority = game_details::bundle_source_priority(&source);
+        group.prefer_self_contained = game_details::is_non_merged_arcade_bundle(&source);
+        group.is_retroachievements = game_details::is_retroachievements_bundle(&source);
+        group
     }
 
     #[test]
@@ -8808,6 +8842,77 @@ mod tests {
         let groups = vec![small, large, weak];
         assert_eq!(ranked_source_indices(&groups), [1, 0, 2]);
         assert_eq!(download_candidate_location(&groups, 0), Some((1, 0)));
+    }
+
+    #[test]
+    fn no_intro_outranks_larger_finalburn_neo_matches_for_consoles_and_handhelds() {
+        for platform in [
+            "Nintendo - Nintendo Entertainment System (Headered)",
+            "Nintendo - Super Nintendo Entertainment System",
+            "Nintendo - Game Boy",
+            "Nintendo - Game Boy Color",
+            "Nintendo - Game Boy Advance",
+            "Sega - Mega Drive - Genesis",
+            "Sega - Master System - Mark III",
+            "Sega - Game Gear",
+            "NEC - PC Engine - TurboGrafx-16",
+            "Coleco - ColecoVision",
+        ] {
+            let mut finalburn = source_candidate_group("FinalBurn Neo", platform);
+            finalburn.files[0].byte_size = 500;
+            finalburn.files[0].index = 42;
+            let no_intro = source_candidate_group("No-Intro", platform);
+            let groups = vec![finalburn, no_intro];
+            assert_eq!(ranked_source_indices(&groups), [1, 0], "{platform}");
+            assert_eq!(download_source_location(&groups, 0), Some(1));
+            assert_eq!(download_candidate_location(&groups, 0), Some((1, 0)));
+            assert_eq!(download_candidate_location(&groups, 1), Some((0, 0)));
+            assert_eq!(groups[0].files[0].index, 42);
+        }
+    }
+
+    #[test]
+    fn headered_no_intro_precedes_headerless_and_emulator_specific_nes_sets() {
+        let headered = source_candidate_group(
+            "No-Intro",
+            "Nintendo - Nintendo Entertainment System (Headered)",
+        );
+        let mut headerless = source_candidate_group(
+            "No-Intro",
+            "Nintendo - Nintendo Entertainment System (Headerless)",
+        );
+        headerless.files[0].byte_size = 500;
+        let mut finalburn = source_candidate_group("FinalBurn Neo", "Nintendo NES");
+        finalburn.files[0].byte_size = 1000;
+        assert_eq!(
+            ranked_source_indices(&[finalburn, headerless, headered]),
+            [2, 1, 0]
+        );
+    }
+
+    #[test]
+    fn finalburn_remains_available_for_a_more_exact_or_only_match() {
+        let mut no_intro = source_candidate_group("No-Intro", "Nintendo NES");
+        no_intro.files[0].match_score = 0.72;
+        let finalburn = source_candidate_group("FinalBurn Neo", "Nintendo NES");
+        let mut groups = vec![no_intro, finalburn];
+        assert_eq!(ranked_source_indices(&groups), [1, 0]);
+        groups[0].files.clear();
+        assert_eq!(ranked_source_indices(&groups), [1]);
+        groups[0].error = "Could not inspect torrent contents".into();
+        assert_eq!(ranked_source_indices(&groups), [1]);
+        assert_eq!(download_candidate_location(&groups, 0), Some((1, 0)));
+    }
+
+    #[test]
+    fn late_no_intro_results_take_priority_without_reindexing_sources() {
+        let mut finalburn = source_candidate_group("FinalBurn Neo", "Nintendo NES");
+        finalburn.files[0].byte_size = 500;
+        let mut groups = vec![finalburn, BundleCandidateGroup::default()];
+        assert_eq!(ranked_source_indices(&groups), [0]);
+        groups[1] = source_candidate_group("No-Intro", "Nintendo NES");
+        assert_eq!(ranked_source_indices(&groups), [1, 0]);
+        assert_eq!(download_candidate_location(&groups, 1), Some((0, 0)));
     }
 
     #[test]

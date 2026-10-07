@@ -1634,7 +1634,7 @@ pub(crate) fn is_retroachievements_bundle(bundle: &MinervaBundle) -> bool {
         .eq_ignore_ascii_case("RetroAchievements")
 }
 
-fn bundle_source_priority(bundle: &MinervaBundle) -> u8 {
+pub(crate) fn bundle_source_priority(bundle: &MinervaBundle) -> u8 {
     let collection = bundle.collection.trim().to_ascii_lowercase();
     let platform = bundle.provider_platform.trim().to_ascii_lowercase();
 

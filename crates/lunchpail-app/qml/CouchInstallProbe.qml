@@ -95,6 +95,17 @@ Item {
                 if (!probe.view.downloadOverlayOpen) return
                 if (probe.details.game_id !== probe.games[probe.scenario] || !probe.view.detailsCurrent)
                     return probe.finish(false, "wrong game installation")
+                if (probe.details.torrent_loading) return
+                if (probe.details.download_candidate_count() === 0)
+                    return probe.finish(false, "no download candidates")
+                const firstSource = probe.details.download_candidate_source_at(0)
+                if (firstSource.indexOf("No-Intro") < 0)
+                    return probe.finish(false, "No-Intro was not preferred: " + firstSource)
+                const firstBundle = probe.details.download_source_bundle_at(0)
+                if (probe.details.bundle_title_at(firstBundle) !== firstSource)
+                    return probe.finish(false, "desktop and couch source rankings disagree")
+                console.log("LUNCHPAIL_COUCH_INSTALL_SOURCE scenario=" + probe.scenario
+                    + " first=" + firstSource + " file=" + probe.details.download_candidate_name_at(0))
                 console.log("LUNCHPAIL_COUCH_INSTALL_CASE scenario=" + probe.scenario + " ms=" + (Date.now() - probe.started))
                 if (!probe.events.keyClick(Qt.Key_Escape, Qt.NoModifier, 0)) return probe.finish(false, "Escape event rejected")
                 probe.stage = 3
@@ -121,7 +132,7 @@ Item {
             } else if (probe.stage === 6) {
                 if (probe.desktopContent.enabled || probe.desktopDetails.enabled)
                     return probe.finish(false, "returning to wheel did not disable desktop")
-                return probe.finish(true, "mouse=pass cold=pass reopened=pass switched=pass returned=pass escape=pass workspaces=pass queued=none")
+                return probe.finish(true, "mouse=pass cold=pass reopened=pass switched=pass returned=pass escape=pass workspaces=pass no_intro=pass queued=none")
             }
         }
     }
