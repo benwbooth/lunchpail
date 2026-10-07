@@ -22,6 +22,8 @@ pub mod qobject {
         #[qproperty(bool, ready)]
         #[qproperty(bool, busy)]
         #[qproperty(bool, listening)]
+        #[qproperty(bool, input_silent)]
+        #[qproperty(bool, speech_active)]
         #[qproperty(bool, hands_free)]
         #[qproperty(bool, awake)]
         #[qproperty(bool, faulted)]
@@ -56,6 +58,8 @@ pub struct CouchSpeechModelRust {
     ready: bool,
     busy: bool,
     listening: bool,
+    input_silent: bool,
+    speech_active: bool,
     hands_free: bool,
     awake: bool,
     faulted: bool,
@@ -73,6 +77,8 @@ impl Default for CouchSpeechModelRust {
             ready,
             busy: false,
             listening: false,
+            input_silent: false,
+            speech_active: false,
             hands_free: false,
             awake: false,
             faulted: false,
@@ -114,8 +120,11 @@ impl qobject::CouchSpeechModel {
         // not on every wheel movement. Hints never enable the microphone.
         self.as_mut().vocabulary_requested();
         let vocabulary = serde_json::from_str::<Vec<String>>(&self.vocabulary_json.to_string())
-            .unwrap_or_default().into_iter().filter(|s| s.len() <= 100 && !s.contains('\0'))
-            .take(32).collect::<Vec<_>>();
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|s| s.len() <= 100 && !s.contains('\0'))
+            .take(32)
+            .collect::<Vec<_>>();
         let control = Arc::new(AtomicU8::new(0));
         let (tx, rx) = mpsc::channel();
         self.as_mut().rust_mut().control = control.clone();
@@ -125,6 +134,8 @@ impl qobject::CouchSpeechModel {
         self.as_mut().set_hands_free(hands_free);
         self.as_mut().set_faulted(false);
         self.as_mut().set_awake(false);
+        self.as_mut().set_input_silent(false);
+        self.as_mut().set_speech_active(false);
         self.as_mut().set_transcript(QString::default());
         self.as_mut().set_status(QString::from(if prepare {
             "Preparing local speech model…"
@@ -135,7 +146,8 @@ impl qobject::CouchSpeechModel {
             let result = if prepare {
                 couch_speech::prepare(&control, &tx).map(|()| Event::Ready)
             } else if hands_free {
-                couch_speech::listen_hands_free_with_vocabulary(control, &tx, &vocabulary).map(Event::Finished)
+                couch_speech::listen_hands_free_with_vocabulary(control, &tx, &vocabulary)
+                    .map(Event::Finished)
             } else {
                 couch_speech::listen_with_vocabulary(control, &tx, &vocabulary).map(Event::Finished)
             };
@@ -166,6 +178,8 @@ impl qobject::CouchSpeechModel {
         self.as_mut().rust_mut().receiver = None;
         self.as_mut().set_busy(false);
         self.as_mut().set_listening(false);
+        self.as_mut().set_input_silent(false);
+        self.as_mut().set_speech_active(false);
         self.as_mut().set_hands_free(false);
         self.as_mut().set_awake(false);
         self.as_mut()
@@ -190,18 +204,20 @@ impl qobject::CouchSpeechModel {
                 Event::Listening => {
                     self.as_mut().set_listening(true);
                     let status = if *self.hands_free() {
-                        "Microphone on locally. Speak naturally to Lunchpail."
+                        "Microphone on locally. Waiting for speech."
                     } else {
                         "Listening locally… Speak naturally. Stops after a pause or 15 seconds."
                     };
                     self.as_mut().set_status(QString::from(status));
                 }
+                Event::InputSilent(silent) => self.as_mut().set_input_silent(silent),
+                Event::SpeechActive(active) => self.as_mut().set_speech_active(active),
                 Event::Wake(awake) => {
                     self.as_mut().set_awake(awake);
                     self.as_mut().set_status(QString::from(if awake {
                         "I'm listening…"
                     } else {
-                        "Microphone on locally. Ready for your next request."
+                        "Microphone on locally. Waiting for speech."
                     }));
                 }
                 Event::Command(text) => {
@@ -210,12 +226,18 @@ impl qobject::CouchSpeechModel {
                 }
                 Event::Decoding => {
                     self.as_mut().set_listening(false);
+                    self.as_mut().set_awake(false);
+                    self.as_mut().set_input_silent(false);
+                    self.as_mut().set_speech_active(false);
                     self.as_mut()
                         .set_status(QString::from("Microphone off. Transcribing locally…"));
                 }
                 Event::Text(text) => self.as_mut().set_transcript(QString::from(&text)),
                 Event::Backend(text) => self.as_mut().rust_mut().backend = text,
                 Event::Finished(text) => {
+                    self.as_mut().set_awake(false);
+                    self.as_mut().set_input_silent(false);
+                    self.as_mut().set_speech_active(false);
                     if *self.hands_free() {
                         self.as_mut().set_listening(false);
                         self.as_mut().set_busy(false);
@@ -241,6 +263,8 @@ impl qobject::CouchSpeechModel {
                     self.as_mut().set_ready(model_ready);
                     self.as_mut().set_faulted(true);
                     self.as_mut().set_awake(false);
+                    self.as_mut().set_input_silent(false);
+                    self.as_mut().set_speech_active(false);
                     self.as_mut().set_status(QString::from(&error));
                 }
             }

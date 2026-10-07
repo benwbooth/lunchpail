@@ -9,6 +9,7 @@ Item {
     id: desktop
     required property var assistant
     required property var speech
+    MicrophoneActivity { id: microphoneActivity; speech: desktop.speech }
     required property var speechOutput
     required property var ai
     property bool active: true
@@ -116,7 +117,7 @@ Item {
             Text {
                 Layout.fillWidth: true
                 text: "ASSISTANT"
-                color: desktop.speech.listening ? "#72e1a0" : "#acb6c6"
+                color: microphoneActivity.hearingSpeech ? "#72e1a0" : "#acb6c6"
                 font.pixelSize: 12; font.bold: true
             }
             LbButton { text: "AI & voice"; onClicked: desktop.settingsRequested() }

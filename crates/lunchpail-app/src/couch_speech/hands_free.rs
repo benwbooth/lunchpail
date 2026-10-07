@@ -51,8 +51,14 @@ impl WakeGate {
 }
 
 fn accepted(gate: &mut WakeGate, text: &str, wake_word: bool) -> (bool, Option<String>) {
-    if wake_word { gate.accept(text, Instant::now()) }
-    else { (false, (!text.trim().is_empty()).then(|| text.trim().to_owned())) }
+    if wake_word {
+        gate.accept(text, Instant::now())
+    } else {
+        (
+            false,
+            (!text.trim().is_empty()).then(|| text.trim().to_owned()),
+        )
+    }
 }
 fn deliver(gate: &mut WakeGate, text: &str, wake_word: bool, tx: &mpsc::Sender<Event>) {
     let (awake, command) = accepted(gate, text, wake_word);
@@ -66,15 +72,24 @@ pub fn listen_hands_free(control: Arc<AtomicU8>, tx: &mpsc::Sender<Event>) -> Re
     listen_hands_free_with_vocabulary(control, tx, &[])
 }
 
-pub fn listen_hands_free_with_vocabulary(control: Arc<AtomicU8>, tx: &mpsc::Sender<Event>, vocabulary: &[String]) -> Result<String> {
+pub fn listen_hands_free_with_vocabulary(
+    control: Arc<AtomicU8>,
+    tx: &mpsc::Sender<Event>,
+    vocabulary: &[String],
+) -> Result<String> {
     use lunchpail_ai::{Request, models, worker};
     let settings = crate::local_ai::settings()?;
     let wake_word = crate::conversation::settings::load()?.wake_word;
     let model = models::find(&settings.speech)?;
     let whisper = model.engine == models::Engine::Whisper;
     // Load/verify before opening the microphone. No hidden secondary model.
-    let recognizer = if whisper { None } else { Some(recognizer_with_vocabulary(vocabulary)?) };
-    let mut stream = recognizer.as_ref().map(|r| r.create_stream());
+    let mut decoder = if whisper {
+        None
+    } else {
+        Some(StreamingDecoder::new(recognizer_with_vocabulary(
+            vocabulary,
+        )?))
+    };
     let model_path = if whisper {
         Some(crate::local_ai::with_cancel(&control, |cancel| {
             models::verify(&crate::local_ai::data_dir()?, model, cancel)
@@ -120,9 +135,8 @@ pub fn listen_hands_free_with_vocabulary(control: Arc<AtomicU8>, tx: &mpsc::Send
     let _ = tx.send(Event::Listening);
     let _ = tx.send(Event::Wake(false));
     let mut gate = WakeGate::default();
+    let mut activity = ActivityGate::new(rate, if whisper { 900 } else { 1200 });
     let mut audio = Vec::new();
-    let mut last_voice = None;
-    let mut last_text = String::new();
     while control.load(Ordering::Relaxed) == 0 {
         if let Ok(error) = error_rx.try_recv() {
             bail!("Microphone disconnected: {error}");
@@ -134,63 +148,69 @@ pub fn listen_hands_free_with_vocabulary(control: Arc<AtomicU8>, tx: &mpsc::Send
         let Ok(samples) = audio_rx.recv_timeout(Duration::from_millis(50)) else {
             continue;
         };
-        if let (Some(recognizer), Some(stream_ref)) = (&recognizer, &stream) {
-            stream_ref.accept_waveform(rate as i32, &samples);
-            while recognizer.is_ready(stream_ref) && control.load(Ordering::Relaxed) == 0 {
-                recognizer.decode(stream_ref);
+        for input in activity.push(&samples) {
+            if control.load(Ordering::Relaxed) != 0 {
+                break;
             }
-            let text = recognizer.get_result(stream_ref).map(|r| r.text).unwrap_or_default();
-            if !wake_word && !text.is_empty() && text != last_text {
+            if let Input::Silent(silent) = &input {
+                let _ = tx.send(Event::InputSilent(*silent));
+            }
+            if matches!(&input, Input::Start(_) | Input::End) {
+                let _ = tx.send(Event::SpeechActive(matches!(&input, Input::Start(_))));
+            }
+            if matches!(&input, Input::Start(_)) && !wake_word {
                 let _ = tx.send(Event::Wake(true));
-                let _ = tx.send(Event::Text(text.clone()));
-                last_text = text.clone();
             }
-            if recognizer.is_endpoint(stream_ref) {
-                deliver(&mut gate, &text, wake_word, tx);
-                last_text.clear();
-                stream = Some(recognizer.create_stream());
-            }
-        } else {
-            let energy = samples.iter().map(|x| x * x).sum::<f32>() / samples.len().max(1) as f32;
-            if energy > 0.000036 {
-                if last_voice.is_none() && !wake_word { let _ = tx.send(Event::Wake(true)); }
-                last_voice = Some(Instant::now());
-            }
-            audio.extend(
-                samples
-                    .into_iter()
-                    .take((rate as usize * 15).saturating_sub(audio.len())),
-            );
-            if last_voice.is_none() {
-                // Keep 250 ms of pre-roll, not an ever-growing ambient recording.
-                let excess = audio.len().saturating_sub(rate as usize / 4);
-                audio.drain(..excess);
-            } else if audio.len() >= rate as usize * 15
-                || last_voice.is_some_and(|last| last.elapsed() > Duration::from_millis(900))
-            {
-                let request = Request::Transcribe {
-                    model: model_path.as_ref().unwrap().clone(),
-                    device: None,
-                    samples: resample_16khz(&audio, rate),
-                    language: if model.id == "whisper-small" {
-                        "auto"
-                    } else {
-                        "en"
+            if let Some(decoder) = decoder.as_mut() {
+                match decoder.accept(input, rate, &control) {
+                    Some(Transcript::Partial(text)) if !wake_word => {
+                        let _ = tx.send(Event::Text(text));
                     }
-                    .into(),
-                    vocabulary: vocabulary.to_vec(),
-                };
-                let reply = crate::local_ai::with_cancel(&control, |cancel| {
-                    session.as_mut().unwrap().request(&request, cancel)
-                })?;
-                if control.load(Ordering::Relaxed) != 0 {
-                    break;
+                    Some(Transcript::Final(text)) => {
+                        if control.load(Ordering::Relaxed) == 0 {
+                            deliver(&mut gate, &text, wake_word, tx);
+                        }
+                    }
+                    _ => {}
                 }
-                deliver(&mut gate, &reply.text, wake_word, tx);
-                audio.clear();
-                last_voice = None;
-                // Don't interpret queued audio from the inference interval as a new command.
-                while audio_rx.try_recv().is_ok() {}
+                continue;
+            }
+            match input {
+                Input::Start(samples) | Input::Audio(samples) => {
+                    audio.extend(
+                        samples
+                            .into_iter()
+                            .take((rate as usize * 15).saturating_sub(audio.len())),
+                    );
+                }
+                Input::Silent(_) => {}
+                Input::End => {
+                    if audio.is_empty() {
+                        continue;
+                    }
+                    let request = Request::Transcribe {
+                        model: model_path.as_ref().unwrap().clone(),
+                        device: None,
+                        samples: resample_16khz(&audio, rate),
+                        language: if model.id == "whisper-small" {
+                            "auto"
+                        } else {
+                            "en"
+                        }
+                        .into(),
+                        vocabulary: vocabulary.to_vec(),
+                    };
+                    let reply = crate::local_ai::with_cancel(&control, |cancel| {
+                        session.as_mut().unwrap().request(&request, cancel)
+                    })?;
+                    if control.load(Ordering::Relaxed) != 0 {
+                        break;
+                    }
+                    deliver(&mut gate, &reply.text, wake_word, tx);
+                    audio.clear();
+                    // Don't interpret queued audio from the inference interval as a new command.
+                    while audio_rx.try_recv().is_ok() {}
+                }
             }
         }
     }
@@ -204,7 +224,12 @@ mod tests {
     #[test]
     fn conversation_mode_preserves_natural_requests_without_a_prefix() {
         let mut gate = WakeGate::default();
-        for text in ["search for super mario bros", "play the game", "yes please", "turn the music down"] {
+        for text in [
+            "search for super mario bros",
+            "play the game",
+            "yes please",
+            "turn the music down",
+        ] {
             assert_eq!(accepted(&mut gate, text, false), (false, Some(text.into())));
         }
         assert_eq!(accepted(&mut gate, "   ", false), (false, None));

@@ -154,6 +154,15 @@ new request. A microphone failure
 stops listening until you explicitly retry. The selected speech model is used;
 no additional wake model is silently downloaded.
 
+An open microphone is not the same as detected speech. **Mic idle** means the
+device is open but no utterance has passed the local input gate. After a second
+of effectively silent input, **No input** explains that the mic may be muted or
+silent; it does not pretend to read a hardware mute switch. **Hearing speech**
+appears only for sustained input. Both speech backends reject silence, constant
+ADC offsets, very low-level noise and isolated pops before recognition, keeping
+short pre-roll so the start of a real request is preserved. This is an input
+gate, not speaker identification: audible background speech can still qualify.
+
 **F2** or **Speak** remains available for one-shot capture. On first use, the
 same Yes/No installation prompt continues into capture when ready.
 Sherpa's English recognizer updates the editable query while you speak; Whisper

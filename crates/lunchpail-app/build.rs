@@ -238,6 +238,7 @@ fn main() {
                 "qml/CouchFeedback.qml",
                 "qml/CouchSearchOverlay.qml",
                 "qml/CouchHandsFreeController.qml",
+                "qml/MicrophoneActivity.qml",
                 "qml/CouchThemeRequest.qml",
                 "qml/CouchEntrySelection.qml",
                 "qml/CouchEntryProbe.qml",

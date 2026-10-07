@@ -2,7 +2,7 @@
 use anyhow::{Context, Result, bail, ensure};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use sha2::{Digest, Sha256};
-use sherpa_onnx::{OnlineRecognizer, OnlineRecognizerConfig};
+use sherpa_onnx::{OnlineRecognizer, OnlineRecognizerConfig, OnlineStream};
 use std::{
     io::Read,
     path::{Path, PathBuf},
@@ -16,6 +16,8 @@ use std::{
 
 pub const STOP: u8 = 1;
 pub const CANCEL: u8 = 2;
+mod activity;
+use activity::{ActivityGate, Input};
 mod hands_free;
 pub use hands_free::listen_hands_free;
 pub use hands_free::listen_hands_free_with_vocabulary;
@@ -47,6 +49,8 @@ pub enum Event {
     Status(String),
     Ready,
     Listening,
+    InputSilent(bool),
+    SpeechActive(bool),
     Decoding,
     Backend(String),
     Text(String),
@@ -54,6 +58,74 @@ pub enum Event {
     Error(String, bool),
     Wake(bool),
     Command(String),
+}
+
+enum Transcript {
+    Partial(String),
+    Final(String),
+}
+
+// Only gated audio can reach the streaming model. In particular, an idle mic
+// never creates a decoder stream or produces provisional text/wake events.
+struct StreamingDecoder {
+    recognizer: OnlineRecognizer,
+    stream: Option<OnlineStream>,
+    previous: String,
+    #[cfg(test)]
+    decode_calls: usize,
+}
+
+impl StreamingDecoder {
+    fn new(recognizer: OnlineRecognizer) -> Self {
+        Self {
+            recognizer,
+            stream: None,
+            previous: String::new(),
+            #[cfg(test)]
+            decode_calls: 0,
+        }
+    }
+
+    fn accept(&mut self, input: Input, rate: u32, control: &AtomicU8) -> Option<Transcript> {
+        let finalizing = matches!(input, Input::End);
+        match input {
+            Input::Start(audio) => {
+                self.previous.clear();
+                self.stream = Some(self.recognizer.create_stream());
+                self.stream.as_ref()?.accept_waveform(rate as i32, &audio);
+            }
+            Input::Audio(audio) => self.stream.as_ref()?.accept_waveform(rate as i32, &audio),
+            Input::End => {
+                let stream = self.stream.as_ref()?;
+                stream.accept_waveform(rate as i32, &vec![0.0; rate as usize / 2]);
+                stream.input_finished();
+            }
+            Input::Silent(_) => return None,
+        }
+        let stream = self.stream.as_ref()?;
+        while self.recognizer.is_ready(stream) && control.load(Ordering::Relaxed) != CANCEL {
+            self.recognizer.decode(stream);
+            #[cfg(test)]
+            {
+                self.decode_calls += 1;
+            }
+        }
+        let text = self
+            .recognizer
+            .get_result(stream)
+            .map(|r| r.text.trim().to_owned())
+            .unwrap_or_default();
+        if finalizing {
+            self.stream = None;
+            self.previous.clear();
+            Some(Transcript::Final(text))
+        } else if text != self.previous {
+            self.previous = text.clone();
+            Some(Transcript::Partial(text))
+        } else {
+            None
+        }
+    }
 }
 
 pub fn model_dir() -> Result<PathBuf> {
@@ -160,7 +232,8 @@ fn recognizer_with_vocabulary(vocabulary: &[String]) -> Result<OnlineRecognizer>
     config.rule1_min_trailing_silence = 4.0;
     config.rule2_min_trailing_silence = 1.2;
     config.rule3_min_utterance_length = 15.0;
-    let recognizer = OnlineRecognizer::create(&config).context("Could not load the local speech recognizer");
+    let recognizer =
+        OnlineRecognizer::create(&config).context("Could not load the local speech recognizer");
     drop(bpe_file);
     recognizer
 }
@@ -207,14 +280,18 @@ pub fn listen(control: Arc<AtomicU8>, tx: &mpsc::Sender<Event>) -> Result<String
     listen_with_vocabulary(control, tx, &[])
 }
 
-pub fn listen_with_vocabulary(control: Arc<AtomicU8>, tx: &mpsc::Sender<Event>, vocabulary: &[String]) -> Result<String> {
+pub fn listen_with_vocabulary(
+    control: Arc<AtomicU8>,
+    tx: &mpsc::Sender<Event>,
+    vocabulary: &[String],
+) -> Result<String> {
     let settings = crate::local_ai::settings()?;
     let model = lunchpail_ai::models::find(&settings.speech)
         .context("Choose a speech model in Settings → Local AI & voice")?;
     if model.engine == lunchpail_ai::models::Engine::Whisper {
         return listen_whisper(control, tx, &settings, model, vocabulary);
     }
-    let recognizer = recognizer_with_vocabulary(vocabulary)?;
+    let mut decoder = StreamingDecoder::new(recognizer_with_vocabulary(vocabulary)?);
     ensure!(
         control.load(Ordering::Relaxed) == 0,
         "Voice search cancelled"
@@ -227,7 +304,11 @@ pub fn listen_with_vocabulary(control: Arc<AtomicU8>, tx: &mpsc::Sender<Event>, 
         .default_input_config()
         .context("Cannot open the default microphone")?;
     let config = supported.config();
-    let sample_rate = config.sample_rate.0 as i32;
+    let sample_rate = config.sample_rate.0;
+    ensure!(
+        (8000..=192000).contains(&sample_rate),
+        "Unsupported microphone sample rate"
+    );
     let (audio_tx, audio_rx) = mpsc::sync_channel(32);
     let (error_tx, error_rx) = mpsc::channel();
     let microphone = match supported.sample_format() {
@@ -239,48 +320,53 @@ pub fn listen_with_vocabulary(control: Arc<AtomicU8>, tx: &mpsc::Sender<Event>, 
     if control.load(Ordering::Relaxed) != 0 {
         return Ok(String::new());
     }
-    let stream = recognizer.create_stream();
     microphone
         .play()
         .context("Microphone access denied or device unavailable")?;
     let _ = tx.send(Event::Listening);
     let started = Instant::now();
-    let mut previous = String::new();
+    let mut gate = ActivityGate::new(sample_rate, 1200);
     while control.load(Ordering::Relaxed) == 0 && started.elapsed() < Duration::from_secs(15) {
         if let Ok(error) = error_rx.try_recv() {
             bail!("Microphone disconnected: {error}");
         }
         if let Ok(samples) = audio_rx.recv_timeout(Duration::from_millis(50)) {
-            stream.accept_waveform(sample_rate, &samples);
-            while recognizer.is_ready(&stream) {
-                recognizer.decode(&stream);
+            for input in gate.push(&samples) {
+                match &input {
+                    Input::Silent(silent) => {
+                        let _ = tx.send(Event::InputSilent(*silent));
+                    }
+                    Input::Start(_) => {
+                        let _ = tx.send(Event::SpeechActive(true));
+                    }
+                    Input::End => {
+                        let _ = tx.send(Event::SpeechActive(false));
+                    }
+                    _ => {}
+                }
+                match decoder.accept(input, sample_rate, &control) {
+                    Some(Transcript::Partial(text)) => {
+                        let _ = tx.send(Event::Text(text));
+                    }
+                    Some(Transcript::Final(text)) => return Ok(text),
+                    None => {}
+                }
             }
-            let text = recognizer
-                .get_result(&stream)
-                .map(|result| result.text)
-                .unwrap_or_default();
-            if text != previous {
-                previous = text.clone();
-                let _ = tx.send(Event::Text(text.trim().to_owned()));
-            }
-            if recognizer.is_endpoint(&stream) {
-                break;
-            }
+        }
+        if !gate.active() && started.elapsed() > Duration::from_secs(4) {
+            break;
         }
     }
     drop(microphone);
     if control.load(Ordering::Relaxed) == CANCEL {
         return Ok(String::new());
     }
-    stream.accept_waveform(sample_rate, &vec![0.0; sample_rate as usize / 2]);
-    stream.input_finished();
-    while recognizer.is_ready(&stream) {
-        recognizer.decode(&stream);
+    for input in gate.finish() {
+        if let Some(Transcript::Final(text)) = decoder.accept(input, sample_rate, &control) {
+            return Ok(text);
+        }
     }
-    Ok(recognizer
-        .get_result(&stream)
-        .map(|result| result.text.trim().to_owned())
-        .unwrap_or_default())
+    Ok(String::new())
 }
 
 fn listen_whisper(
@@ -330,37 +416,46 @@ fn listen_whisper(
         .context("Microphone access denied or device unavailable")?;
     let _ = tx.send(Event::Listening);
     let started = Instant::now();
-    let mut last_voice = None;
+    let mut gate = ActivityGate::new(rate, 1200);
     let mut audio = Vec::with_capacity(rate as usize * 15);
+    let mut ended = false;
     while control.load(Ordering::Relaxed) == 0 && started.elapsed() < Duration::from_secs(15) {
         if let Ok(error) = error_rx.try_recv() {
             bail!("Microphone disconnected: {error}");
         }
         if let Ok(samples) = audio_rx.recv_timeout(Duration::from_millis(40)) {
-            let energy = samples.iter().map(|x| x * x).sum::<f32>() / samples.len().max(1) as f32;
-            if energy > 0.000036 {
-                last_voice = Some(Instant::now());
-            }
-            audio.extend(
-                samples
-                    .into_iter()
-                    .take((rate as usize * 15).saturating_sub(audio.len())),
-            );
-            if audio.len() >= rate as usize * 15 {
-                break;
+            for input in gate.push(&samples) {
+                match input {
+                    Input::Silent(silent) => {
+                        let _ = tx.send(Event::InputSilent(silent));
+                    }
+                    Input::Start(samples) => {
+                        let _ = tx.send(Event::SpeechActive(true));
+                        audio.extend(samples);
+                    }
+                    Input::Audio(samples) => audio.extend(samples),
+                    Input::End => {
+                        ended = true;
+                        break;
+                    }
+                }
             }
         }
-        if last_voice.is_some_and(|last| last.elapsed() > Duration::from_millis(1200))
-            || (last_voice.is_none() && started.elapsed() > Duration::from_secs(4))
-        {
+        if ended || (!gate.active() && started.elapsed() > Duration::from_secs(4)) {
             break;
         }
     }
     drop(microphone); // Release the microphone BEFORE inference or CPU retry.
-    let _ = tx.send(Event::Decoding);
-    if control.load(Ordering::Relaxed) == CANCEL || last_voice.is_none() {
+    for input in gate.finish() {
+        if let Input::Audio(samples) = input {
+            audio.extend(samples);
+        }
+    }
+    if control.load(Ordering::Relaxed) == CANCEL || audio.is_empty() {
         return Ok(String::new());
     }
+    let _ = tx.send(Event::Decoding);
+    audio.truncate(rate as usize * 15);
     let samples = resample_16khz(&audio, rate);
     if samples.len() < 1600 {
         return Ok(String::new());
@@ -478,6 +573,71 @@ mod tests {
         assert!(!valid_file(file.path(), "bad", 6));
     }
     #[test]
+    #[ignore = "Uses the installed model and a supplied WAV; never opens a microphone or downloads models"]
+    fn gated_model_rejects_muted_input_and_recovers_real_speech() {
+        let vocabulary = vec!["Faria".into(), "Faxanadu".into(), "Super Mario Bros".into()];
+        let mut decoder = StreamingDecoder::new(recognizer_with_vocabulary(&vocabulary).unwrap());
+        let mut gate = ActivityGate::new(16000, 1200);
+        let control = AtomicU8::new(0);
+        for chunk in vec![0.0; 16000 * 30].chunks(937) {
+            for input in gate.push(chunk) {
+                assert!(decoder.accept(input, 16000, &control).is_none());
+            }
+        }
+        assert_eq!(
+            decoder.decode_calls, 0,
+            "hardware-muted input must never invoke ASR"
+        );
+        for level in [0.25, -0.5] {
+            for chunk in vec![level; 16000 * 5].chunks(619) {
+                for input in gate.push(chunk) {
+                    assert!(decoder.accept(input, 16000, &control).is_none());
+                }
+            }
+        }
+        assert_eq!(
+            decoder.decode_calls, 0,
+            "a constant ADC offset is not speech"
+        );
+        let path = std::env::var("LUNCHPAIL_SPEECH_TEST_WAV").expect("fixture path");
+        let wave = sherpa_onnx::Wave::read(&path).unwrap();
+        let audio = resample_16khz(wave.samples(), wave.sample_rate() as u32);
+        let mut final_text = Vec::new();
+        let mut partials = 0;
+        for chunk in audio.chunks(1600).chain(vec![0.0; 32000].chunks(1600)) {
+            for input in gate.push(chunk) {
+                match decoder.accept(input, 16000, &control) {
+                    Some(Transcript::Partial(text)) if !text.is_empty() => partials += 1,
+                    Some(Transcript::Final(text)) if !text.is_empty() => final_text.push(text),
+                    _ => {}
+                }
+            }
+        }
+        let text = final_text.join(" ").to_lowercase();
+        let expected = std::env::var("LUNCHPAIL_SPEECH_EXPECT").expect("expected transcription");
+        assert!(
+            text.contains(&expected.to_lowercase()),
+            "transcription: {text}"
+        );
+        assert!(
+            partials > 0,
+            "streaming dictation still needs live partials"
+        );
+        let calls = decoder.decode_calls;
+        for chunk in vec![0.0; 16000 * 30].chunks(709) {
+            for input in gate.push(chunk) {
+                assert!(decoder.accept(input, 16000, &control).is_none());
+            }
+        }
+        assert_eq!(
+            decoder.decode_calls, calls,
+            "returning to mute must stop recognition again"
+        );
+        eprintln!(
+            "GATED_SPEECH_READY muted_decode_calls=0 resumed_partials={partials} returned_to_mute=pass text={text:?}"
+        );
+    }
+    #[test]
     #[ignore = "Downloads the pinned model; uses a supplied WAV, never the microphone"]
     fn real_model_transcribes_fixture() {
         if std::env::var_os("LUNCHPAIL_SPEECH_TEST_GPU_OCR").is_some() {
@@ -486,7 +646,9 @@ mod tests {
         let (tx, _) = mpsc::channel();
         prepare(&AtomicU8::new(0), &tx).unwrap();
         let vocabulary: Vec<String> = std::env::var("LUNCHPAIL_SPEECH_TEST_VOCABULARY")
-            .ok().and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_default();
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default();
         let recognizer = recognizer_with_vocabulary(&vocabulary).unwrap();
         let file = std::env::var("LUNCHPAIL_SPEECH_TEST_WAV").expect("fixture path");
         let wave = sherpa_onnx::Wave::read(&file).unwrap();

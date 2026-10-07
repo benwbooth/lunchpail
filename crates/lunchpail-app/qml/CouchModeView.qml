@@ -11,6 +11,7 @@ Item {
     required property var gamepad
     required property var downloadQueue
     required property var speech
+    MicrophoneActivity { id: microphoneActivity; speech: view.speech }
     property var assistant: null
     property var speechOutput: null
     readonly property var conversationConfig: assistant ? JSON.parse(assistant.config_json || "{}") : ({})
@@ -1772,7 +1773,7 @@ Item {
         CouchActionButton {
             id: searchButton
             soundFeedback: feedback; soundCue: ""
-            text: "Assistant" + (view.speech.listening ? " · Listening" : view.microphoneEnabled ? " · Mic on" : " · F3")
+            text: "Assistant" + (view.speech.listening ? " · " + microphoneActivity.label : view.microphoneEnabled ? " · Mic on" : " · F3")
             inkColor: view.ink; panelColor: view.panel; accentColor: view.accent
             onClicked: view.openSearch("", false)
             ToolTip.visible: hovered

@@ -746,6 +746,8 @@ ApplicationWindow {
         onVocabulary_requested: vocabulary_json = library.conversation_speech_hints_json(
             localAssistant.history_json, root.couchModeActive ? couchModeView.selectedGameId : root.selectedGameId)
     }
+
+    MicrophoneActivity { id: microphoneActivity; speech: couchSpeech }
     LocalAiModel { id: localAi }
     AssistantModel { id: localAssistant }
     AssistantSpeechOutput {
@@ -12668,7 +12670,7 @@ ApplicationWindow {
                 spacing: 7
                 HeaderButton {
                     objectName: "desktopAssistantButton"
-                    text: "Assistant" + (couchSpeech.listening ? " · Listening" : localAi.hands_free ? " · Mic on" : "")
+                    text: "Assistant" + (couchSpeech.listening ? " · " + microphoneActivity.label : localAi.hands_free ? " · Mic on" : "")
                     active: desktopAssistant.opened
                     onClicked: desktopAssistant.toggle()
                     ToolTip.visible: hovered

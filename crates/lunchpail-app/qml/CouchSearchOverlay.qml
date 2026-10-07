@@ -6,6 +6,7 @@ import QtQuick.Layouts
 FocusScope {
     id: search
     required property var speech
+    MicrophoneActivity { id: microphoneActivity; speech: search.speech }
     property var assistant: null
     property var speechOutput: null
     // Conversation surfaces share one persistent mic toggle. Plain title
@@ -266,14 +267,15 @@ FocusScope {
             }
         }
         Text {
+            objectName: "microphoneActivityStatus"
             Layout.fillWidth: true
             text: search.microphoneController
                 ? (!search.microphoneController.microphoneEnabled ? "Microphone off · You can still type"
                     : search.microphoneController.handsFreePauseReason
                         ? "Microphone waiting · " + search.microphoneController.handsFreePauseReason
-                        : search.speech.listening ? "● Listening · Speak naturally" : "Starting microphone…")
-                : (search.speech.listening ? "● " : "") + search.speech.status
-            color: search.speech.listening ? "#72e1a0" : search.mutedColor
+                        : search.speech.listening ? microphoneActivity.detail : "Starting microphone…")
+                : microphoneActivity.detail
+            color: microphoneActivity.hearingSpeech ? "#72e1a0" : search.mutedColor
             font.pixelSize: search.compact ? 12 : 15
             wrapMode: Text.WordWrap
             maximumLineCount: 3

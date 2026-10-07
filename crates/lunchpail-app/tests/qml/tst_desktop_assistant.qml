@@ -59,6 +59,8 @@ TestCase {
                 property bool busy: false
                 property bool ready: true
                 property bool listening: false
+                property bool input_silent: false
+                property bool speech_active: false
                 property bool hands_free: false
                 property bool awake: false
                 property bool faulted: false
@@ -137,6 +139,20 @@ TestCase {
         compare(p.handsFreePauseReason, "Processing your request")
         p.assistant.busy = false; p.speechOutput.speaking = true
         compare(p.handsFreePauseReason, "Speaking a reply")
+    }
+    function test_muted_and_idle_capture_do_not_look_like_detected_speech() {
+        const p = pane(); p.ai.hands_free = true; p.open("")
+        const status = findChild(p, "microphoneActivityStatus")
+        verify(status)
+        compare(status.text, "Mic on · Waiting for speech")
+        p.speech.input_silent = true
+        compare(status.text, "No audio input · Microphone may be muted or silent")
+        compare(status.color, p.searchPanel.mutedColor)
+        p.speech.input_silent = false; p.speech.speech_active = true
+        compare(status.text, "● Hearing speech · Speak naturally")
+        p.speech.speech_active = false
+        compare(status.text, "Mic on · Waiting for speech")
+        verify(!p.audioSuppressedForVoice)
     }
     function test_compact_panel_is_conversation_only_and_sends_same_backend() {
         const p = pane(); p.open("find Mario")
