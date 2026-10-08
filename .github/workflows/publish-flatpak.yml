@@ -1,18 +1,9 @@
 name: Publish Flatpak repository
 
+# Automatic triggers are paused until the GitHub Actions budget resets on
+# 2026-11-01. Restore them from git history then.
 on:
   workflow_dispatch:
-  # Releases created with GITHUB_TOKEN do not fire another release workflow.
-  workflow_run:
-    workflows: [Native packages]
-    types: [completed]
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/publish-flatpak.yml
-      - packaging/flatpak/prepare-repository.py
-      - packaging/flatpak/download.html
-      - packaging/flatpak/signing-key.asc
 
 permissions:
   contents: read

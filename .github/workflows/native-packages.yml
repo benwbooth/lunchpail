@@ -1,9 +1,8 @@
 name: Native packages
 
+# Automatic push/tag builds are paused until the GitHub Actions budget resets
+# on 2026-11-01. Restore the push trigger (branches: [main], tags: ['v*']) then.
 on:
-  push:
-    branches: [main]
-    tags: ['v*']
   workflow_dispatch:
 
 permissions:
