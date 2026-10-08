@@ -409,6 +409,70 @@ fn search_request(text: &str) -> Option<String> {
     Some(query.trim().to_owned())
 }
 
+/// "open my favorites" names a library shelf, not a game. Recognize the
+/// shelf before the play/search paths can mistake it for a title.
+fn shelf_request(text: &str) -> Option<(&'static str, &'static str)> {
+    let text = text.to_lowercase().replace(['\u{2019}', '\''], "");
+    let mut words: Vec<_> = text
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| !word.is_empty())
+        .collect();
+    let strip = |words: &mut Vec<&str>, phrases: &[&str]| {
+        for phrase in phrases {
+            let phrase: Vec<_> = phrase.split_whitespace().collect();
+            if words.starts_with(&phrase) {
+                words.drain(..phrase.len());
+                return true;
+            }
+        }
+        false
+    };
+    strip(&mut words, &["can you", "could you", "would you", "please"]);
+    strip(&mut words, &["please"]);
+    if !strip(
+        &mut words,
+        &[
+            "open up", "open", "show me", "show", "go to", "take me to", "bring me to",
+            "bring up", "pull up", "switch to", "navigate to", "jump to",
+        ],
+    ) {
+        return None;
+    }
+    if words.is_empty() {
+        return None;
+    }
+    strip(&mut words, &["all my", "all the", "my", "the", "all"]);
+    while words.last().is_some_and(|w| {
+        ["please", "shelf", "section", "list", "tab", "page", "category", "games"].contains(w)
+    }) {
+        words.pop();
+    }
+    Some(match words.join(" ").as_str() {
+        "favorites" | "favourites" | "favorite" | "favourite" => ("favorites", "Favorites"),
+        "recent" | "recents" | "recently played" => ("recent", "Recent"),
+        "collection" | "installed" | "local" | "own" | "owned" => ("local", "My collection"),
+        "minerva" | "downloadable" => ("downloadable", "Minerva"),
+        "" => ("all", "All games"),
+        _ => return None,
+    })
+}
+
+fn browse_shelf(shelf: &str, label: &str, runtime: &mut Runtime<'_>) -> String {
+    let result = runtime.invoke(
+        "browse_library",
+        json!({"query":"","platform":"","shelf":shelf,"collection_id":""}),
+    );
+    if let Some(error) = result["error"].as_str() {
+        return error.into();
+    }
+    match result["total_results"].as_u64() {
+        Some(0) => format!("Showing {label}. It's empty right now."),
+        Some(1) => format!("Showing {label}: 1 game."),
+        Some(count) => format!("Showing {label}: {count} games."),
+        None => format!("Showing {label}."),
+    }
+}
+
 fn browse_all(query: &str, platform: &str, runtime: &mut Runtime<'_>) -> Result<String> {
     browse_title(query, platform, runtime, false)
 }
@@ -455,6 +519,14 @@ pub(super) fn try_command(
     history: &[Message],
     runtime: &mut Runtime<'_>,
 ) -> Result<Option<String>> {
+    if let Some((shelf, label)) = history
+        .last()
+        .filter(|message| message.role == "user")
+        .and_then(|message| shelf_request(&message.content))
+    {
+        runtime.invoke("get_context", json!({}));
+        return Ok(Some(browse_shelf(shelf, label, runtime)));
+    }
     let Some(request) = request_from_history(history) else {
         let Some(query) = search_from_history(history)
         else {
@@ -793,6 +865,34 @@ mod tests {
         assert!(runtime.catalog.is_none());
         drop(tx);
         (result, ui.join().unwrap())
+    }
+
+    #[test]
+    fn shelf_names_open_the_shelf_instead_of_searching_titles() {
+        for (question, shelf) in [
+            ("open up my favorites", "favorites"),
+            ("Open my favourites please", "favorites"),
+            ("can you show me my favorites?", "favorites"),
+            ("go to recently played games", "recent"),
+            ("take me to my collection", "local"),
+            ("show all games", "all"),
+        ] {
+            let (reply, calls) = run_query(json!({}), false, question);
+            assert!(reply.unwrap().starts_with("Showing "), "{question}");
+            assert_eq!(
+                calls.iter().map(|c| c.0.as_str()).collect::<Vec<_>>(),
+                ["get_context", "browse_library"],
+                "{question}"
+            );
+            assert_eq!(
+                calls[1].1,
+                json!({"query":"","platform":"","shelf":shelf,"collection_id":""}),
+                "{question}"
+            );
+        }
+        for text in ["open", "open Super Mario Bros", "show me Mario in favorites", "play my favorite game"] {
+            assert!(shelf_request(text).is_none(), "{text}");
+        }
     }
 
     #[test]
