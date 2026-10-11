@@ -17,6 +17,10 @@ Item {
     property bool gameRunning: false
     property bool inputBlocked: false
     property bool opened: false
+    // Turned off from the header button: no panel, microphone or captions
+    // until the user turns it back on. The panel's Close keeps listening.
+    property bool switchedOff: false
+    readonly property bool switchedOn: opened || (!switchedOff && ai.hands_free)
     property bool coolingDown: false
     readonly property var config: JSON.parse(assistant.config_json || "{}")
     readonly property var searchPanel: conversation
@@ -43,7 +47,7 @@ Item {
         : !handsFreeSetup.ready ? "Set up assistant microphone"
         : ai.hands_free ? "Turn microphone off" : "Turn microphone on")
         + " · F4" + (ai.hands_free && handsFreePauseReason ? " · " + handsFreePauseReason : "")
-    readonly property bool handsFreeAllowed: active && windowActive && !gameRunning
+    readonly property bool handsFreeAllowed: active && windowActive && !gameRunning && !switchedOff
         && ai.hands_free && assistant.ready && !assistant.busy && !speechOutput.speaking && !coolingDown
         && !conversation.microphoneBusy && !handsFreeSetup.pending
     readonly property bool audioSuppressedForVoice: active
@@ -51,12 +55,20 @@ Item {
     signal settingsRequested()
     signal gameChosen(var game)
     function open(text) {
+        switchedOff = false
         opened = true
         conversation.open(text || "")
     }
     function close() { opened = false; conversation.cancelVoice() }
-    function toggle() { if (opened) close(); else open("") }
-    function toggleHandsFree() { handsFreeSetup.toggle() }
+    function switchOff() {
+        close()
+        switchedOff = true
+        handsFreeSetup.cancel()
+        speech.cancel()
+        speechOutput.stop()
+    }
+    function toggle() { if (switchedOn) switchOff(); else open("") }
+    function toggleHandsFree() { switchedOff = false; handsFreeSetup.toggle() }
     function acceptVoiceRequest(text) {
         speech.cancel()
         if (!assistant.ready) {
@@ -140,7 +152,8 @@ Item {
         anchors { horizontalCenter: parent.horizontalCenter; bottom: parent.bottom; bottomMargin: 20 }
         width: Math.min(720, parent.width - 40)
         assistant: desktop.assistant; speech: desktop.speech; speechOutput: desktop.speechOutput
-        enabledCaptions: desktop.active && !desktop.gameRunning && desktop.config.captions !== false
+        enabledCaptions: desktop.active && !desktop.gameRunning && !desktop.switchedOff
+                         && desktop.config.captions !== false
         expanded: desktop.opened
         onConversationRequested: desktop.open("")
     }

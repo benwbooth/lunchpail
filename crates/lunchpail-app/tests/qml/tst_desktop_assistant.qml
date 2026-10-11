@@ -188,6 +188,18 @@ TestCase {
         compare(p.assistant.question, "play the selected game")
         compare(p.speech.listening, false); compare(p.assistant.busy, true)
     }
+    function test_header_toggle_turns_panel_microphone_and_captions_fully_off() {
+        const p = pane(); p.ai.hands_free = true
+        compare(p.switchedOn, true); compare(p.speech.listening, true)
+        p.toggle()
+        compare(p.switchedOff, true); compare(p.switchedOn, false); compare(p.opened, false)
+        compare(p.handsFreeAllowed, false); compare(p.speech.listening, false)
+        compare(p.ai.hands_free, true) // The saved mic preference survives the off switch.
+        p.toggle()
+        compare(p.switchedOff, false); compare(p.opened, true)
+        compare(p.handsFreeAllowed, true); compare(p.speech.listening, true)
+        p.toggle(); compare(p.opened, false); compare(p.speech.listening, false)
+    }
     function test_typing_and_closing_do_not_interrupt_automatic_listening() {
         const p = pane(); p.ai.hands_free = true
         compare(p.speech.listening, true); compare(p.audioSuppressedForVoice, false)

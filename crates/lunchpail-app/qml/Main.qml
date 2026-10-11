@@ -733,6 +733,12 @@ ApplicationWindow {
         category: "Notifications"
     }
 
+    Settings {
+        id: desktopAssistantSettings
+        category: "DesktopAssistant"
+        property alias switchedOff: desktopAssistant.switchedOff
+    }
+
     VideoAudioPreferences { id: videoAudioPreferences }
 
     Settings {
@@ -12675,12 +12681,15 @@ ApplicationWindow {
                 spacing: 7
                 HeaderButton {
                     objectName: "desktopAssistantButton"
-                    text: "Assistant" + (couchSpeech.listening ? " · " + microphoneActivity.label : localAi.hands_free ? " · Mic on" : "")
-                    active: desktopAssistant.opened
+                    text: "Assistant" + (desktopAssistant.switchedOff ? " · Off"
+                          : couchSpeech.listening ? " · " + microphoneActivity.label
+                          : localAi.hands_free ? " · Mic on" : "")
+                    active: desktopAssistant.switchedOn
                     onClicked: desktopAssistant.toggle()
                     ToolTip.visible: hovered
-                    ToolTip.text: "Type or talk to Lunchpail · Ctrl+J" + (localAi.hands_free ? " · Mic on" : " · Mic off")
-                    Accessible.name: "Open Lunchpail assistant"
+                    ToolTip.text: (desktopAssistant.switchedOn ? "Turn the assistant and its microphone off"
+                                   : "Turn on and type or talk to Lunchpail") + " · Ctrl+J"
+                    Accessible.name: desktopAssistant.switchedOn ? "Turn assistant off" : "Turn assistant on"
                 }
                 HeaderButton {
                     text: ""
