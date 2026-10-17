@@ -15,8 +15,11 @@ cd "$(dirname "$0")"
 
 # Re-exec inside the dev shell when watchexec is not on PATH, so the script
 # works whether or not the caller already ran `nix develop`.
+# Record the shell as a Nix profile: an unrooted dev shell is deleted by
+# routine garbage collection and must then be downloaded again.
 if ! command -v watchexec >/dev/null 2>&1; then
-  exec nix develop --command bash "$0" "$@"
+  mkdir -p .direnv
+  exec nix develop --profile .direnv/dev-profile --command bash "$0" "$@"
 fi
 
 app_pid=""
