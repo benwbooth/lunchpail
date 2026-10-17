@@ -241,35 +241,6 @@ pub(crate) fn warm_gpu_ocr_for_speech_test() -> Result<()> {
     with_warm_ocr(|_| Ok(()))
 }
 
-pub fn prewarm_saved_settings_background() {
-    let _ = thread::Builder::new()
-        .name("lunchpail-translation-prewarm".into())
-        .spawn(|| {
-            let started = Instant::now();
-            let result = (|| -> Result<bool> {
-                let store = crate::settings::SettingsStore::open_default()?;
-                let settings = store.load()?.translation;
-                if !settings.enabled
-                    || !store.has_game_translation_opt_ins()?
-                    || !model_available(&settings.model)?
-                {
-                    return Ok(false);
-                }
-                with_warm_ocr(|_| Ok(()))?;
-                verify_model_gpu(&settings.model)?;
-                Ok(true)
-            })();
-            match result {
-                Ok(true) => eprintln!(
-                    "LUNCHPAIL_TRANSLATION_PREWARM_MS={}",
-                    started.elapsed().as_millis()
-                ),
-                Ok(false) => {}
-                Err(error) => eprintln!("LUNCHPAIL_TRANSLATION_PREWARM_FAILED: {error:#}"),
-            }
-        });
-}
-
 fn loaded_model_gpu_fraction(body: &Value, model: &str) -> Result<Option<u64>> {
     let entry = body["models"]
         .as_array()
@@ -421,8 +392,12 @@ pub fn pull_model(
     Ok(())
 }
 
+/// A game's translation bridge. Its worker loads the translation model when
+/// the game launches; dropping the session unloads it again, because a model
+/// resident in Ollama keeps the GPU at full clocks even while idle.
 pub struct TranslationSession {
     stop: Arc<AtomicBool>,
+    model: String,
 }
 
 impl TranslationSession {
@@ -452,11 +427,12 @@ impl TranslationSession {
         let stop = Arc::new(AtomicBool::new(false));
         let worker_stop = Arc::clone(&stop);
         let settings = settings.clone();
+        let model = settings.model.clone();
         thread::Builder::new()
             .name("lunchpail-translation-bridge".into())
             .spawn(move || serve(listener, &secret, settings, viewport, &worker_stop))
             .context("starting local translation bridge")?;
-        Ok(Some(Self { stop }))
+        Ok(Some(Self { stop, model }))
     }
 
     /// Rebind the URL already embedded in a Lunchpail-owned, still-running
@@ -510,12 +486,13 @@ impl TranslationSession {
             let stop = Arc::new(AtomicBool::new(false));
             let worker_stop = Arc::clone(&stop);
             let settings = settings.clone();
+            let model = settings.model.clone();
             thread::Builder::new()
                 .name("lunchpail-translation-bridge".into())
                 .spawn(move || serve(listener, &secret, settings, viewport, &worker_stop))
                 .context("restoring local translation bridge")?;
             eprintln!("LUNCHPAIL_TRANSLATION_RECOVERED port={port}");
-            return Ok(Some(Self { stop }));
+            return Ok(Some(Self { stop, model }));
         }
         Ok(None)
     }
@@ -693,7 +670,25 @@ fn retroarch_session_config(port: u16, secret: &str) -> String {
 impl Drop for TranslationSession {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
+        let model = std::mem::take(&mut self.model);
+        let _ = thread::Builder::new()
+            .name("lunchpail-translation-unload".into())
+            .spawn(move || {
+                if let Err(error) = unload_model(&model) {
+                    eprintln!("LUNCHPAIL_TRANSLATION_UNLOAD_FAILED: {error:#}");
+                }
+            });
     }
+}
+
+/// Free the model's VRAM now instead of after Ollama's keep-alive.
+fn unload_model(model: &str) -> Result<()> {
+    let mut response = http_agent(Duration::from_secs(30))
+        .post(&format!("{OLLAMA_URL}/api/generate"))
+        .send_json(json!({"model": model, "keep_alive": 0}))
+        .context("unloading the translation model")?;
+    let _ = response.body_mut().read_to_string();
+    Ok(())
 }
 
 fn serve(

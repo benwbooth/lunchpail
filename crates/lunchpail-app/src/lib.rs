@@ -894,7 +894,6 @@ pub fn run() -> i32 {
             return 1;
         }
         launch_timing::initialize();
-        translation::prewarm_saved_settings_background();
     }
 
     let controls_style = startup_controls_style();

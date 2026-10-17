@@ -5497,9 +5497,6 @@ impl qobject::GameDetailsModel {
         {
             Ok(()) => {
                 self.as_mut().set_translation_opted_in(enabled);
-                if enabled {
-                    crate::translation::prewarm_saved_settings_background();
-                }
             }
             Err(error) => {
                 eprintln!("LUNCHPAIL_TRANSLATION_PREFERENCE_WRITE_FAILED: {error:#}");
