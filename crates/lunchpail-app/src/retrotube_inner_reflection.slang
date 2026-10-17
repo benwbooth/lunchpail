@@ -17,9 +17,13 @@ float lunchpailPadding = (1.0 - smoothstep(0.0, 0.10, lunchpailDistance))
 // The material band is narrower than the possible native padding. Its
 // distance is measured from the curved picture edge, not the image rectangle,
 // so the light stops before the TV's outer frame, logos and printed cabinet.
-float lunchpailArtBrightness = max(max(pixel_fg_image.r, pixel_fg_image.g), pixel_fg_image.b);
+// Gate on perceived luminance, not the brightest channel: a saturated bevel
+// such as the SNES purple has a bright blue channel but is a mid-tone
+// surface that should reflect like the black NES bevel. Light printing
+// (logos, labels, pale plastic) still stays unlit.
+float lunchpailArtBrightness = dot(pixel_fg_image.rgb, vec3(0.2126, 0.7152, 0.0722));
 float lunchpailBevel = (1.0 - smoothstep(0.0, 0.055, lunchpailDistance))
-    * (1.0 - smoothstep(0.10, 0.28, lunchpailArtBrightness)) * pixel_fg_image.a;
+    * (1.0 - smoothstep(0.32, 0.55, lunchpailArtBrightness)) * pixel_fg_image.a;
 float lunchpailLip = step(0.00001, lunchpailDistance)
     * (lunchpailPadding + lunchpailBevel) * lunchpailArtBounds;
 if (lunchpailLip > 0.0 && BEZEL_REFL_STRENGTH > 0.0) {

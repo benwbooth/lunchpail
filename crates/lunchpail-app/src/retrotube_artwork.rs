@@ -368,7 +368,7 @@ mod tests {
         assert!(material.contains("* (1.0 - pixel_fg_image.a)"));
         assert!(material.contains("* pixel_fg_image.a"));
         assert!(material.contains("smoothstep(0.0, 0.055, lunchpailDistance)"));
-        assert!(material.contains("smoothstep(0.10, 0.28, lunchpailArtBrightness)"));
+        assert!(material.contains("smoothstep(0.32, 0.55, lunchpailArtBrightness)"));
         assert!(material.contains("step(0.00001, lunchpailDistance)"));
         // The opaque material adds to (not replaces) the existing transparent
         // lip. The same shader must handle a full-frame console and an arcade
