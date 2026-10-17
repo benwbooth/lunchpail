@@ -307,6 +307,9 @@
             export QMAKE="${qtEnv}/bin/qmake"
             export QT_INCLUDE_PATH="${qtEnv}/include"
             export QT_LIBEXEC_PATH="${qtEnv}/libexec"
+            # The desktop session's QT_PLUGIN_PATH points at the system Qt, whose
+            # platform plugins cannot load into this Qt ("no Qt platform plugin").
+            export QT_PLUGIN_PATH="${qtEnv}/lib/qt-6/plugins"
             # mold only exists in the dev shell (Linux); nix builds use the
             # default linker so sandboxed derivations stay reproducible.
             ${pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
