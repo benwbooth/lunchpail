@@ -13607,6 +13607,7 @@ ApplicationWindow {
         activeFocusOnTab: true
         Accessible.role: Accessible.Separator
         Accessible.name: "Resize game details pane"
+        Accessible.description: "Ctrl+Left or Ctrl+Right resizes the pane"
 
         function resizeBy(delta) {
             const next = Math.round(root.clampDetailsPaneWidth(
@@ -13615,10 +13616,12 @@ ApplicationWindow {
             library.save_details_pane_width(next)
         }
 
+        // Plain arrows move focus like the gamepad d-pad; Ctrl+arrows resize.
         Keys.onPressed: function(event) {
-            if (event.key === Qt.Key_Left) {
+            const resizing = (event.modifiers & Qt.ControlModifier) !== 0
+            if (resizing && event.key === Qt.Key_Left) {
                 resizeBy(24)
-            } else if (event.key === Qt.Key_Right) {
+            } else if (resizing && event.key === Qt.Key_Right) {
                 resizeBy(-24)
             } else if (event.key === Qt.Key_Home) {
                 library.preview_details_pane_width(
