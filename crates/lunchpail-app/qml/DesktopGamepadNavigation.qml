@@ -225,6 +225,10 @@ Item {
     }
 
     function control(item) {
+        // With nothing focused, Qt reports the window's root item, which sits
+        // above contentItem. Treat it like "no focus" so the first move lands
+        // on the library selection instead of measuring from the whole window.
+        if (item && !item.parent) return applicationWindow.contentItem
         if (item && typeof item.positionViewAtIndex === "function" && item.currentItem)
             return item.currentItem
         for (let cursor = item; cursor && cursor !== applicationWindow.contentItem; cursor = cursor.parent) {

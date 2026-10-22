@@ -4,8 +4,10 @@
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QObject>
+#include <QQuickItem>
 #include <QQuickWindow>
 #include <QVariant>
+#include <QDebug>
 #include <chrono>
 
 namespace lunchpail {
@@ -68,6 +70,15 @@ public:
         key->setAccepted(false);
         static_cast<QObject*>(window)->event(key);
         delivering = false;
+        // One line per arrow press: which item had focus and whether it used
+        // the key. Lets a "keys do nothing" report be diagnosed from the log.
+        {
+            QObject* focus = window->activeFocusItem();
+            qInfo("LUNCHPAIL_ARROW_KEY key=%s focus=%s name=%s accepted=%d", direction,
+                  focus ? focus->metaObject()->className() : "none",
+                  focus ? qPrintable(focus->objectName()) : "",
+                  key->isAccepted() ? 1 : 0);
+        }
         if (!key->isAccepted()) {
             QMetaObject::invokeMethod(window, "unhandledNavigationKey",
                                       Q_ARG(QVariant, QVariant(QString::fromLatin1(direction))));
