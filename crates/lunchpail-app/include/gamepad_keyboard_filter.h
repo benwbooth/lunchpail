@@ -4,6 +4,8 @@
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QObject>
+#include <QQuickWindow>
+#include <QVariant>
 #include <chrono>
 
 namespace lunchpail {
@@ -37,16 +39,45 @@ inline KeyboardNavigationObservation& lastKeyboardNavigation() {
     return observation;
 }
 
+inline const char* directionForKey(int key) {
+    switch (key) {
+    case Qt::Key_Up: return "up";
+    case Qt::Key_Down: return "down";
+    case Qt::Key_Left: return "left";
+    case Qt::Key_Right: return "right";
+    default: return nullptr;
+    }
+}
+
 class GamepadKeyboardObserver final : public QObject {
 public:
     explicit GamepadKeyboardObserver(QObject* parent) : QObject(parent) {}
-    bool eventFilter(QObject*, QEvent* event) override {
-        if (event->type() == QEvent::KeyPress) {
-            const auto action = navigationActionForKey(static_cast<QKeyEvent*>(event)->key());
-            if (action != 0) lastKeyboardNavigation() = {action, std::chrono::steady_clock::now()};
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() != QEvent::KeyPress) return false;
+        auto* key = static_cast<QKeyEvent*>(event);
+        const auto action = navigationActionForKey(key->key());
+        if (action != 0) lastKeyboardNavigation() = {action, std::chrono::steady_clock::now()};
+        // Arrow keys move like the gamepad d-pad/stick. Let the focused item
+        // use them first (grids, lists, text fields, sliders); when nothing
+        // accepts the key, hand it to the window's gamepad router instead.
+        const char* direction = directionForKey(key->key());
+        auto* window = qobject_cast<QQuickWindow*>(watched);
+        const auto modifiers = key->modifiers() & ~Qt::KeypadModifier;
+        if (!direction || !window || modifiers != Qt::NoModifier || delivering) return false;
+        delivering = true;
+        key->setAccepted(false);
+        static_cast<QObject*>(window)->event(key);
+        delivering = false;
+        if (!key->isAccepted()) {
+            QMetaObject::invokeMethod(window, "unhandledNavigationKey",
+                                      Q_ARG(QVariant, QVariant(QString::fromLatin1(direction))));
+            key->accept();
         }
-        return false;
+        return true;
     }
+
+private:
+    bool delivering = false;
 };
 
 inline void installGamepadKeyboardObserver() {

@@ -1041,6 +1041,13 @@ ApplicationWindow {
         const row = Math.max(0, Math.min(view.count - 1, view.currentIndex + ((action === "up" || action === "left") ? -step : step)))
         if (!assistantSelectGame({id: library.game_id_for_row(row)})) throw new Error("The selection could not be moved")
     }
+    // Called from the C++ key observer for arrow keys no item accepted, so the
+    // keyboard moves focus exactly like the gamepad d-pad and stick.
+    function unhandledNavigationKey(action) {
+        if (!desktopNavigation.enabled) return false
+        desktopNavigation.keyboardNavigation = true
+        return desktopNavigation.handle(action)
+    }
     function assistantOpenPanel(name) {
         if (!couchModeActive && name === "details") assistantShowDetails(couchAssistant.selected(""))
         else if (!couchModeActive && name === "library") { gameDetails.close_panel(); reanchorSelectedGame() }

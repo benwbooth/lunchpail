@@ -10,6 +10,8 @@ Item {
     property var overlayItem: null
     property var openCombo: null
     property var pendingSc2Actions: []
+    // Arrow keys use this router too; show its focus ring for them as well.
+    property bool keyboardNavigation: false
     readonly property var popupScope: {
         for (let item = applicationWindow.activeFocusItem; item; item = item.parent)
             if (overlayItem && item.parent === overlayItem) return item
@@ -322,7 +324,7 @@ Item {
                  && targetItem !== router.applicationWindow.contentItem && targetItem.visible
                  && targetItem.activeFocusOnTab
                  && targetItem.providesFocusIndicator !== true
-                 && router.gamepad.connected_count > 0
+                 && (router.gamepad.connected_count > 0 || router.keyboardNavigation)
         anchors.fill: parent
         radius: 6
         color: "transparent"
