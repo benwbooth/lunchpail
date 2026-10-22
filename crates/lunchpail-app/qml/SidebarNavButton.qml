@@ -10,6 +10,8 @@ Rectangle {
     property bool active: false
     property url iconSource: ""
     property string iconName: ""
+    // Denser rows for long lists such as the platforms pane.
+    property bool compact: false
     signal clicked()
     activeFocusOnTab: true
     Keys.onReturnPressed: clicked()
@@ -18,9 +20,10 @@ Rectangle {
 
     width: ListView.view ? (ListView.view.verticalContentWidth || ListView.view.width) : parent ? parent.width : 228
     // Keep one font size for every platform. Long names wrap and grow the
-    // row vertically; single-line rows keep 43px.
-    height: Math.max(43, labelText.implicitHeight + 21)
-    radius: 9
+    // row vertically; single-line rows keep 43px (31px when compact).
+    height: compact ? Math.max(31, labelText.implicitHeight + 11)
+                    : Math.max(43, labelText.implicitHeight + 21)
+    radius: compact ? 7 : 9
     color: active ? "#272c34" : hover.hovered ? "#1b2330" : "transparent"
     border.color: activeFocus ? "#ffb454" : active ? "#443b31" : "transparent"
     opacity: enabled ? 1 : 0.45
@@ -43,7 +46,7 @@ Rectangle {
     Rectangle {
         visible: nav.active
         width: 3
-        height: 23
+        height: nav.compact ? 17 : 23
         radius: 2
         color: "#ffb454"
         anchors.left: parent.left
@@ -54,10 +57,10 @@ Rectangle {
         id: navIcon
         source: nav.iconSource
         visible: nav.iconSource.toString().length > 0 && status !== Image.Error
-        width: 24
-        height: 24
+        width: nav.compact ? 20 : 24
+        height: width
         anchors.left: parent.left
-        anchors.leftMargin: 15
+        anchors.leftMargin: nav.compact ? 13 : 15
         anchors.verticalCenter: parent.verticalCenter
         fillMode: Image.PreserveAspectFit
         asynchronous: true
@@ -80,7 +83,7 @@ Rectangle {
         objectName: "sidebarNavLabel"
         text: nav.label
         anchors.left: parent.left
-        anchors.leftMargin: 54
+        anchors.leftMargin: nav.compact ? 44 : 54
         anchors.right: countText.left
         anchors.rightMargin: 8
         anchors.verticalCenter: parent.verticalCenter

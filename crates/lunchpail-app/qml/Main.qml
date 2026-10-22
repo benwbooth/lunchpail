@@ -13127,13 +13127,13 @@ ApplicationWindow {
             anchors.topMargin: 8
             clip: true
             reuseItems: true
-            spacing: 3
+            spacing: 1
             model: library.filtered_platform_count
             ScrollBar.vertical: LbScrollBar { policy: ScrollBar.AsNeeded }
             AcceleratedWheelHandler {
                 scroller: platformList
                 blocking: true
-                // A sidebar row is 43px, so the large-grid page defaults would
+                // A compact platform row is 31px, so the large-grid page defaults would
                 // fling dozens of rows per notch. Keep a short, light glide.
                 wheelPageFactor: 0.18
                 minimumPageDistance: 100
@@ -13141,6 +13141,7 @@ ApplicationWindow {
                 frictionPerSecond: 6.0
             }
             header: SidebarNavButton {
+                compact: true
                 label: "All Games"
                 iconName: "games"
                 count: {
@@ -13151,6 +13152,7 @@ ApplicationWindow {
                 onClicked: root.selectLibrary("")
             }
             delegate: SidebarNavButton {
+                compact: true
                 required property int index
                 property int revision: library.platform_revision
                 label: {
