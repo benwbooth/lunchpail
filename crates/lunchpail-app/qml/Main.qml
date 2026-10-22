@@ -1043,6 +1043,25 @@ ApplicationWindow {
     }
     // Called from the C++ key observer for arrow keys no item accepted, so the
     // keyboard moves focus exactly like the gamepad d-pad and stick.
+    // Called before the focused control sees a plain arrow key. Controls the
+    // d-pad never edits directly (text fields, closed combo boxes, sliders)
+    // get the same treatment from the keyboard: arrows move between controls.
+    // Enter/typing/Escape switch a text field or slider between "move between
+    // controls" and "edit"; see DesktopGamepadNavigation.editKey.
+    function navigationEditKey(kind) {
+        if (!desktopNavigation.enabled) return false
+        return desktopNavigation.editKey(kind)
+    }
+    function navigationPointerPressed() {
+        desktopNavigation.lastPointerPress = Date.now()
+    }
+    function navigationKeyFirst(action) {
+        if (!desktopNavigation.enabled) return false
+        if (!desktopNavigation.interceptsArrowsFor(root.activeFocusItem)) return false
+        desktopNavigation.keyboardNavigation = true
+        desktopNavigation.handle(action)
+        return true
+    }
     function unhandledNavigationKey(action) {
         if (!desktopNavigation.enabled) return false
         desktopNavigation.keyboardNavigation = true

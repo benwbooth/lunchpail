@@ -238,6 +238,67 @@ Item {
         return item
     }
 
+    // Two focus levels for the keyboard. Normally arrows move between
+    // controls, as the d-pad does. A text field or slider becomes the
+    // editing control when the user presses Enter on it, starts typing in
+    // it or clicks it; arrows then edit it until Escape or focus leaves.
+    property var editingItem: null
+    property double lastPointerPress: 0
+    readonly property var focusedItem: applicationWindow.activeFocusItem
+    onFocusedItemChanged: {
+        if (editingItem && focusedItem !== editingItem) editingItem = null
+        if (focusedItem && editable(focusedItem) && Date.now() - lastPointerPress < 500)
+            editingItem = focusedItem
+    }
+
+    function isTextInput(item) {
+        return !!item && item.cursorPosition !== undefined && item.selectByMouse !== undefined
+    }
+
+    function editable(item) {
+        if (isTextInput(item)) return true
+        const owner = control(item)
+        return !!owner && typeof owner.increase === "function"
+    }
+
+    // Enter/typing/Escape decide the level. Returns true to consume the key.
+    function editKey(kind) {
+        const item = applicationWindow.activeFocusItem
+        if (!enabled || !item || !editable(item)) return false
+        const editing = editingItem === item
+        if (kind === "escape") {
+            if (!editing) return false
+            editingItem = null
+            return true
+        }
+        if (kind === "enter") {
+            if (editing) {
+                // Enter still submits a field (search, rename); then return
+                // to moving between controls.
+                editingItem = null
+                return false
+            }
+            editingItem = item
+            return true
+        }
+        if (kind === "text" && isTextInput(item) && !editing) editingItem = item
+        return false
+    }
+
+    // Text inputs, closed combo boxes and sliders would consume arrow keys
+    // themselves; the gamepad never sends them arrows, so neither should the
+    // keyboard unless the control is being edited. Open popups, lists and
+    // grids keep their native arrow keys.
+    function interceptsArrowsFor(item) {
+        if (!item) return false
+        if (editingItem && (item === editingItem || within(item, editingItem))) return false
+        const combo = control(item)
+        if (combo && combo.popup !== undefined && combo.currentIndex !== undefined)
+            return !combo.popup.visible
+        if (combo && typeof combo.increase === "function") return true
+        return isTextInput(item)
+    }
+
     function handle(action) {
         if (!enabled || !applicationWindow.active) return false
         navigationStarted()
@@ -332,7 +393,9 @@ Item {
         anchors.fill: parent
         radius: 6
         color: "transparent"
-        border.color: "#ffb454"
+        // Amber while moving between controls, blue while editing one.
+        border.color: router.editingItem && router.editingItem === router.applicationWindow.activeFocusItem
+                      ? "#6ec7ff" : "#ffb454"
         border.width: 2
         z: 10000
     }
