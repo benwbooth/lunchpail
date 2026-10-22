@@ -13130,6 +13130,31 @@ ApplicationWindow {
             spacing: 1
             model: library.filtered_platform_count
             ScrollBar.vertical: LbScrollBar { policy: ScrollBar.AsNeeded }
+
+            // Page Up/Down move by a screenful of platforms; Home/End jump to
+            // the first/last. Focus follows so Enter selects that platform.
+            function focusPlatform(target) {
+                if (count <= 0) return
+                currentIndex = Math.max(0, Math.min(count - 1, target))
+                if (currentIndex === 0) positionViewAtBeginning()
+                else positionViewAtIndex(currentIndex, ListView.Contain)
+                Qt.callLater(function() {
+                    if (platformList.currentItem) platformList.currentItem.forceActiveFocus()
+                })
+            }
+            Keys.onPressed: event => {
+                const focused = root.activeFocusItem
+                let index = currentIndex
+                for (let cursor = focused; cursor && cursor !== platformList; cursor = cursor.parent)
+                    if (cursor.index !== undefined) { index = cursor.index; break }
+                const page = Math.max(1, Math.floor(height / 32) - 1)
+                if (event.key === Qt.Key_PageDown) focusPlatform(Math.max(0, index) + page)
+                else if (event.key === Qt.Key_PageUp) focusPlatform(index - page)
+                else if (event.key === Qt.Key_Home) focusPlatform(0)
+                else if (event.key === Qt.Key_End) focusPlatform(count - 1)
+                else return
+                event.accepted = true
+            }
             AcceleratedWheelHandler {
                 scroller: platformList
                 blocking: true
