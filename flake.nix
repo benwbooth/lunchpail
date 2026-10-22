@@ -314,6 +314,17 @@
             # default linker so sandboxed derivations stay reproducible.
             ${pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
               export RUSTFLAGS="''${RUSTFLAGS:-} -C link-arg=-fuse-ld=mold"
+              # Link with this shell's compiler. A user-level cargo config may name
+              # the system `clang`, whose newer glibc produces binaries that cannot
+              # start against this shell's glibc ("GLIBC_2.43 not found").
+              export CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER="$CC"
+              # An FHS host environment (e.g. an app's bubblewrap rootfs) exports
+              # -L/usr/lib and /usr/include for its own newer glibc. Linking
+              # against those produces binaries this shell's glibc cannot load.
+              unset NIX_CFLAGS_LINK
+              NIX_LDFLAGS="''${NIX_LDFLAGS//-L\/usr\/lib32/}"
+              export NIX_LDFLAGS="''${NIX_LDFLAGS//-L\/usr\/lib/}"
+              export NIX_CFLAGS_COMPILE="''${NIX_CFLAGS_COMPILE//-idirafter \/usr\/include/}"
               export LD_LIBRARY_PATH="${pkgs.lib.getLib pkgs.flite}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
             ''}
             # Incremental dev loop: rebuild the app on any code change and
