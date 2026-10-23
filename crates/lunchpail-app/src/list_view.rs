@@ -261,6 +261,7 @@ struct MetadataRow {
     notes: u32,
     release_year: i32,
     rating_tenths: i16,
+    rating_votes: u32,
     variants: u16,
 }
 
@@ -283,6 +284,7 @@ impl Default for MetadataRow {
             notes: 0,
             release_year: 0,
             rating_tenths: i16::MIN,
+            rating_votes: 0,
             variants: 1,
         }
     }
@@ -297,6 +299,7 @@ pub(crate) struct MetadataInput {
     pub genre: Option<String>,
     pub players: Option<String>,
     pub rating: Option<f64>,
+    pub rating_votes: Option<i64>,
     pub esrb: Option<String>,
     pub release_type: Option<String>,
     pub series: Option<String>,
@@ -381,6 +384,7 @@ impl ListMetadataBuilder {
                 .filter(|rating| rating.is_finite())
                 .map(|rating| (rating * 10.0).round().clamp(0.0, i16::MAX as f64) as i16)
                 .unwrap_or(i16::MIN),
+            rating_votes: rating_votes(input.rating_votes),
             variants: 1,
         };
         self.rows.push(row);
@@ -412,6 +416,7 @@ impl ListMetadataBuilder {
         notes: Option<&str>,
         release_year: i32,
         rating: Option<f64>,
+        votes: Option<i64>,
     ) -> Result<()> {
         let row = MetadataRow {
             sort_title: self.intern_str(sort_title)?,
@@ -433,6 +438,7 @@ impl ListMetadataBuilder {
                 .filter(|rating| rating.is_finite())
                 .map(|rating| (rating * 10.0).round().clamp(0.0, i16::MAX as f64) as i16)
                 .unwrap_or(i16::MIN),
+            rating_votes: rating_votes(votes),
             variants: 1,
         };
         self.rows.push(row);
@@ -613,7 +619,7 @@ impl ListMetadata {
                 ListSortKey::Integer(self.effective_year(index, game, overrides).map(i64::from))
             }
             ListColumn::Rating => {
-                ListSortKey::Rating(self.effective_rating(index, game, overrides))
+                ListSortKey::Rating(self.rating_rank(index, game, overrides))
             }
             ListColumn::Cooperative => ListSortKey::Integer(
                 self.effective_cooperative(game, overrides)
@@ -774,6 +780,29 @@ impl ListMetadata {
             .map(|rating| f32::from(rating) / 10.0)
     }
 
+    /// Sort score for the Rating column. A raw average lets a game with one
+    /// 5-star vote outrank the classics, so community ratings are weighted by
+    /// their vote count toward a typical rating (a Bayesian average). A rating
+    /// the player entered themselves is used as is.
+    fn rating_rank(
+        &self,
+        index: usize,
+        game: &Game,
+        overrides: &HashMap<String, GameMetadataOverride>,
+    ) -> Option<f32> {
+        if overrides
+            .get(&game.id)
+            .is_some_and(|metadata| metadata.rating.is_some())
+        {
+            return self.effective_rating(index, game, overrides);
+        }
+        let rating = self.effective_rating(index, game, overrides)?;
+        let votes = self.rows.get(index).map_or(0, |row| row.rating_votes) as f32;
+        Some(
+            (rating * votes + TYPICAL_RATING * RATING_PRIOR_VOTES) / (votes + RATING_PRIOR_VOTES),
+        )
+    }
+
     fn effective_cooperative(
         &self,
         game: &Game,
@@ -876,6 +905,15 @@ fn compare_optional<T: Ord>(left: Option<T>, right: Option<T>) -> Ordering {
         (None, Some(_)) => Ordering::Greater,
         (None, None) => Ordering::Equal,
     }
+}
+
+/// Community ratings across LaunchBox platforms average about 3.6 of 5; ten
+/// votes' worth of that pulls thinly rated games toward the middle.
+const TYPICAL_RATING: f32 = 3.6;
+const RATING_PRIOR_VOTES: f32 = 10.0;
+
+fn rating_votes(votes: Option<i64>) -> u32 {
+    votes.map_or(0, |votes| votes.clamp(0, i64::from(u32::MAX)) as u32)
 }
 
 fn compare_optional_f32(left: Option<f32>, right: Option<f32>) -> Ordering {

@@ -746,6 +746,7 @@ fn load_discovery_catalog_with_native_state(
     let play_mode = optional_game_column(&discovery, "play_mode")?;
     let version = optional_game_column(&discovery, "version")?;
     let notes = optional_game_column(&discovery, "notes")?;
+    let rating_count = optional_game_column(&discovery, "rating_count")?;
     let query = format!(
         "SELECT g.id, g.title, p.name, coalesce(g.status, 'canonical'),
                 coalesce(g.launchbox_db_id, 0), {release_type}, {esrb}, {genre},
@@ -757,7 +758,7 @@ fn load_discovery_catalog_with_native_state(
                          ('', 'canonical', 'deprecated', 'merged') THEN NULL
                     ELSE trim(g.status)
                 END,
-                {notes}
+                {notes}, {rating_count}
          FROM games g
          JOIN platforms p ON p.id = g.platform_id
          ORDER BY coalesce(nullif(g.sort_title, ''), g.title) COLLATE NOCASE, g.id"
@@ -820,6 +821,7 @@ fn load_discovery_catalog_with_native_state(
         });
         let release_year: Option<i64> = row.get(12)?;
         let rating: Option<f64> = row.get(14)?;
+        let rating_votes: Option<i64> = row.get(22)?;
         list_metadata.push_text(
             text_column(&row, 15),
             text_column(&row, 9),
@@ -837,6 +839,7 @@ fn load_discovery_catalog_with_native_state(
             text_column(&row, 21),
             i32::try_from(release_year.unwrap_or_default()).unwrap_or_default(),
             rating,
+            rating_votes,
         )?;
     }
     for game in &installed.local_only_games {
@@ -1065,6 +1068,7 @@ fn optional_game_column(connection: &Connection, column: &str) -> Result<&'stati
             "release_year" => "g.release_year",
             "players" => "g.players",
             "rating" => "g.rating",
+            "rating_count" => "g.rating_count",
             "sort_title" => "g.sort_title",
             "series" => "g.series",
             "region" => "g.region",
