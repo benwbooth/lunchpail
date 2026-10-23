@@ -11616,6 +11616,17 @@ ApplicationWindow {
 
     component GameList: MomentumListView {
         id: list
+        // Like the grid: the shared handler doesn't block, so ListView's own
+        // wheel scrolling moved the view too, which cancelled the glide.
+        defaultWheelMomentum: false
+        AcceleratedWheelHandler {
+            scroller: list
+            blocking: true
+            // 54px rows: a shorter page than the grid's tall cards.
+            wheelPageFactor: 1.6
+            minimumPageDistance: 600
+            maximumPageDistance: 2400
+        }
         VisibleArtworkPriority {
             libraryModel: library
             view: list
