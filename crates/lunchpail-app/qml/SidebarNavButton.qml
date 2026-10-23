@@ -95,7 +95,8 @@ Rectangle {
         font.pixelSize: 13
         font.weight: Font.Medium
     }
-    ToolTip.visible: hover.hovered
+    // Platform rows show their full, wrapped name already; no tooltip.
+    ToolTip.visible: hover.hovered && !nav.compact
     ToolTip.text: nav.label
     Text {
         id: countText
