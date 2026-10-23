@@ -733,6 +733,14 @@ ApplicationWindow {
         category: "Notifications"
     }
 
+    // Side panes the user hid with the header toggles stay hidden.
+    Settings {
+        id: paneSettings
+        category: "LibraryPanes"
+        property bool sidebarHidden: false
+        property bool detailsHidden: false
+    }
+
     Settings {
         id: desktopAssistantSettings
         category: "DesktopAssistant"
@@ -12616,6 +12624,14 @@ ApplicationWindow {
                 id: brandRow
                 Layout.alignment: Qt.AlignVCenter
                 spacing: 10
+                PaneToggleButton {
+                    objectName: "sidebarToggle"
+                    anchors.verticalCenter: parent.verticalCenter
+                    side: "left"
+                    paneName: "platforms pane"
+                    shown: !paneSettings.sidebarHidden
+                    onClicked: paneSettings.sidebarHidden = !paneSettings.sidebarHidden
+                }
                 AppIcon {
                     width: 32
                     height: 32
@@ -12705,6 +12721,14 @@ ApplicationWindow {
                 id: headerActions
                 Layout.alignment: Qt.AlignVCenter
                 spacing: 7
+                PaneToggleButton {
+                    objectName: "detailsToggle"
+                    side: "right"
+                    paneName: "game details"
+                    enabled: gameDetails.panel_open
+                    shown: gameDetails.panel_open && !paneSettings.detailsHidden
+                    onClicked: paneSettings.detailsHidden = !paneSettings.detailsHidden
+                }
                 HeaderButton {
                     objectName: "desktopAssistantButton"
                     text: "Assistant" + (desktopAssistant.switchedOff ? " · Off"
@@ -12828,7 +12852,9 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.top: header.bottom
         anchors.bottom: statusBar.top
-        width: library.sidebar_width
+        width: paneSettings.sidebarHidden ? 0 : library.sidebar_width
+        visible: width > 0
+        clip: true
         color: root.panel
         border.color: root.line
 
@@ -13648,7 +13674,7 @@ ApplicationWindow {
         anchors.top: header.bottom
         anchors.bottom: statusBar.top
         width: 10
-        visible: gameDetails.panel_open && root.couchWorkspace !== "game"
+        visible: gameDetails.panel_open && !paneSettings.detailsHidden && root.couchWorkspace !== "game"
         z: 80
         activeFocusOnTab: true
         Accessible.role: Accessible.Separator
@@ -13733,7 +13759,7 @@ ApplicationWindow {
         anchors.bottom: parent.bottom
         anchors.bottomMargin: root.couchModeActive && root.couchWorkspace === "game" ? 28 : statusBar.height
         width: root.couchModeActive && root.couchWorkspace === "game" ? Math.min(parent.width - 96, 900)
-               : gameDetails.panel_open
+               : gameDetails.panel_open && !paneSettings.detailsHidden
                ? root.clampDetailsPaneWidth(library.details_pane_width) : 0
         visible: width > 0
         clip: true

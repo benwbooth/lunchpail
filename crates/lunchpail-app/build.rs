@@ -219,6 +219,7 @@ fn main() {
                 "qml/AuditMetric.qml",
                 "qml/CatalogLinkButton.qml",
                 "qml/ExpandableDescription.qml",
+                "qml/PaneToggleButton.qml",
                 "qml/ClearableSearchField.qml",
                 "qml/CollectionMetric.qml",
                 "qml/GameFileIdentityDialog.qml",
