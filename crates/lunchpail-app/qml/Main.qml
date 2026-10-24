@@ -13974,6 +13974,8 @@ ApplicationWindow {
             contentWidth: width
             contentHeight: detailContent.height
             boundsBehavior: Flickable.StopAtBounds
+            // Flickable's own wheel scrolling would otherwise cancel the glide.
+            blockNativeWheel: true
             ScrollBar.vertical: LbScrollBar {
                 id: detailScrollBar
                 parent: detailsPane
