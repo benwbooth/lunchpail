@@ -126,6 +126,9 @@ pub(crate) struct Session {
     directory: tempfile::TempDir,
     #[cfg(target_os = "linux")]
     display: String,
+    /// GameBuddy's RetroArch config for reading unfiltered frames, if offered.
+    #[cfg(target_os = "linux")]
+    retroarch_appendconfig: Option<PathBuf>,
 }
 impl Config {
     pub(crate) fn prepare(
@@ -164,6 +167,7 @@ impl Config {
                 child,
                 directory,
                 display: String::new(),
+                retroarch_appendconfig: None,
             };
             let deadline = Instant::now() + Duration::from_secs(45);
             loop {
@@ -176,6 +180,10 @@ impl Config {
                         .context("Invalid GameBuddy session handshake")?;
                     ready.validate()?;
                     prepared.display = ready.display;
+                    prepared.retroarch_appendconfig = ready
+                        .retroarch_appendconfig
+                        .map(PathBuf::from)
+                        .filter(|path| path.is_absolute() && path.is_file());
                     return Ok(Some(prepared));
                 }
                 if let Some(status) = prepared.child.try_wait()? {
@@ -211,6 +219,9 @@ impl Config {
 struct Ready {
     version: u32,
     display: String,
+    /// Older GameBuddy builds do not send it.
+    #[serde(default)]
+    retroarch_appendconfig: Option<String>,
 }
 #[cfg(target_os = "linux")]
 impl Ready {
@@ -250,6 +261,12 @@ impl Session {
             plan.arguments
                 .splice(1..1, ["--socket=x11".into(), "--nosocket=wayland".into()]);
         }
+        // RetroArch only: let GameBuddy ask for the core's unfiltered frame
+        // (before shaders) by appending its config to the launch's list.
+        #[cfg(target_os = "linux")]
+        if let Some(config) = &self.retroarch_appendconfig {
+            append_retroarch_config(plan, config);
+        }
         #[cfg(not(target_os = "linux"))]
         let _ = plan;
     }
@@ -286,6 +303,30 @@ impl Drop for Session {
     }
 }
 
+/// Add `config` to a RetroArch launch's pipe-separated `--appendconfig` list.
+/// A launch without such a list is left alone rather than reordered.
+#[cfg(target_os = "linux")]
+fn append_retroarch_config(plan: &mut crate::emulator::LaunchPlan, config: &std::path::Path) {
+    if plan.retroarch_content.is_none() {
+        return;
+    }
+    let config = config.as_os_str();
+    let arguments = &mut plan.arguments;
+    let Some(index) = arguments.iter().position(|a| {
+        a == "--appendconfig" || a.to_str().is_some_and(|s| s.starts_with("--appendconfig="))
+    }) else {
+        eprintln!("LUNCHPAIL_GAMEBUDDY_RETROARCH_FRAMES skipped=no-appendconfig");
+        return;
+    };
+    let target = if arguments[index] == "--appendconfig" { index + 1 } else { index };
+    if let Some(value) = arguments.get_mut(target) {
+        let mut joined = value.clone();
+        joined.push("|");
+        joined.push(config);
+        *value = joined;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -296,7 +337,8 @@ mod tests {
         assert!(
             Ready {
                 version: 1,
-                display: ":5".into()
+                display: ":5".into(),
+                retroarch_appendconfig: None,
             }
             .validate()
             .is_ok()
@@ -305,7 +347,8 @@ mod tests {
             assert!(
                 Ready {
                     version,
-                    display: display.into()
+                    display: display.into(),
+                    retroarch_appendconfig: None,
                 }
                 .validate()
                 .is_err()

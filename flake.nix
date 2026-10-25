@@ -303,6 +303,9 @@
           LUNCHPAIL_BUILT_UNIX = "now";
 
           shellHook = ''
+            # A host-wide -L/usr/lib (nix-ld's system glibc) would link the
+            # app against a newer glibc than the shell's Qt runtime provides.
+            unset NIX_CFLAGS_LINK
             export PATH="${qtEnv}/bin:${qtEnv}/libexec:$PATH"
             export QMAKE="${qtEnv}/bin/qmake"
             export QT_INCLUDE_PATH="${qtEnv}/include"
