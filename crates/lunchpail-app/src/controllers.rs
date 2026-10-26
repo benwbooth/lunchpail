@@ -926,7 +926,61 @@ fn list_linux_joystick_controllers(warnings: &mut Vec<String>) -> Vec<Controller
         .filter(should_show_linux_controller)
         .collect::<Vec<_>>();
     devices.sort_by(|left, right| left.device_path.cmp(&right.device_path));
+    if let Ok(settings) =
+        crate::settings::SettingsStore::open_default().and_then(|store| store.load())
+    {
+        adopt_moved_controllers(&mut devices, &remembered_controller_ids(&settings.controller_mapping));
+    }
     devices
+}
+
+/// Every controller ID that a saved name, calibration, or player assignment
+/// refers to.
+#[cfg(target_os = "linux")]
+fn remembered_controller_ids(mapping: &ControllerMappingSettings) -> HashSet<String> {
+    mapping
+        .device_names
+        .keys()
+        .chain(mapping.calibrations.keys())
+        .cloned()
+        .chain(
+            mapping
+                .player_mappings
+                .iter()
+                .chain(mapping.system_player_mappings.values().flatten())
+                .filter_map(|player| player.controller_id.clone()),
+        )
+        .collect()
+}
+
+/// Linux IDs fall back to the USB port when a pad has no serial, so moving a
+/// receiver to another port would orphan its calibration and player slot.
+/// When exactly one remembered ID of a vendor:product is absent and exactly
+/// one connected pad of that vendor:product is unknown, they are the same
+/// pad. Anything less certain stays as-is rather than guessing.
+#[cfg(target_os = "linux")]
+fn adopt_moved_controllers(devices: &mut [ControllerDevice], remembered: &HashSet<String>) {
+    let present: HashSet<String> = devices.iter().map(|d| d.stable_id.clone()).collect();
+    let model_prefix = |device: &ControllerDevice| {
+        stable_controller_id(device.vendor_id.as_deref(), device.product_id.as_deref(), "")
+    };
+    let prefixes: HashSet<String> = devices.iter().map(model_prefix).collect();
+    for prefix in prefixes {
+        let mut absent = remembered
+            .iter()
+            .filter(|id| id.starts_with(&prefix) && !present.contains(*id));
+        let (Some(absent_id), None) = (absent.next(), absent.next()) else {
+            continue;
+        };
+        let mut unknown = devices.iter_mut().filter(|device| {
+            !device.is_virtual
+                && model_prefix(device) == prefix
+                && !remembered.contains(&device.stable_id)
+        });
+        if let (Some(device), None) = (unknown.next(), unknown.next()) {
+            device.stable_id = absent_id.clone();
+        }
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -1986,6 +2040,31 @@ mapping:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_receiver_moved_to_another_port_keeps_its_remembered_identity() {
+        let pad = |id: &str| ControllerDevice {
+            vendor_id: Some("045e".into()),
+            product_id: Some("028e".into()),
+            ..controller(id, "Microsoft X-Box 360 pad")
+        };
+        let n30 = "linux:045e:028e:usb-0000-56-00-0-2-input0";
+        let brawler = "linux:045e:028e:usb-0000-56-00-0-1-input0";
+        let remembered: HashSet<String> = [n30, brawler].map(String::from).into();
+        let mut devices = vec![pad(brawler), pad("linux:045e:028e:usb-0000-56-00-0-3-input0")];
+        adopt_moved_controllers(&mut devices, &remembered);
+        assert_eq!(devices[0].stable_id, brawler);
+        assert_eq!(devices[1].stable_id, n30);
+
+        // Two unknown pads could be either one: leave both alone.
+        let mut ambiguous = vec![
+            pad("linux:045e:028e:usb-0000-56-00-0-3-input0"),
+            pad("linux:045e:028e:usb-0000-56-00-0-4-input0"),
+        ];
+        adopt_moved_controllers(&mut ambiguous, &remembered);
+        assert!(ambiguous.iter().all(|d| !remembered.contains(&d.stable_id)));
+    }
 
     fn controller(id: &str, name: &str) -> ControllerDevice {
         ControllerDevice {
