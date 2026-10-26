@@ -19,6 +19,7 @@ const AXIS_CODE: u32 = 0x53450000;
 #[derive(Default)]
 struct Inventory {
     pads: Vec<(String, Pad)>,
+    companions: Vec<Pad>,
     status: String,
 }
 fn inventory() -> &'static Mutex<Inventory> {
@@ -105,6 +106,14 @@ pub fn connected(id: &str) -> bool {
 pub fn unique_pad() -> Option<(String, Pad)> {
     let state = inventory().lock().ok()?;
     (state.pads.len() == 1).then(|| state.pads[0].clone())
+}
+
+/// Non-SC2 gamepads SDL3 currently reports, for merging into a launch bridge.
+pub fn companions() -> Vec<Pad> {
+    inventory()
+        .lock()
+        .map(|state| state.companions.clone())
+        .unwrap_or_default()
 }
 
 pub fn pad_by_id(id: &str) -> Option<Pad> {
@@ -471,10 +480,11 @@ pub fn run(stop: &AtomicBool, mut publish: impl FnMut(InputEvent)) -> anyhow::Re
         );
         let frame: Frame = serde_json::from_str(&line)?;
         anyhow::ensure!(
-            frame.pads.len() <= 128
+            frame.pads.len() + frame.companions.len() <= 128
                 && frame
                     .pads
                     .iter()
+                    .chain(&frame.companions)
                     .all(|p| p.buttons.len() == 26 && p.axes.len() == 6),
             "Invalid SDL3 input frame"
         );
@@ -492,6 +502,7 @@ pub fn run(stop: &AtomicBool, mut publish: impl FnMut(InputEvent)) -> anyhow::Re
                     .zip(&pads)
                     .any(|((old_key, _), (new_key, _))| old_key != new_key);
             state.pads = pads.clone();
+            state.companions = frame.companions;
             state.status = format!(
                 "SDL3 {} native input · {} Steam Controller 2 devices",
                 frame.version,
@@ -522,13 +533,18 @@ pub fn run(stop: &AtomicBool, mut publish: impl FnMut(InputEvent)) -> anyhow::Re
             }
         }
     }
-    inventory().lock().unwrap().pads.clear();
+    {
+        let mut state = inventory().lock().unwrap();
+        state.pads.clear();
+        state.companions.clear();
+    }
     Ok(())
 }
 
 pub fn failed(error: &str) {
     let mut state = inventory().lock().unwrap();
     state.pads.clear();
+    state.companions.clear();
     state.status = format!("SDL3 native input unavailable: {error}");
 }
 

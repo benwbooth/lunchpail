@@ -26,6 +26,10 @@ pub struct Pad {
 pub struct Frame {
     pub version: i32,
     pub pads: Vec<Pad>,
+    /// Ordinary SDL gamepads beside the SC2. A launch bridge merges them into
+    /// its player-one pad so they keep working while the SC2 owns that port.
+    #[serde(default)]
+    pub companions: Vec<Pad>,
 }
 
 pub fn is_sc2(vendor: u16, product: u16) -> bool {
@@ -221,10 +225,32 @@ impl Runtime {
                 }
             });
             let mut pads = Vec::new();
+            let mut companions = Vec::new();
             for id in ids {
                 let vendor = (self.vendor)(id);
                 let product = (self.product)(id);
                 if !is_sc2(vendor, product) {
+                    // Valve devices are SC2 shadows (Steam's virtual pad) or
+                    // legacy Steam controllers; neither is a separate player.
+                    if vendor == 0x28de {
+                        continue;
+                    }
+                    let handle = *self.handles.entry(id).or_insert_with(|| (self.open)(id));
+                    if handle.is_null() {
+                        self.handles.remove(&id);
+                        continue;
+                    }
+                    companions.push(Pad {
+                        instance: id,
+                        vendor,
+                        product,
+                        name: "Gamepad".into(),
+                        path: super::string((self.path)(handle))?,
+                        serial: None,
+                        mapping: String::new(),
+                        buttons: (0..26).map(|index| (self.button)(handle, index)).collect(),
+                        axes: (0..6).map(|index| (self.axis)(handle, index)).collect(),
+                    });
                     continue;
                 }
                 let handle = *self.handles.entry(id).or_insert_with(|| (self.open)(id));
@@ -257,6 +283,7 @@ impl Runtime {
             Ok(Frame {
                 version: self.version,
                 pads,
+                companions,
             })
         }
     }

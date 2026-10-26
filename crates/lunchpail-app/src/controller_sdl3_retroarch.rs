@@ -1,6 +1,7 @@
 //! Launch-scoped Steam Controller 2 routing for RetroArch. Prefer Steam's
 //! existing virtual Xbox pad in gamepad mode. When Steam has not created one,
-//! forward SDL3 native input through an owned uinput pad instead.
+//! or other gamepads are connected, forward SDL3 native input from the SC2 and
+//! every other pad through one owned uinput pad instead.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -55,7 +56,10 @@ impl RetroArchControllerSession {
         // Steam's virtual pad supplies a D-pad through RetroArch autoconfig,
         // but that route cannot safely duplicate a digital direction into a
         // proportional stick output. Use our numbered bridge for that target.
+        // Other connected gamepads also need the bridge: Steam's pad would
+        // own player one and leave them on ports the game never reads.
         if directional_target(core, platform) != Some("stick")
+            && crate::controller_sdl3::companions().is_empty()
             && let Some(event) = steam_virtual_event()?
             && let Some(joypad_index) = udev_joypad_index(&event)?
         {
@@ -308,6 +312,27 @@ fn gamepad_contract() -> Result<GamepadFrame> {
     )
 }
 
+/// SDL3 numbers every gamepad's buttons and axes identically, so companion
+/// pads merge control by control: any held button counts, and each axis
+/// follows whichever pad deflects it furthest.
+fn merge_companions(frame: &mut BTreeMap<GamepadControl, i32>, companions: &[Pad]) {
+    for pad in companions {
+        for (source, code) in BUTTONS {
+            if pad.buttons.get(*source) == Some(&true) {
+                frame.insert(GamepadControl::Button(*code), 1);
+            }
+        }
+        for (code, value) in pad.axes.iter().enumerate() {
+            let control = GamepadControl::Axis(code as u16);
+            let value = i32::from(*value);
+            let current = frame.get(&control).copied().unwrap_or(0);
+            if value.abs() > current.abs() {
+                frame.insert(control, value);
+            }
+        }
+    }
+}
+
 fn frame_from_pad(pad: &Pad) -> Result<BTreeMap<GamepadControl, i32>> {
     ensure!(
         lunchpail_controller_probe::live_sdl3::is_sc2(pad.vendor, pad.product)
@@ -340,7 +365,8 @@ fn forward(
         }
         let pad = crate::controller_sdl3::pad_by_id(identity)
             .context("Steam Controller 2 disconnected from Lunchpail SDL3 input")?;
-        let frame = frame_from_pad(&pad)?;
+        let mut frame = frame_from_pad(&pad)?;
+        merge_companions(&mut frame, &crate::controller_sdl3::companions());
         if last.as_ref() != Some(&frame) {
             publisher.publish(&frame)?;
             last = Some(frame);
@@ -527,6 +553,35 @@ mod tests {
         assert_eq!(frame[&GamepadControl::Axis(4)], 32767);
         assert_eq!(frame.len(), BUTTONS.len() + 6);
         assert!(gamepad_contract().is_ok());
+    }
+
+    #[test]
+    fn companion_pads_merge_into_the_owned_player_one_frame() {
+        let mut sc2 = Pad {
+            instance: 1,
+            name: "Steam Controller 2".into(),
+            path: None,
+            serial: None,
+            vendor: 0x28de,
+            product: 0x1302,
+            mapping: String::new(),
+            buttons: vec![false; 26],
+            axes: vec![0; 6],
+        };
+        sc2.axes[0] = -1000;
+        let mut n30 = sc2.clone();
+        n30.vendor = 0x045e;
+        n30.product = 0x028e;
+        n30.axes[0] = 20000;
+        n30.buttons[1] = true;
+        n30.buttons[12] = true;
+        let mut frame = frame_from_pad(&sc2).unwrap();
+        merge_companions(&mut frame, &[n30]);
+        assert_eq!(frame[&GamepadControl::Button(0x131)], 1);
+        assert_eq!(frame[&GamepadControl::Button(0x221)], 1);
+        assert_eq!(frame[&GamepadControl::Button(0x130)], 0);
+        assert_eq!(frame[&GamepadControl::Axis(0)], 20000);
+        assert_eq!(frame.len(), BUTTONS.len() + 6);
     }
 
     #[test]
