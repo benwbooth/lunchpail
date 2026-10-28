@@ -556,10 +556,12 @@ fn generate_build_identity() {
         "../../.git/packed-refs",
         "../../.git/refs/heads",
     ] {
-        println!(
-            "cargo:rerun-if-changed={}",
-            manifest_directory.join(shared).display()
-        );
+        // Cargo treats a missing watched path as always stale, and a repo
+        // without packed refs would otherwise rebuild this crate every time.
+        let path = manifest_directory.join(shared);
+        if path.exists() {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
     }
 
     let configured = std::env::var("LUNCHPAIL_BUILD_HASH").unwrap_or_default();
