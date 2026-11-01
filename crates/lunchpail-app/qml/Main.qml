@@ -20726,13 +20726,12 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 spacing: 8
                 visible: root.artworkProvider === "emumovies"
-                Text {
+                LbTextField {
                     Layout.fillWidth: true
-                    text: gameDetails.title + "  ·  " + gameDetails.platform
-                    color: root.ink
-                    font.pixelSize: 11
-                    font.weight: Font.DemiBold
-                    elide: Text.ElideRight
+                    placeholderText: "EmuMovies search title"
+                    text: emuMovies.selected_game_name
+                    enabled: !emuMovies.busy
+                    onTextEdited: emuMovies.set_search_title(text)
                 }
                 LbComboBox {
                     Layout.preferredWidth: 190

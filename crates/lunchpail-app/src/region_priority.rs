@@ -146,11 +146,11 @@ pub fn display_name(region: &str) -> &str {
 
 pub(crate) fn canonical_region(region: &str) -> Option<&'static str> {
     Some(match region.trim().to_ascii_lowercase().as_str() {
-        "usa" | "united states" | "north america" => "USA",
-        "japan" => "Japan",
+        "usa" | "us" | "na" | "united states" | "north america" | "north american" => "USA",
+        "japan" | "japanese" => "Japan",
         "asia" => "Asia",
         "world" => "World",
-        "europe" => "Europe",
+        "europe" | "european" => "Europe",
         "australia" => "Australia",
         "canada" => "Canada",
         "brazil" => "Brazil",

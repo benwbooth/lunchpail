@@ -2889,6 +2889,14 @@ fn delimited_tags(value: &str) -> Vec<&str> {
 }
 
 fn canonical_region_tag(tag: &str) -> Option<String> {
+    // LaunchBox spells some regions as a release, e.g. "(US Version)".
+    let tag = tag.trim();
+    let tag = tag
+        .len()
+        .checked_sub(" version".len())
+        .and_then(|end| tag.get(end..).map(|suffix| (end, suffix)))
+        .filter(|(_, suffix)| suffix.eq_ignore_ascii_case(" version"))
+        .map_or(tag, |(end, _)| &tag[..end]);
     let parts = tag
         .split([',', '/', '&', '+'])
         .map(str::trim)
@@ -3016,6 +3024,21 @@ pub fn format_bytes(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn catalog_display_title_removes_region_release_labels() {
+        for (title, expected) in [
+            ("Maniac Mansion (US Version)", "Maniac Mansion"),
+            ("Street Fighter (US version)", "Street Fighter"),
+            ("Foo (European Version)", "Foo"),
+            ("Foo (North American Version)", "Foo"),
+            ("Foo (Japan)", "Foo"),
+            ("Foo (Demo Version)", "Foo (Demo Version)"),
+            ("Foo (Version 2)", "Foo (Version 2)"),
+        ] {
+            assert_eq!(catalog_display_title(title), expected);
+        }
+    }
+
     use super::*;
 
     fn preferences(region: &str, version: &str) -> ReleasePreferences {

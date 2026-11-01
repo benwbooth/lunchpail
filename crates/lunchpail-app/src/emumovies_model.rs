@@ -50,6 +50,9 @@ pub mod qobject {
         );
 
         #[qinvokable]
+        fn set_search_title(self: Pin<&mut EmuMoviesModel>, title: QString);
+
+        #[qinvokable]
         fn choose_artwork_kind(self: Pin<&mut EmuMoviesModel>, artwork_type: QString);
 
         #[qinvokable]
@@ -698,6 +701,11 @@ impl qobject::EmuMoviesModel {
         self.as_mut().set_message(qstring(
             "EmuMovies uses the legacy platform and title matcher. Choose a media category, then download the exact cache candidate.",
         ));
+    }
+
+    pub fn set_search_title(mut self: Pin<&mut Self>, title: QString) {
+        self.as_mut().rust_mut().title = title.to_string();
+        self.as_mut().set_selected_game_name(title);
     }
 
     pub fn choose_artwork_kind(mut self: Pin<&mut Self>, artwork_type: QString) {

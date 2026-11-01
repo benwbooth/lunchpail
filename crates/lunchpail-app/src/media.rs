@@ -2585,6 +2585,7 @@ fn libretro_title_candidates(title: &str) -> Vec<String> {
     ];
     let mut bases = Vec::new();
     push_title_variants(&mut bases, title);
+    push_title_variants(&mut bases, &crate::game_details::catalog_display_title(title));
     if let Some(moved) = move_leading_article(title) {
         push_title_variants(&mut bases, &moved);
     }
