@@ -241,6 +241,19 @@ Rectangle {
             }
         }
 
+        Text {
+            readonly property var activePatches: hero.modsBackend
+                ? JSON.parse(hero.modsBackend.profile_json).patches.filter(function(patch) { return patch.enabled })
+                : []
+            objectName: "activeModsLabel"
+            width: parent.width
+            visible: activePatches.length > 0
+            text: "Mods active: " + activePatches.map(function(patch) { return patch.name }).join(", ")
+            color: hero.ink
+            font.pixelSize: 11
+            wrapMode: Text.Wrap
+        }
+
         LbButton {
             objectName: "settingsAccordionButton"
             width: parent.width
