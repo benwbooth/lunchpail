@@ -1311,13 +1311,20 @@ fn build_prepared_rom_launch_plan(
     };
 
     if option.runtime_kind == EmulatorRuntimeKind::Standalone
-        && !customization.save_states.is_empty()
+        && crate::display_setup::save_states_supported(
+            &option.emulator_name,
+            option.runtime_kind.key(),
+        )
     {
         // Automatic save states ride documented launch flags; adapters
         // without one keep their own behavior and never block the launch.
         match crate::display_setup::save_state_arguments(
             &option.emulator_name,
-            &customization.save_states,
+            if customization.save_states.is_empty() {
+                "on"
+            } else {
+                &customization.save_states
+            },
         ) {
             // Spliced as one run so multi-flag adapters keep their order
             // (DuckStation's `-settings <file>` must precede the value it

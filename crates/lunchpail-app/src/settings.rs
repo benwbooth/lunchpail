@@ -5000,6 +5000,11 @@ impl SettingsStore {
                 break;
             }
         }
+        // Save and resume is on wherever nothing chose otherwise; "off" at any
+        // scope still wins. Standalone adapters apply this at launch.
+        if resolved.save_states.is_empty() && runtime_kind == "retroarch" {
+            resolved.save_states = "on".to_owned();
+        }
         Ok(resolved)
     }
 
@@ -12205,6 +12210,7 @@ identity"
                 command_template: "--game %{core} %f".into(),
                 argument_scope: "platform".into(),
                 template_scope: "game".into(),
+                save_states: "on".into(),
                 ..ResolvedLaunchCustomization::default()
             }
         );
