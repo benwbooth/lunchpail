@@ -8,6 +8,7 @@
 //! - Disc info: (Disc 1), (Side A), etc.
 //! - Platform/Distribution: (Virtual Console), (PSN), etc.
 
+use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
 /// Tag category for classification
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TagCategory {
@@ -521,7 +522,11 @@ fn roman_sequel_to_arabic(token: &str) -> Option<&'static str> {
 pub fn normalize_title_for_matching(title: &str) -> String {
     let (base, _tags) = parse_title_tags(title);
 
-    base.to_lowercase()
+    // Accents are spelling, not identity: "Deja Vu" and "Déjà Vu" are one game.
+    base.nfd()
+        .filter(|c| !is_combining_mark(*c))
+        .collect::<String>()
+        .to_lowercase()
         .chars()
         .filter(|c| c.is_alphanumeric() || c.is_whitespace())
         .collect::<String>()
@@ -613,6 +618,14 @@ pub fn filter_display_tags(tags: &[ParsedTag]) -> Vec<&ParsedTag> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn title_matching_ignores_accents() {
+        assert_eq!(
+            normalize_title_for_matching("Déjà Vu"),
+            normalize_title_for_matching("Deja Vu (USA)")
+        );
+    }
 
     #[test]
     fn roman_numeral_sequels_normalize_to_arabic() {

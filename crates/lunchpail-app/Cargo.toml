@@ -14,6 +14,7 @@ build = "build.rs"
 rocm-ocr = ["rapidocr-core/migraphx"]
 
 [dependencies]
+unicode-normalization = "0.1"
 anyhow.workspace = true
 chrono.workspace = true
 cpal = "0.16"
