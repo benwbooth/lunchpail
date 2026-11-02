@@ -71,6 +71,9 @@ lto = "thin"
 codegen-units = 1
 strip = true
 
+[profile.dev]
+debug = "line-tables-only"
+
 # OCR spends most of its time in image preparation when built without
 # optimization. Keep the application incremental while making F10 responsive.
 [profile.dev.package.rapidocr-core]
