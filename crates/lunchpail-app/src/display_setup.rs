@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use uuid::Uuid;
 
 use crate::emulator::{EmulatorExecutable, LaunchPlan};
@@ -44,6 +44,12 @@ pub const RETROARCH_SHADER_PRESETS: &[ShaderPresetChoice] = &[
     ShaderPresetChoice {
         id: "retrotube-tv",
         label: "RetroTube TV · bezel + ambient light (Koko-AIO)",
+        relative_paths: &["bezel/koko-aio/Presets-ng/Base.slangp"],
+        generated: false,
+    },
+    ShaderPresetChoice {
+        id: "retrotube-tv-beam",
+        label: "RetroTube TV + CRT beam simulator (needs 120/180/240 Hz)",
         relative_paths: &["bezel/koko-aio/Presets-ng/Base.slangp"],
         generated: false,
     },
@@ -674,7 +680,8 @@ pub fn attach_launch_display_configuration(
     if !customization.display_shader.is_empty() {
         match resolve_shader_preset(executable, &customization.display_shader) {
             Some(mut preset_path) => {
-                if customization.display_shader == "retrotube-tv" {
+                let beam = customization.display_shader == "retrotube-tv-beam";
+                if customization.display_shader == "retrotube-tv" || beam {
                     if let Some(root) = shader_root(executable) {
                         let base = preset_path.clone();
                         match install_retrotube_variant(
@@ -717,6 +724,23 @@ pub fn attach_launch_display_configuration(
                                 )),
                             }
                         }
+                    }
+                }
+                if beam {
+                    match shader_root(executable)
+                        .context("Finding the RetroArch shader directory")
+                        .and_then(|root| install_beam_simulator(&root, &preset_path))
+                    {
+                        Ok(path) => {
+                            preset_path = path;
+                            lines.push_str(&format!(
+                                "video_shader_subframes = \"{}\"\n",
+                                beam_subframes(executable)
+                            ));
+                        }
+                        Err(error) => warnings.push(format!(
+                            "The CRT beam simulator could not be added, so the game started without it: {error:#}"
+                        )),
                     }
                 }
                 lines.push_str("video_shader_enable = \"true\"\n");
@@ -775,6 +799,83 @@ pub fn attach_launch_display_configuration(
     } else {
         Some(warnings.join("; "))
     }
+}
+
+/// Per-pass preset keys, which carry the pass index as a suffix.
+const SHADER_PASS_KEYS: &[&str] = &[
+    "shader", "filter_linear", "wrap_mode", "mipmap_input", "alias", "float_framebuffer",
+    "srgb_framebuffer", "scale_type_x", "scale_type_y", "scale_type", "scale_x", "scale_y",
+    "scale", "frame_count_mod",
+];
+
+/// Blur Busters' CRT beam simulator spreads each frame over the display's
+/// refresh cycles, so it runs first, ahead of the CRT and bezel passes.
+fn install_beam_simulator(root: &Path, preset: &Path) -> Result<PathBuf> {
+    let beam = root.join("subframe-bfi/shaders/crt-beam-simulator.slang");
+    ensure!(beam.is_file(), "{} is not installed", beam.display());
+    let text = fs::read_to_string(preset)?;
+    ensure!(
+        !text.lines().any(|line| line.trim_start().starts_with("#reference")),
+        "this look has no expanded preset to extend"
+    );
+    let directory = preset.parent().context("Preset has no directory")?;
+    let mut passes = None;
+    let mut output = String::new();
+    for line in text.lines() {
+        let Some((key, value)) = line.split_once('=') else {
+            output.push_str(line);
+            output.push('\n');
+            continue;
+        };
+        let key = key.trim();
+        if key == "shaders" {
+            let count: usize = value.trim().trim_matches('"').parse()?;
+            passes = Some(count);
+            output.push_str(&format!("shaders = \"{}\"\n", count + 1));
+            continue;
+        }
+        let split = key.trim_end_matches(|c: char| c.is_ascii_digit());
+        let index = &key[split.len()..];
+        let value = value.trim();
+        if !index.is_empty() && SHADER_PASS_KEYS.contains(&split) {
+            let index: usize = index.parse()?;
+            let value = if split == "shader" {
+                // Rewritten relative to this preset, which may be a copy.
+                let path = Path::new(value.trim_matches('"'));
+                let path = if path.is_relative() { directory.join(path) } else { path.to_path_buf() };
+                format!("\"{}\"", path.display())
+            } else {
+                value.to_owned()
+            };
+            output.push_str(&format!("{split}{} = {value}\n", index + 1));
+        } else {
+            output.push_str(line);
+            output.push('\n');
+        }
+    }
+    ensure!(passes.is_some(), "the preset lists no shader passes");
+    output.push_str(&format!(
+        "shader0 = \"{}\"\nfilter_linear0 = \"false\"\nwrap_mode0 = \"clamp_to_border\"\nscale_type0 = \"source\"\nscale0 = \"1.0\"\n",
+        beam.display()
+    ));
+    let name = preset
+        .file_stem()
+        .context("Preset has no name")?
+        .to_string_lossy()
+        .into_owned();
+    let path = directory.join(format!("{name}-beam.slangp"));
+    fs::write(&path, output)?;
+    Ok(path)
+}
+
+/// Sub-frames per content frame: the display refresh over 60 Hz. RetroArch's
+/// configured refresh is used because the launch has no other display probe.
+fn beam_subframes(executable: &EmulatorExecutable) -> u32 {
+    retroarch_config_value(executable, "video_refresh_rate")
+        .and_then(|value| value.parse::<f64>().ok())
+        .map(|rate| (rate / 60.0).round().clamp(1.0, 16.0) as u32)
+        .filter(|frames| *frames >= 2)
+        .unwrap_or(2)
 }
 
 fn reflective_artwork_configuration(lines: &str) -> String {
@@ -1090,6 +1191,28 @@ mod tests {
     }
 
     #[test]
+    fn beam_simulator_runs_first_and_renumbers_every_pass() {
+        let root = tempfile::tempdir().unwrap();
+        let beam = root.path().join("subframe-bfi/shaders/crt-beam-simulator.slang");
+        fs::create_dir_all(beam.parent().unwrap()).unwrap();
+        fs::write(&beam, "").unwrap();
+        let preset = root.path().join("look.slangp");
+        fs::write(
+            &preset,
+            "shaders = \"2\"\nshader0 = \"a.slang\"\nalias0 = \"first\"\nscale_x1 = \"2.0\"\nshader1 = \"/abs/b.slang\"\nGAMMA = \"2.2\"\n",
+        )
+        .unwrap();
+        let text = fs::read_to_string(install_beam_simulator(root.path(), &preset).unwrap()).unwrap();
+        assert!(text.contains("shaders = \"3\""));
+        assert!(text.contains(&format!("shader0 = \"{}\"", beam.display())));
+        assert!(text.contains(&format!("shader1 = \"{}\"", root.path().join("a.slang").display())));
+        assert!(text.contains("alias1 = \"first\""));
+        assert!(text.contains("scale_x2 = \"2.0\""));
+        assert!(text.contains("shader2 = \"/abs/b.slang\""));
+        assert!(text.contains("GAMMA = \"2.2\""));
+    }
+
+    #[test]
     fn display_shader_ids_are_unique_and_keep_existing_crt_choices() {
         let mut ids = std::collections::HashSet::new();
         for choice in shader_preset_choices() {
@@ -1097,6 +1220,7 @@ mod tests {
         }
         for id in [
             "retrotube-tv",
+            "retrotube-tv-beam",
             "crt-guest-advanced",
             "crt-royale-fast",
             "crt-easymode",
